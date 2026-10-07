@@ -28,7 +28,7 @@ those rules checkable.
 - `contracts/openapi.yaml` is the source of truth. If it changes API behavior, it changes in the same commit as the code. [Build Plan]
 - Where a component spec and the contract disagree, the contract wins and the spec gets fixed. [Build Plan]
 - No endpoint or field exists that is not in the contract. Unknowns are `TODO(contract)`, never guesses.
-- Contracts return the standard error shape `{"error": {"code", "message"}}` and carry an API key in `Authorization`, one key per calling system, rotated every 90 days. [Build Plan]
+- Contracts return the standard error shape `{"error": {"code", "message"}}` and carry an API key in `Authorization` (`Authorization: Bearer <key>`), one key per calling system, rotated every 90 days. [Build Plan, [ADR 0007](adr/0007-api-key-verification-and-rotation.md)]
 - Until live changes land, nothing in RatelBSS may assume a RatelLink change applies mid-session. It applies at the next attach. [Build Plan]
 
 ## Database changes and migrations
@@ -72,9 +72,11 @@ those rules checkable.
 
 ## Security and privacy
 
-- **Ki and OPc exist only in RatelLink's store and in Open5GS's MongoDB.** Never in PostgreSQL, logs, tickets, chat, test fixtures, AI tools, or backups that leave core-cp unencrypted. [Build Plan]
+- **Ki and OPc exist only in RatelLink's store and in Open5GS's MongoDB.** Never in PostgreSQL, logs, tickets, chat, test fixtures, AI tools, or backups that leave core-cp unencrypted. [Build Plan] In RatelLink's store they are AES-256-GCM encrypted before persistence, and only RatelLink encrypts or decrypts ([ADR 0006](adr/0006-ki-opc-encryption-at-rest.md)). Any backup containing the `open5gs` database must be encrypted before it leaves core-cp.
 - **RatelBSS never holds Ki or OPc.** A SIM import is split: keys go to RatelLink, RatelBSS keeps ICCID, IMSI and batch. [Build Plan]
 - **RatelLink is the only writer to RatelCore's subscriber database.** Only RatelLink touches MongoDB, over localhost only. [Build Plan]
+- **Every RatelLink `/v1` route requires a valid API key.** Routes are added to `new_v1_router()` so they are protected by default, and a test fails the build if one is not ([ADR 0007](adr/0007-api-key-verification-and-rotation.md)). Only `/healthz` is open.
+- **No endpoint returns Ki or OPc, and neither the encryption key nor an API key is ever logged, put in an audit record or echoed in an error.** Sensitive fields are `SecretStr`.
 - Customer records and call records are protected personal data. Same access rules for both. [Build Plan]
 - Every API and RatelDesk is reachable only over the WireGuard VPN. Public: RatelPay and the payment webhook only. Verify every webhook signature, rate-limit both. [Build Plan]
 - Credit a payment only after verifying the webhook signature and re-querying the provider. [Build Plan]
@@ -83,7 +85,8 @@ those rules checkable.
 
 ## Secrets
 
-- API keys and RatelLink's encryption key live in environment files with owner-only permissions on each host, never in the repository. [Build Plan]
+- API keys and RatelLink's encryption key live in files with owner-only permissions on each host, never in the repository. [Build Plan] The encryption key file is checked at startup (a regular file owned by the service user, no group or other access). API keys are stored hashed ([ADR 0006](adr/0006-ki-opc-encryption-at-rest.md), [ADR 0007](adr/0007-api-key-verification-and-rotation.md)).
+- There is no default or fallback encryption key. Without a key, RatelLink does not start outside `local` and `test`.
 - `.env.example` holds placeholders only. A secret scan runs in CI. A leaked secret is rotated, not just deleted.
 
 ## Testing

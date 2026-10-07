@@ -15,14 +15,18 @@ Owners and reviewers are **TODO**: the project lead assigns them after assessmen
 level" describes the kind of work, not a person. Items that depend on Week 1 work say
 "TODO confirm" because the status of Week 1 was not visible when these were written.
 
+The Ki/OPc encryption ([ADR 0006](../adr/0006-ki-opc-encryption-at-rest.md)) and API-key authentication
+([ADR 0007](../adr/0007-api-key-verification-and-rotation.md)) are decided and built in the security PR,
+so W2-01 to W2-03 build on them instead of waiting for those decisions.
+
 `scripts/github/create_issues.sh` turns each `W2-*.md` file into a GitHub issue (title from the
 first line, labels from the `Labels:` line, the rest as the body). Review them first.
 
 | File | Workstream | Risk | Reviewers |
 | ---- | ---------- | ---- | --------- |
-| W2-01 | RatelLink: key store and `POST /v1/sims` | Critical | 2 |
+| W2-01 | RatelLink: `POST /v1/sims` on the encrypted key store (store delivered by the security PR) | Critical | 2 |
 | W2-02 | RatelLink: activate, data, deactivate write the subscriber document | Critical | 2 |
-| W2-03 | RatelLink: line status, assignments, audit log, API-key auth | Critical | 2 |
+| W2-03 | RatelLink: line status, assignments, audit entries on writes (API-key auth delivered by the security PR; CI auth seeding for Schemathesis) | Critical | 2 |
 | W2-04 | RatelLink: acceptance tests | Critical | 2 |
 | W2-05 | Spike: `subscriber_status` barring | High | 1 |
 | W2-06 | Spike: live-changes write-up | High | 1 |

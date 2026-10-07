@@ -34,7 +34,7 @@ W2-08. W2-03 (or the mock). **Decision needed:** the agent-to-API ingest call is
 Never lose an interval, never double count, UTC epoch seconds, bytes as integers.
 
 ## Security / privacy requirements
-Records are personal data: no IMSI or MSISDN in operational logs. API key from an owner-only env file.
+Records are personal data: no IMSI or MSISDN in operational logs. The agent's own RatelLink API key (`METER_AGENT_RATEL_LINK_API_KEY`, sent as `Authorization: Bearer <key>`) comes from an owner-only env file.
 
 ## Testing requirements
 Unit (delta, reset, alignment), failure-path (spool, replay), **lab** (accuracy).

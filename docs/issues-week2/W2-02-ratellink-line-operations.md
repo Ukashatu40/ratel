@@ -19,13 +19,14 @@ Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 - Static IP assignment and the 24-hour hold. Confirm the fixed-address rule with the network team on day one (Build Plan).
 - `line_state` updates (`status`, `msisdn`, `apns`, `ue_ip`, speeds, `data_mode`, `updated_at`).
 - Idempotency: activating an active line with the same settings succeeds and changes nothing.
+- Routes go on `new_v1_router()` so they require `Authorization: Bearer <key>` by default (ADR 0007).
 - Remove `link_activate_line`, `link_set_data_mode`, `link_deactivate_line` from `contracts/not_implemented.txt`.
 
 ## Out of scope
 Live changes (throttle or detach mid-session). Switching deactivation to `subscriber_status` barring (decide after W2-05). Reading lines (W2-03).
 
 ## Dependencies
-- W2-01. The Open5GS template and the ims APN/pool from the network team (TODO: obtain the template). Open5GS v2.8.0 on the lab core-cp.
+- W2-01 (and the SIM key store, authentication and audit writer already delivered by the security PR). The Open5GS template and the ims APN/pool from the network team (TODO: obtain the template). Open5GS v2.8.0 on the lab core-cp.
 - `TODO(contract)`: response bodies, `reason` values, whether speeds are required for `data` mode `off`, number formats.
 
 ## Acceptance criteria
@@ -40,7 +41,7 @@ Live changes (throttle or detach mid-session). Switching deactivation to `subscr
 Idempotent. State only through these operations. Unique `imsi` and unique active address. UTC timestamps.
 
 ## Security / privacy requirements
-Keys decrypted only to write the document, never logged or returned. RatelLink is the only writer of the `open5gs` subscribers collection; only subscriber documents are touched there.
+Keys are decrypted **only on the activation path, through `SimKeyStore.get_keys`**, only to write the document, and never logged, returned, put in an audit entry or kept longer than the call (`SimKeys` has a redacted repr and no serialisation path; do not unpack it into logs or dicts). `/data` and `/deactivate` do not need the keys. Every write adds an audit entry with the calling system's `api_key_id` (from the `ApiPrincipal`), through `AuditLog.append`, whose guard rejects `ki`, `opc` and similar fields. RatelLink is the only writer of the `open5gs` subscribers collection; only subscriber documents are touched there.
 
 ## Testing requirements
 Unit (document builder, IP allocator), integration (local MongoDB), **lab** (required).

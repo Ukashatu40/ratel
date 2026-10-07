@@ -15,10 +15,17 @@ Nothing here was decided silently except where marked "assumed", and assumptions
 | 7 | `docs/source/Ratelplus_Build_Plan.pdf` is committed so tools and teammates can read it. It contains internal LAN addresses. | [source/README.md](source/README.md) | **Confirm the repo is private**, or remove the file. |
 | 8 | Validation failures return **422** (FastAPI default) in the standard error shape. | `contracts/openapi.yaml` | Build Plan says "standard HTTP status codes" without specifying. |
 
+## Decided
+
+| Date | Decision | Where |
+| ---- | -------- | ----- |
+| 2026-10-07 | **RatelLink encryption at rest for Ki and OPc** (was open question 1): AES-256-GCM envelope with a key id and per-record associated data, key in an owner-only file outside MongoDB, a replaceable `KeyProvider`, `cryptography` as the one new dependency, no default or fallback key. | [ADR 0006](adr/0006-ki-opc-encryption-at-rest.md) |
+| 2026-10-07 | **How RatelLink verifies API keys** (was open question 2): `Authorization: Bearer <key>`, one key per calling system with an internal `api_key_id`, only a SHA-256 hash stored, generic 401, 90-day lifetime with rotation by key generations, no new auth protocol. | [ADR 0007](adr/0007-api-key-verification-and-rotation.md) |
+
 ## Open questions that block or shape work (not decided, not guessed)
 
-1. **RatelLink encryption at rest** for Ki and OPc: algorithm, library, key file format, rotation. The Build Plan only says encrypted at rest with the key held outside the database. Needs an ADR before W2-01 can be finished. Choose carefully.
-2. **How RatelLink verifies API keys** (storage, hashing, rotation every 90 days, one key per calling system) and what the `Authorization` header carries (bare key or a scheme prefix).
+1. *(Decided on 2026-10-07: see "Decided" above. The numbering is kept so other documents that cite these questions stay correct.)*
+2. *(Decided on 2026-10-07: see "Decided" above.)*
 3. **Contract gaps** (`TODO(contract)` in `openapi.yaml`): POST response bodies, `ki`/`opc`/`msisdn` formats, speeds integer or decimal, `reason` values, `end_reason` values, `from`/`to` semantics, cursor parameter name, `apns` shape, assignments response shape, `Idempotency-Key` format and retention.
 4. **Where two more APIs are specified:** the agent's ingest call to the RatelMeter API, and RatelBSS's own API for RatelDesk/RatelPay (the Build Plan says frontend developers code against "a mock of the API"). Neither is in the two frozen contracts.
 5. **BSS money reading RatelMeter data:** over the HTTP contract or an in-process interface, since both run in the `app` process.
@@ -28,6 +35,23 @@ Nothing here was decided silently except where marked "assumed", and assumptions
 9. **Versions:** PostgreSQL, Redis and the lab's MongoDB; dev containers use 16, 7 and 7 as placeholders.
 10. **Pilot environment:** the lab machines or new ones (decide before week 7).
 11. **GitHub plan:** rulesets on private repos need a paid plan.
+
+### Raised by the encryption and API-key work (2026-10-07)
+
+12. **SIM re-import with different keys (W2-01).** `SimKeyStore.put_if_absent` returns `False` for an existing IMSI and never overwrites, whatever keys arrive. What `POST /v1/sims` should answer when the IMSI exists with the same keys (idempotent success) and with different keys (conflict, or replace?) is not decided. Not decided silently.
+13. **Append-only `audit_log` in MongoDB itself.** The code offers insert only, but a database user that may only insert into `audit_log` is not set up. Decide with the network team.
+14. **Ki and OPc format.** The code accepts exactly 32 hexadecimal characters (128 bits) for each, in one place (`models.py`). This is an assumption: the contract still says `TODO(contract)`. The project lead and the network team confirm it, then the contract is updated in the same commit as any change. Also confirm the case to store (the code keeps the case it was given).
+15. **`amf` handling.** The Build Plan's `sim_key` lists `amf`; the contract's `SimImport` does not. It is not stored. Decide whether it is part of the request, and its default.
+16. **Overlap and warning defaults.** API key rotation overlap 7 days (allowed 1 to 30) and expiry warning 14 days (allowed 1 to 90) are proposals. The 90-day lifetime is the Build Plan's.
+17. **Encryption key file: backup procedure and owner, and its path on core-cp.** The key needs a separate, secure, offline backup that is never stored with database backups. Nobody owns this yet. Required before the first real SIM key is imported (risk R-14).
+18. **Backup encryption for the `open5gs` database.** Open5GS keeps Ki and OPc in plaintext there, so any backup containing it must be encrypted before leaving core-cp (network team, Week 6, risk R-06). Mechanism and location are TODO.
+19. **CI authentication for Schemathesis (W2-03).** RatelLink now rejects every `/v1` call without a valid key, and no CI backend accepts the test key. When the first RatelLink operation is implemented, CI needs a way to seed a test `api_key`: an in-memory test mode or a MongoDB service container. Nothing is skipped silently today because nothing is implemented.
+20. **MongoDB integration tests in CI.** `tests/ratel_link/test_integration_mongo.py` runs against the compose MongoDB locally. CI does not run integration tests yet. A MongoDB service container job is a CI change for the project lead.
+21. **Rate limiting of failed authentication.** Not built. Revisit with the Week 6 security review.
+22. **Operating the API keys.** A scheduled `api-key check-expiry` and who is alerted; delivery of a new key to a caller (by hand today); whether a disabled system needs an `enable` command; concurrent administration (not safe for two operators at once).
+23. **Encryption key rotation and KMS.** Re-encrypting records under a new key (the `kid` makes it possible) and any KMS or secret manager are out of scope for now.
+24. **Contract security scheme.** `ApiKeyAuth` changed from an `apiKey` header named `Authorization` to `http` with scheme `bearer` (same name, same header, standard form), and the 401 description now says "Bearer". No new fields. The project lead and the RatelBSS developers confirm.
+25. **`cryptography` on Intel Macs.** Releases from 49 on have no Intel-Mac wheels, and earlier ones have open advisories (`pip-audit`), so the pin is 50. On an Intel Mac `make install` needs a Rust toolchain. Decide whether that is acceptable or the team develops in a Linux container.
 
 ## Information I did not have (TODOs in the files)
 

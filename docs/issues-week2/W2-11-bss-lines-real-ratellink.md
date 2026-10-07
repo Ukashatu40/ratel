@@ -31,7 +31,7 @@ W2-02 and W2-03 on the lab (or contract-compatible). W2-12 for the mock. KYC mus
 State machine only; audit entry with who and why; no direct state column updates; money not involved yet.
 
 ## Security / privacy requirements
-Customer and KYC data stays in BSS. The RatelLink API key comes from an owner-only env file.
+Customer and KYC data stays in BSS. The RatelLink API key (`RATEL_LINK_API_KEY`, sent as `Authorization: Bearer <key>`) comes from an owner-only env file.
 
 ## Testing requirements
 Unit, contract (mock), integration (local PostgreSQL), **lab** (required).
