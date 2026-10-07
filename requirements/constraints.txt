@@ -63,7 +63,7 @@ PyJWT==2.15.1
 pymongo==4.18.2
 pyparsing==3.3.3
 pyrate-limiter==4.5.0
-pytest==8.4.2
+pytest==9.1.1
 pytest-cov==6.3.0
 python-dotenv==1.2.4
 PyYAML==6.0.3
