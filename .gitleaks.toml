@@ -9,3 +9,9 @@ id = "ratel-sim-key-assignment"
 description = "A 128-bit hex value assigned to ki or opc (SIM key material)"
 regex = '''(?i)\b(?:ki|opc)\b["']?\s*[:=]\s*["']?[0-9a-f]{32}\b'''
 keywords = ["ki", "opc"]
+
+[[rules]]
+id = "ratel-link-api-key"
+description = "A RatelLink API key (rlk_<api_key_id>.<256-bit secret>, ADR 0007)"
+regex = '''rlk_[a-z][a-z0-9-]{2,31}\.[A-Za-z0-9_-]{43}'''
+keywords = ["rlk_"]

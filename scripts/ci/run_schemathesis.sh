@@ -5,7 +5,13 @@
 #
 # Env:
 #   BIN                 venv bin dir (default .venv/bin when unset; set BIN= to use PATH)
-#   RATEL_TEST_API_KEY  synthetic API key the services accept in test (never a real key)
+#   RATEL_TEST_API_KEY  synthetic API key, sent as `Authorization: Bearer <key>` (never a real key)
+#
+# TODO(W2-03): RatelLink now rejects every /v1 request that has no valid key (ADR 0007), and there
+# is no CI backend that accepts RATEL_TEST_API_KEY. Nothing is implemented yet, so every operation
+# is skipped below and this does not bite. When the first RatelLink operation is implemented, CI
+# needs a way to seed a test api_key: an in-memory test mode or a MongoDB service container.
+# Do not fake it here by weakening authentication.
 #   SCHEMATHESIS_EXTRA  extra flags, e.g. "--max-examples 50"
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -63,6 +69,6 @@ for entry in "${SERVICES[@]}"; do
   for i in "${ids[@]}"; do include+=(--include-operation-id "$i"); done
   # shellcheck disable=SC2086
   "$ST" run contracts/openapi.yaml --url "http://127.0.0.1:$port" "${include[@]}" \
-    -H "Authorization: $KEY" --checks all ${SCHEMATHESIS_EXTRA:-} || status=1
+    -H "Authorization: Bearer $KEY" --checks all ${SCHEMATHESIS_EXTRA:-} || status=1
 done
 exit "$status"

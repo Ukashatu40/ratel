@@ -267,12 +267,11 @@ paths:
 components:
   securitySchemes:
     ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: Authorization
+      type: http
+      scheme: bearer
       description: |
         One API key per calling system, rotated every 90 days. Keys never live in the repository.
-        TODO(contract): whether the header carries the bare key or a scheme prefix.
+        Sent as `Authorization: Bearer <key>`. A missing or invalid key gets 401.
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -326,7 +325,7 @@ components:
           schema:
             type: object
     Unauthorized:
-      description: Missing or invalid API key.
+      description: Missing or invalid Bearer API key.
       content:
         application/json:
           schema:
