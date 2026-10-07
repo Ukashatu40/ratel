@@ -73,3 +73,43 @@ def test_boundary_checker_detects_a_violation(tmp_path: Path) -> None:
     bad = tmp_path / "x.py"
     bad.write_text("import pymongo\nfrom ratel_link import main\n")
     assert _imports(bad) == {"pymongo", "ratel_link"}
+
+
+# Inside the single `app` process the modules still have a direction (docs/DEPENDENCIES.md):
+# bss_money -> bss_lines and meter_api; bss_lines and meter_api import neither money nor each other.
+APP_MODULE_FORBIDDEN: dict[str, set[str]] = {
+    "bss_lines": {"app.bss_money", "app.meter_api"},
+    "meter_api": {"app.bss_lines", "app.bss_money"},
+}
+
+
+def _dotted_imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(), filename=str(path))
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            found.add(node.module)
+            found.update(f"{node.module}.{a.name}" for a in node.names)
+    return found
+
+
+def _violates(imports: set[str], forbidden: set[str]) -> set[str]:
+    return {i for i in imports for f in forbidden if i == f or i.startswith(f + ".")}
+
+
+@pytest.mark.parametrize("module", sorted(APP_MODULE_FORBIDDEN))
+def test_app_module_direction(module: str) -> None:
+    violations: list[str] = []
+    for py in (SERVICES / "app" / module).rglob("*.py"):
+        bad = _violates(_dotted_imports(py), APP_MODULE_FORBIDDEN[module])
+        if bad:
+            violations.append(f"{py.relative_to(SERVICES)} imports {sorted(bad)}")
+    assert not violations, "\n".join(violations)
+
+
+def test_app_module_checker_detects_a_violation(tmp_path: Path) -> None:
+    bad = tmp_path / "x.py"
+    bad.write_text("from app.bss_money import rating\n")
+    assert _violates(_dotted_imports(bad), APP_MODULE_FORBIDDEN["bss_lines"])

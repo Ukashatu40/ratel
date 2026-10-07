@@ -44,3 +44,9 @@ def test_remote_mongo_rejected_without_leaking_uri(uri: str) -> None:
     with pytest.raises(ValidationError) as exc:
         Settings(mongo_uri=SecretStr(uri))
     assert uri not in str(exc.value)
+
+
+def test_mongo_uri_from_environment_is_validated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MONGO_URI", "mongodb://10.0.0.5:27017")
+    with pytest.raises(ValidationError):
+        Settings()

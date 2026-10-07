@@ -10,7 +10,7 @@ body:
         Do not paste secrets, Ki/OPc, NINs or real customer data.
   - type: textarea
     id: objective
-    attributes: {label: Objective, description: One or two sentences. What is true when this is done?}
+    attributes: {label: Objective, description: "One or two sentences. What is true when this is done?"}
     validations: {required: true}
   - type: textarea
     id: context
@@ -22,7 +22,7 @@ body:
     validations: {required: true}
   - type: textarea
     id: out_of_scope
-    attributes: {label: Out of Scope, description: Check the Build Plan's "What not to build yet" list.}
+    attributes: {label: Out of Scope, description: "Check the Build Plan's 'What not to build yet' list."}
     validations: {required: true}
   - type: textarea
     id: dependencies
