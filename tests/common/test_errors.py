@@ -19,6 +19,10 @@ def _app() -> FastAPI:
     async def boom() -> None:
         raise ApiError(409, "conflict", "already exists")
 
+    @app.get("/auth")
+    async def auth() -> None:
+        raise ApiError(401, "unauthorized", "Nope.", headers={"WWW-Authenticate": "Bearer"})
+
     @app.get("/crash")
     async def crash() -> None:
         raise RuntimeError(f"secret in message {SENTINEL_KI}")
@@ -56,3 +60,22 @@ def test_unhandled_error_is_generic() -> None:
     assert r.status_code == 500
     assert r.json() == {"error": {"code": "internal_error", "message": "Internal error"}}
     assert SENTINEL_KI not in r.text
+
+
+def test_api_error_can_carry_response_headers() -> None:
+    r = TestClient(_app()).get("/auth")
+    assert r.status_code == 401
+    assert r.headers["www-authenticate"] == "Bearer"
+    assert r.json() == {"error": {"code": "unauthorized", "message": "Nope."}}
+
+
+def test_api_error_without_headers_adds_none() -> None:
+    r = TestClient(_app()).get("/boom")
+    assert "www-authenticate" not in r.headers
+
+
+def test_wrong_method_keeps_the_allow_header() -> None:
+    r = TestClient(_app()).post("/boom")
+    assert r.status_code == 405
+    assert r.json()["error"]["code"] == "method_not_allowed"
+    assert "GET" in r.headers["allow"]

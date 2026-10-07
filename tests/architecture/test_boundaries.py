@@ -113,3 +113,24 @@ def test_app_module_checker_detects_a_violation(tmp_path: Path) -> None:
     bad = tmp_path / "x.py"
     bad.write_text("from app.bss_money import rating\n")
     assert _violates(_dotted_imports(bad), APP_MODULE_FORBIDDEN["bss_lines"])
+
+
+# Production code must not depend on test helpers or fakes (tests/ratel_link/fakes.py and friends).
+def _imports_test_code(path: Path) -> bool:
+    return "tests" in _imports(path)
+
+
+def test_production_code_does_not_import_test_code() -> None:
+    violations = [
+        str(py.relative_to(SERVICES)) for py in SERVICES.rglob("*.py") if _imports_test_code(py)
+    ]
+    assert not violations, "services/ imports tests/: " + ", ".join(violations)
+
+
+def test_test_code_import_checker_detects_a_violation(tmp_path: Path) -> None:
+    bad = tmp_path / "x.py"
+    bad.write_text("from tests.ratel_link.fakes import InMemorySimKeyRepository\n")
+    assert _imports_test_code(bad)
+    ok = tmp_path / "y.py"
+    ok.write_text("from ratel_link.sim_keys import SimKeyStore\n")
+    assert not _imports_test_code(ok)

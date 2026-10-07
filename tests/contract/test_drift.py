@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import pytest
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
 
 from app.config import Settings as AppSettings
 from app.main import create_app as create_bss_app
 from ratel_link.config import Settings as LinkSettings
 from ratel_link.main import create_app as create_link_app
 from tests.contract.helpers import not_implemented, operations
+from tests.route_walk import effective_routes
 
 OPERATIONAL = {("GET", "/healthz")}
 TAG_FOR_SERVICE = {"ratel_link": "RatelLink", "app": "RatelMeter"}
@@ -27,9 +27,8 @@ def _services() -> dict[str, FastAPI]:
 
 
 def _routes(app: FastAPI) -> set[tuple[str, str]]:
-    return {
-        (m, r.path) for r in app.routes if isinstance(r, APIRoute) for m in (r.methods or set())
-    }
+    # Includes routes added with include_router(), which `app.routes` alone does not list.
+    return {(m, r.path) for r in effective_routes(app) if r.is_api_route for m in r.methods}
 
 
 @pytest.mark.parametrize("service", sorted(TAG_FOR_SERVICE))
@@ -62,3 +61,18 @@ def test_implemented_matches_not_implemented_list() -> None:
                 f"{o.op_id} is not implemented: add it to not_implemented.txt or build it"
             )
     assert not problems, "\n".join(problems)
+
+
+def test_drift_check_sees_routes_from_included_routers() -> None:
+    # Without this, implementing an operation through an APIRouter would not be noticed.
+    from fastapi import APIRouter
+
+    app = create_link_app(LinkSettings())
+    router = APIRouter(prefix="/v1")
+
+    @router.post("/sims")
+    def create_sim() -> dict[str, str]:
+        return {}
+
+    app.include_router(router)
+    assert ("POST", "/v1/sims") in _routes(app)

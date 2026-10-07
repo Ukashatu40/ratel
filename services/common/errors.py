@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -25,27 +26,41 @@ _STATUS_CODES = {
 
 
 class ApiError(Exception):
-    """Raise this for expected, client-visible failures."""
+    """Raise this for expected, client-visible failures.
 
-    def __init__(self, status_code: int, code: str, message: str) -> None:
+    `headers` are added to the response, for example `WWW-Authenticate` on a 401.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
+        self.headers = dict(headers) if headers else None
 
 
 def error_body(code: str, message: str) -> dict[str, Any]:
     return {"error": {"code": code, "message": message}}
 
 
-def _json(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content=error_body(code, message))
+def _json(
+    status_code: int, code: str, message: str, headers: Mapping[str, str] | None = None
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code, content=error_body(code, message), headers=dict(headers or {})
+    )
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
-        return _json(exc.status_code, exc.code, exc.message)
+        return _json(exc.status_code, exc.code, exc.message, exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -56,7 +71,7 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def _http(_: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = _STATUS_CODES.get(exc.status_code, "http_error")
-        return _json(exc.status_code, code, str(exc.detail))
+        return _json(exc.status_code, code, str(exc.detail), exc.headers)
 
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
