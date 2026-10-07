@@ -1,0 +1,33 @@
+name: Security-sensitive task
+description: Planned hardening or review work. NOT for reporting a vulnerability or anything containing secrets.
+title: "[Security] "
+labels: ["type:security", "risk:high"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Public issues are visible to the whole team and may be mirrored elsewhere.**
+        Never include: exploit details for an unfixed hole, secrets, Ki/OPc, NINs, customer data.
+        To report a vulnerability, follow SECURITY.md (private channel).
+  - type: textarea
+    id: objective
+    attributes: {label: Objective, description: "What control or review is being added? Describe the goal, not an exploit."}
+    validations: {required: true}
+  - type: textarea
+    id: assets
+    attributes: {label: Data / assets involved, description: "Categories from docs/SECURITY_AND_PRIVACY.md (names only, no values)."}
+    validations: {required: true}
+  - type: textarea
+    id: scope
+    attributes: {label: Scope and out of scope}
+    validations: {required: true}
+  - type: textarea
+    id: acceptance
+    attributes: {label: Acceptance Criteria, description: "Include a test or checklist item from docs/SECURITY_REVIEW_CHECKLIST.md."}
+    validations: {required: true}
+  - type: textarea
+    id: testing
+    attributes: {label: Testing Requirements}
+  - type: input
+    id: reviewer
+    attributes: {label: Reviewer, description: "RatelLink and RatelBSS: money need two.", value: "TODO"}

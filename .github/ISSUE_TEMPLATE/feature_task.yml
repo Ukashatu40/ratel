@@ -1,0 +1,58 @@
+name: Feature / implementation task
+description: A deliverable-sized piece of work from the Build Plan. See docs/DEFINITION_OF_READY.md.
+title: "[Task] "
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep it deliverable-sized. "Build RatelBSS" is not an issue. "Implement Line state machine" is.
+        Do not paste secrets, Ki/OPc, NINs or real customer data.
+  - type: textarea
+    id: objective
+    attributes: {label: Objective, description: One or two sentences. What is true when this is done?}
+    validations: {required: true}
+  - type: textarea
+    id: context
+    attributes: {label: Context, description: "Build Plan section, weekly gate, PRD requirement ids, related issues."}
+    validations: {required: true}
+  - type: textarea
+    id: scope
+    attributes: {label: Scope}
+    validations: {required: true}
+  - type: textarea
+    id: out_of_scope
+    attributes: {label: Out of Scope, description: Check the Build Plan's "What not to build yet" list.}
+    validations: {required: true}
+  - type: textarea
+    id: dependencies
+    attributes: {label: Dependencies, description: "Other issues, contract changes, lab access, network-team input."}
+  - type: textarea
+    id: acceptance
+    attributes: {label: Acceptance Criteria, description: "Checkable statements. Prefer a test that passes or fails."}
+    validations: {required: true}
+  - type: textarea
+    id: data
+    attributes: {label: Data / Integrity Requirements, description: "Idempotency, replay, state transitions, kobo, UTC. Write 'none' if none."}
+  - type: textarea
+    id: security
+    attributes: {label: Security / Privacy Requirements, description: "Secrets, personal data, access control, logging. Write 'none' if none."}
+  - type: textarea
+    id: testing
+    attributes: {label: Testing Requirements, description: "Unit, contract, lab integration, failure paths."}
+    validations: {required: true}
+  - type: textarea
+    id: ops
+    attributes: {label: Operational Requirements, description: "Config, deployment, runbook, monitoring. Write 'none' if none."}
+  - type: textarea
+    id: dod
+    attributes: {label: Definition of Done, description: "Start from docs/DEFINITION_OF_DONE.md and add anything specific.", value: "- [ ] Acceptance criteria pass\n- [ ] Tests pass and CI is green\n- [ ] Required reviewers approved\n- [ ] openapi.yaml updated if API behavior changed\n- [ ] Shown working against the lab if it touches the network\n- [ ] Runbook / docs updated if needed"}
+  - type: input
+    id: owner
+    attributes: {label: Owner, description: "GitHub username. Leave as TODO until assigned by the project lead.", value: "TODO"}
+  - type: input
+    id: reviewer
+    attributes: {label: Reviewer, description: "RatelLink and RatelBSS: money need two.", value: "TODO"}
+  - type: input
+    id: target
+    attributes: {label: Target Date, description: "YYYY-MM-DD, inside the week's dates in docs/ROADMAP.md"}

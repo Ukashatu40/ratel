@@ -1,0 +1,3 @@
+# meter-agent: deploys to core-up (data mode) and voice (call mode).
+-r base.txt
+httpx>=0.27,<1

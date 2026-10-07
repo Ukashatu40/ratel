@@ -1,0 +1,6 @@
+# ratel-link: deploys to core-cp. Talks to MongoDB on 127.0.0.1 only.
+-r base.txt
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic-settings>=2.4,<3
+pymongo>=4.8,<5

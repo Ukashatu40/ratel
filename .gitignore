@@ -1,0 +1,58 @@
+# Secrets and environment files. Only *.example files are committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+*.secret
+*.secrets
+credentials*.json
+# Dumps and backups can contain customer data or SIM keys
+*.sql
+*.dump
+*.bak
+*.archive
+*.bson
+!services/app/migrations/versions/*.sql
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+web/*/dist/
+web/*/build/
+.npm/
+*.tsbuildinfo
+npm-debug.log*
+
+# Test and tool artifacts
+test-results/
+.hypothesis/
+.schemathesis/
+cassettes/
+*.log
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.swp
+
+# Agent spool files (written on core-up and voice, never committed)
+spool/

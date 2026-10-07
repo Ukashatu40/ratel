@@ -1,0 +1,24 @@
+name: Investigation / spike
+description: Answer a specific question in writing. No production code.
+title: "[Spike] "
+labels: ["type:investigation"]
+body:
+  - type: textarea
+    id: questions
+    attributes: {label: Questions to answer, description: "Numbered, specific, answerable."}
+    validations: {required: true}
+  - type: textarea
+    id: why
+    attributes: {label: "What decision depends on the answer"}
+    validations: {required: true}
+  - type: textarea
+    id: method
+    attributes: {label: "How we will find out", description: "Which version, which lab host, what measurement. Measure, do not assume."}
+  - type: input
+    id: timebox
+    attributes: {label: Timebox, description: "A spike without an end date is a project."}
+    validations: {required: true}
+  - type: textarea
+    id: output
+    attributes: {label: Deliverable, description: "A written answer in docs/ (or an ADR). Not code to merge."}
+    validations: {required: true}

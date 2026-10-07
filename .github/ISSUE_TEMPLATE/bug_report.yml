@@ -1,0 +1,32 @@
+name: Bug report
+description: Something behaves differently from the Build Plan, the contract, or the acceptance criteria.
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste secrets, Ki/OPc, NINs, real customer or call data, or raw production logs.
+        Use synthetic values. If this is a vulnerability, stop and read SECURITY.md instead.
+  - type: textarea
+    id: expected
+    attributes: {label: Expected behavior, description: "Cite the Build Plan, PRD or contract if you can."}
+    validations: {required: true}
+  - type: textarea
+    id: actual
+    attributes: {label: Actual behavior}
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes: {label: Steps to reproduce, description: "Exact commands or requests, with synthetic data."}
+    validations: {required: true}
+  - type: dropdown
+    id: env
+    attributes: {label: Environment, options: [local, test, lab, staging/pilot, production]}
+    validations: {required: true}
+  - type: textarea
+    id: evidence
+    attributes: {label: "Evidence (redacted)", description: "Error output, log lines with sensitive values removed."}
+  - type: textarea
+    id: impact
+    attributes: {label: "Impact", description: "Data integrity? Money? Customer-facing? Network? Workaround?"}

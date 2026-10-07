@@ -1,0 +1,11 @@
+# gitleaks configuration. Extends the default rules and adds one for SIM keys.
+title = "ratel gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "ratel-sim-key-assignment"
+description = "A 128-bit hex value assigned to ki or opc (SIM key material)"
+regex = '''(?i)\b(?:ki|opc)\b["']?\s*[:=]\s*["']?[0-9a-f]{32}\b'''
+keywords = ["ki", "opc"]

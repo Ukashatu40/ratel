@@ -1,0 +1,34 @@
+name: Infrastructure / deployment task
+description: CI, environments, deployment files, hosts, backups, monitoring configuration.
+title: "[Infra] "
+labels: ["type:infrastructure"]
+body:
+  - type: markdown
+    attributes:
+      value: "No credentials, host passwords or private addresses beyond what the Build Plan already lists. Production changes are never made from an issue; they go through review."
+  - type: textarea
+    id: objective
+    attributes: {label: Objective}
+    validations: {required: true}
+  - type: dropdown
+    id: target
+    attributes: {label: Target environment, options: [local, test, lab, staging/pilot, production]}
+    validations: {required: true}
+  - type: textarea
+    id: change
+    attributes: {label: Change, description: "Files in deploy/, network/, ops/ or .github/ that change."}
+    validations: {required: true}
+  - type: textarea
+    id: rollback
+    attributes: {label: Rollback plan}
+    validations: {required: true}
+  - type: textarea
+    id: verify
+    attributes: {label: "How to verify it works (and how to tell it is healthy)"}
+    validations: {required: true}
+  - type: textarea
+    id: runbook
+    attributes: {label: Runbook impact, description: "Which runbook in docs/runbooks/ is created or updated?"}
+  - type: input
+    id: network_contact
+    attributes: {label: Network-team contact, description: "TODO until confirmed by the project lead.", value: "TODO"}

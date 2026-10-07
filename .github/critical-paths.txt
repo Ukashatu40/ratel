@@ -1,0 +1,9 @@
+# Path prefixes where the Build Plan requires TWO reviewers ("Changes to RatelLink (keys) and
+# RatelBSS: money need two reviewers. Everything else ... needs one").
+# Read by .github/workflows/critical-review-gate.yml. One prefix per line.
+# Do not add paths casually: this is not a general "important files" list. Changing this file
+# itself is a governance change and needs the project lead (see CODEOWNERS).
+services/ratel_link/
+tests/ratel_link/
+services/app/bss_money/
+tests/app/bss_money/

@@ -1,0 +1,20 @@
+name: Technical debt / refactor
+description: Improve existing code without changing behavior.
+title: "[Refactor] "
+labels: ["type:refactor"]
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: What is wrong today, description: "Concrete cost: bugs, slowness, confusion, risk."}
+    validations: {required: true}
+  - type: textarea
+    id: proposal
+    attributes: {label: Proposed change}
+    validations: {required: true}
+  - type: textarea
+    id: behavior
+    attributes: {label: "How we know behavior did not change", description: "Existing tests that cover it, or tests to add first."}
+    validations: {required: true}
+  - type: textarea
+    id: when
+    attributes: {label: Why now, description: "Does it block a weekly gate? If not, it can probably wait until after the demo."}

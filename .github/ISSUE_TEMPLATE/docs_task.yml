@@ -1,0 +1,16 @@
+name: Documentation task
+description: Write or fix documentation, runbooks or ADRs.
+title: "[Docs] "
+labels: ["type:documentation"]
+body:
+  - type: textarea
+    id: what
+    attributes: {label: What needs to be written or fixed}
+    validations: {required: true}
+  - type: input
+    id: where
+    attributes: {label: Target file, description: "For example docs/runbooks/ratel-link.md"}
+    validations: {required: true}
+  - type: textarea
+    id: audience
+    attributes: {label: Who reads it and when, description: "For example the on-call engineer at 2am, or a new developer on day one."}

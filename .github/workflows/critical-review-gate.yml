@@ -1,0 +1,27 @@
+name: critical-review-gate
+
+# Two reviewers for RatelLink and RatelBSS: money (Build Plan, "Review"). See docs/GITHUB_SETUP.md.
+# Re-runs when reviews are submitted or dismissed so the status follows the latest approvals.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  critical-review-gate:
+    name: critical-review-gate
+    runs-on: ubuntu-latest
+    steps:
+      # Checks out the BASE branch so a PR cannot weaken the gate or its path list in the same PR.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Check approvals for critical paths
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/critical_review_gate.py

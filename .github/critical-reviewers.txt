@@ -1,0 +1,6 @@
+# GitHub usernames who MUST approve a critical change (project lead + independent reviewer).
+# Leave empty and the gate only requires two distinct approvals from anyone other than the author.
+# If the author is on this list, they are skipped (nobody approves their own PR), and the
+# remaining named reviewers plus the two-approval minimum still apply.
+# TODO: add GitHub username of the project lead
+# TODO: add GitHub username of the independent reviewer

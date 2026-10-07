@@ -1,0 +1,56 @@
+# CODEOWNERS. Every owner below is a TODO. No usernames are invented.
+#
+# Until real usernames are filled in, every rule here is commented out, so GitHub treats this file
+# as having no owners and "require code owner review" has no effect.
+#
+# How to activate (project lead):
+#   1. Replace each @TODO-... token with a real GitHub username or org/team.
+#   2. Uncomment the rules.
+#   3. Make sure every listed owner has write access to the repository, or the rule is ignored.
+#
+# Limits of CODEOWNERS (GitHub): when a rule lists several owners, approval from ANY ONE of them
+# satisfies it. It cannot demand two people. The "two reviewers" rule for RatelLink and
+# RatelBSS: money is enforced by .github/workflows/critical-review-gate.yml using
+# .github/critical-paths.txt. See docs/GITHUB_SETUP.md.
+#
+# Last matching rule wins, so keep the most specific rules at the bottom.
+
+# Default: project lead reviews anything not matched below.
+# *                                  @TODO-PROJECT-LEAD
+
+# Contracts: controlled review. The contract is shared, a change lands on both sides together.
+# /contracts/                        @TODO-PROJECT-LEAD @TODO-NETWORK-LEAD
+
+# Critical: RatelLink (holds SIM keys). Needs the lead plus the independent reviewer.
+# /services/ratel_link/              @TODO-PROJECT-LEAD @TODO-INDEPENDENT-REVIEWER
+# /tests/ratel_link/                 @TODO-PROJECT-LEAD @TODO-INDEPENDENT-REVIEWER
+
+# Critical: RatelBSS money (wallets, ledger, vouchers, payments, rating).
+# /services/app/bss_money/           @TODO-PROJECT-LEAD @TODO-INDEPENDENT-REVIEWER
+
+# RatelBSS lines and the RatelMeter API/agent: workstream owner. TODO: confirm after assessments.
+# /services/app/bss_lines/           @TODO-BSS-LINES-OWNER
+# /services/app/meter_api/           @TODO-RATELMETER-OWNER
+# /services/meter_agent/             @TODO-RATELMETER-OWNER
+
+# Database migrations: schema changes need extra care.
+# /services/app/migrations/          @TODO-PROJECT-LEAD
+
+# Frontend: ultimately the frontend lead. TODO: confirm.
+# /web/                              @TODO-FRONTEND-LEAD
+
+# Network team areas (configuration, not application code).
+# /network/                          @TODO-NETWORK-LEAD
+# /ops/                              @TODO-NETWORK-LEAD
+# /deploy/core-cp/                   @TODO-NETWORK-LEAD @TODO-PROJECT-LEAD
+# /deploy/core-up/                   @TODO-NETWORK-LEAD
+# /deploy/voice/                     @TODO-NETWORK-LEAD
+# /deploy/ops/                       @TODO-NETWORK-LEAD
+# /deploy/bss-app/                   @TODO-PROJECT-LEAD
+
+# Governance and security documents: controlled review.
+# /.github/                          @TODO-PROJECT-LEAD
+# /docs/ENGINEERING_RULES.md         @TODO-PROJECT-LEAD
+# /docs/SECURITY_AND_PRIVACY.md      @TODO-PROJECT-LEAD
+# /SECURITY.md                       @TODO-PROJECT-LEAD
+# /CLAUDE.md                         @TODO-PROJECT-LEAD

@@ -1,0 +1,13 @@
+# Everything a developer or CI needs. Install with: make install
+-r link.txt
+-r agent.txt
+-r app.txt
+pytest>=8.3,<9
+pytest-cov>=5,<7
+ruff>=0.6
+mypy>=1.11
+schemathesis>=3.34
+openapi-spec-validator>=0.7
+pyyaml>=6
+types-PyYAML
+pip-audit>=2.7

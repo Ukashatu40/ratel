@@ -1,0 +1,10 @@
+# app: RatelBSS, RatelMeter API, RatelDesk/RatelPay back end. Deploys to bss-app.
+-r base.txt
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic-settings>=2.4,<3
+sqlalchemy>=2.0,<3
+alembic>=1.13,<2
+psycopg[binary]>=3.2,<4
+redis>=5.0,<6
+httpx>=0.27,<1

@@ -1,0 +1,541 @@
+openapi: 3.1.0
+info:
+  title: RatelPlus cross-system contracts
+  version: 0.1.0-draft
+  description: |
+    The two seams where RatelBSS touches the network (Build Plan, "The two contracts to freeze on
+    day one"). This file is the source of truth. If code and this file disagree, the code is wrong.
+
+    - Contract 1: RatelLink (tag `RatelLink`), runs on core-cp.
+    - Contract 2: RatelMeter (tag `RatelMeter`), API runs on bss-app.
+
+    Conventions from the Build Plan:
+    - Plain REST, standard HTTP status codes, JSON bodies.
+    - Errors: `{"error": {"code": "...", "message": "..."}}`.
+    - Every call carries an API key in the `Authorization` header, one key per calling system.
+    - Every call that changes something accepts an `Idempotency-Key` header. Repeating a call with
+      the same key returns the first result.
+    - Times are Unix epoch seconds in UTC, sent as integers. Usage is in bytes.
+    - Until RatelLink's live changes land, every change takes effect at the line's next attach.
+    - Ki and OPc are write-only. No response in this file may contain them.
+
+    Anything the Build Plan does not specify is marked `TODO(contract)` in a description or with
+    the `x-todo` extension. Do not fill those in by guessing. Agree them with the owners, then
+    update this file in the same commit as the code.
+
+    Not covered here on purpose: RatelBSS's own API for RatelDesk/RatelPay, and the internal
+    ingest call from the meter agent to the RatelMeter API. TODO(contract): decide where those live.
+  x-todo:
+    - Operational endpoints (/healthz) are deliberately not in this contract.
+servers:
+  - url: http://127.0.0.1:4010
+    description: Local mock (make mock). TODO(contract) - real base URLs and ports per environment.
+security:
+  - ApiKeyAuth: []
+tags:
+  - name: RatelLink
+    description: Contract 1. Provisioning. Only writer to RatelCore's subscriber database.
+  - name: RatelMeter
+    description: Contract 2. Usage and call records for billing.
+paths:
+  /v1/sims:
+    post:
+      tags: [RatelLink]
+      operationId: link_create_sim
+      summary: Store a SIM's keys in RatelLink. No service yet.
+      description: |
+        Stores the SIM's keys in RatelLink. Does not create service. RatelBSS never sends this:
+        keys go to RatelLink and RatelBSS receives only IMSI and ICCID.
+        TODO(contract): the Build Plan's sim_key store also lists `amf`; the request body here
+        lists only imsi, ki, opc as in Contract 1.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimImport"
+      responses:
+        "200":
+          $ref: "#/components/responses/OkEmpty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{imsi}/activate:
+    post:
+      tags: [RatelLink]
+      operationId: link_activate_line
+      summary: Write the subscriber document and give the line service.
+      description: |
+        Writes the subscriber document: keys, MSISDN, the internet APN at the given speeds, and the
+        ims APN when `voice` is true. Activating an active line with the same settings succeeds and
+        changes nothing. Takes effect at the line's next attach.
+        A fixed IPv4 address from the 10.45.0.0/16 pool is assigned at activation (RatelLink spec).
+      parameters:
+        - $ref: "#/components/parameters/Imsi"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivateRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/OkEmpty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{imsi}/data:
+    post:
+      tags: [RatelLink]
+      operationId: link_set_data_mode
+      summary: Change the internet APN only. Calling is untouched.
+      description: |
+        `full` or `slow` change the internet APN's speed. `off` removes the internet APN.
+        The ims APN is never touched, so calls keep working. Takes effect at the next attach.
+        TODO(contract): whether speeds are required for `off` (the Build Plan lists them as body
+        fields without saying).
+      parameters:
+        - $ref: "#/components/parameters/Imsi"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/OkEmpty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{imsi}/deactivate:
+    post:
+      tags: [RatelLink]
+      operationId: link_deactivate_line
+      summary: Remove service. No internet and no calls.
+      description: |
+        Only this endpoint stops calls. RatelLink keeps keys in its own store, deletes the Open5GS
+        subscriber document, and rewrites it on activate. Takes effect at the next attach.
+        TODO(contract): `reason` values. The Build Plan lists the field without an enumeration.
+      parameters:
+        - $ref: "#/components/parameters/Imsi"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeactivateRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/OkEmpty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{imsi}:
+    get:
+      tags: [RatelLink]
+      operationId: link_get_line
+      summary: Read a line's status. Never returns keys.
+      description: |
+        Lets RatelBSS check its view against the network's.
+        Fields follow the line_state collection in the RatelLink spec.
+        TODO(contract): confirm the exact response fields (the Build Plan says "Status, APNs, IP
+        address, speeds and MSISDN") and the shape of `apns`.
+      parameters:
+        - $ref: "#/components/parameters/Imsi"
+      responses:
+        "200":
+          description: Line status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/assignments:
+    get:
+      tags: [RatelLink]
+      operationId: link_list_assignments
+      summary: Every current IP address with its IMSI, for RatelMeter.
+      description: |
+        RatelMeter's agent caches this list and refreshes it every interval.
+        TODO(contract): response wrapper and field names are not specified in the Build Plan.
+        `assignments`, `ue_ip` and `imsi` are placeholders taken from the line_state field names.
+      responses:
+        "200":
+          description: Current assignments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/usage:
+    get:
+      tags: [RatelMeter]
+      operationId: meter_get_usage
+      summary: Data usage records (one per line per 300-second interval).
+      description: |
+        At most 5,000 records per response, with `next_cursor` for the rest.
+        Records are keyed on imsi plus period_start. Intervals are clock-aligned in UTC.
+        TODO(contract): whether `from` and `to` are inclusive, and which field they filter on.
+      parameters:
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - name: imsi
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Imsi"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Usage records.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/calls:
+    get:
+      tags: [RatelMeter]
+      operationId: meter_get_calls
+      summary: Call records (one per call).
+      description: |
+        At most 5,000 records per response, with `next_cursor` for the rest.
+        Keyed on call_id. A call that was never answered has `answered_at` null.
+        Call records are personal data: same access rules as customer records.
+        TODO(contract): `from`/`to` semantics, and the `end_reason` values. The call record's fields
+        are to be agreed with the network team in Week 2.
+      parameters:
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - name: msisdn
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Call records.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        One API key per calling system, rotated every 90 days. Keys never live in the repository.
+        TODO(contract): whether the header carries the bare key or a scheme prefix.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Repeating a call with the same key returns the first result.
+        TODO(contract): key format, length and retention window.
+      schema:
+        type: string
+        minLength: 1
+    Imsi:
+      name: imsi
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Imsi"
+    From:
+      name: from
+      in: query
+      required: true
+      description: Unix epoch seconds, UTC.
+      schema:
+        type: integer
+        minimum: 0
+    To:
+      name: to
+      in: query
+      required: true
+      description: Unix epoch seconds, UTC.
+      schema:
+        type: integer
+        minimum: 0
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        Value of `next_cursor` from the previous page.
+        TODO(contract): the Build Plan names `next_cursor` in responses but not the request
+        parameter. `cursor` is a placeholder.
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    OkEmpty:
+      description: |
+        Success. TODO(contract): response body is not specified in the Build Plan.
+      content:
+        application/json:
+          schema:
+            type: object
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Unknown line.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationError:
+      description: |
+        Invalid request. TODO(contract): confirm 422 versus 400 for validation failures.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnexpectedError:
+      description: Any other failure, in the standard error shape.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+    Imsi:
+      type: string
+      pattern: "^[0-9]{15}$"
+      description: The SIM's 15 digit identity on the network. Ours start with 62100.
+      examples: ["621000000000001"]
+    SimImport:
+      type: object
+      required: [imsi, ki, opc]
+      additionalProperties: false
+      properties:
+        imsi:
+          $ref: "#/components/schemas/Imsi"
+        ki:
+          type: string
+          writeOnly: true
+          description: Secret. Write-only. Never returned, logged or sent to RatelBSS.
+          x-todo: Format and length not specified in the Build Plan.
+        opc:
+          type: string
+          writeOnly: true
+          description: Secret. Write-only. Never returned, logged or sent to RatelBSS.
+          x-todo: Format and length not specified in the Build Plan.
+    ActivateRequest:
+      type: object
+      required: [msisdn, speed_ul_mbps, speed_dl_mbps, voice]
+      additionalProperties: false
+      properties:
+        msisdn:
+          type: string
+          minLength: 1
+          x-todo: Number format (for example E.164 or national) is not specified.
+        speed_ul_mbps:
+          type: number
+          minimum: 0
+          x-todo: Integer or decimal Mbps is not specified.
+        speed_dl_mbps:
+          type: number
+          minimum: 0
+        voice:
+          type: boolean
+          description: When true, the ims APN is written so the line can make calls.
+    DataRequest:
+      type: object
+      required: [mode]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [full, slow, "off"]
+        speed_ul_mbps:
+          type: number
+          minimum: 0
+        speed_dl_mbps:
+          type: number
+          minimum: 0
+    DeactivateRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          x-todo: Allowed values not specified in the Build Plan.
+    LineStatus:
+      type: object
+      required: [status]
+      additionalProperties: false
+      description: Never contains ki or opc.
+      properties:
+        status:
+          type: string
+          enum: [provisioned, active, barred]
+        msisdn:
+          type: [string, "null"]
+        apns:
+          type: array
+          items:
+            type: string
+          x-todo: Item shape is not specified. Strings (`internet`, `ims`) are a placeholder.
+        ue_ip:
+          type: [string, "null"]
+          description: Fixed IPv4 address from the 10.45.0.0/16 pool.
+        speed_ul_mbps:
+          type: [number, "null"]
+        speed_dl_mbps:
+          type: [number, "null"]
+    Assignment:
+      type: object
+      required: [ue_ip, imsi]
+      additionalProperties: false
+      properties:
+        ue_ip:
+          type: string
+        imsi:
+          $ref: "#/components/schemas/Imsi"
+    AssignmentList:
+      type: object
+      required: [assignments]
+      additionalProperties: false
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Assignment"
+    UsageRecord:
+      type: object
+      required: [imsi, period_start, period_end, bytes_up, bytes_down]
+      additionalProperties: false
+      properties:
+        imsi:
+          $ref: "#/components/schemas/Imsi"
+        period_start:
+          type: integer
+          minimum: 0
+          description: Unix epoch seconds, UTC. Aligned to the 300-second clock.
+        period_end:
+          type: integer
+          minimum: 0
+        bytes_up:
+          type: integer
+          minimum: 0
+        bytes_down:
+          type: integer
+          minimum: 0
+    UsageList:
+      type: object
+      required: [records, next_cursor]
+      additionalProperties: false
+      properties:
+        records:
+          type: array
+          maxItems: 5000
+          items:
+            $ref: "#/components/schemas/UsageRecord"
+        next_cursor:
+          type: [string, "null"]
+    CallRecord:
+      type: object
+      required: [call_id, from_msisdn, to_msisdn, started_at, answered_at, ended_at, end_reason]
+      additionalProperties: false
+      properties:
+        call_id:
+          type: string
+          minLength: 1
+        from_msisdn:
+          type: string
+        to_msisdn:
+          type: string
+        started_at:
+          type: integer
+          minimum: 0
+        answered_at:
+          type: [integer, "null"]
+          minimum: 0
+          description: Null when the call was never answered.
+        ended_at:
+          type: integer
+          minimum: 0
+        end_reason:
+          type: string
+          x-todo: Values to be agreed with the network team (Week 2).
+    CallList:
+      type: object
+      required: [records, next_cursor]
+      additionalProperties: false
+      properties:
+        records:
+          type: array
+          maxItems: 5000
+          items:
+            $ref: "#/components/schemas/CallRecord"
+        next_cursor:
+          type: [string, "null"]

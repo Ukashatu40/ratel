@@ -1,0 +1,15 @@
+# Operations in openapi.yaml that no service implements yet. One operationId per line.
+#
+# This file is the ratchet that keeps contract drift visible:
+#   - tests/contract/test_drift.py fails if a listed operation IS implemented (remove the line),
+#     or if an unlisted operation is NOT implemented (add the line, or implement it).
+#   - scripts/ci/run_schemathesis.sh runs Schemathesis only against operations NOT listed here.
+# Remove a line in the same PR that implements the operation.
+link_create_sim
+link_activate_line
+link_set_data_mode
+link_deactivate_line
+link_get_line
+link_list_assignments
+meter_get_usage
+meter_get_calls

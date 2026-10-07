@@ -1,0 +1,32 @@
+# Label taxonomy. Applied by scripts/github/setup_labels.sh (gh label create --force).
+# Workflow state (Backlog, Ready, In Progress, Review, ...) lives in the GitHub Project Status
+# field, not in labels.
+- {name: "type:feature", color: "1d76db", description: "New capability from the Build Plan"}
+- {name: "type:bug", color: "d73a4a", description: "Behavior differs from spec or contract"}
+- {name: "type:refactor", color: "5319e7", description: "Internal change, same behavior"}
+- {name: "type:security", color: "b60205", description: "Security hardening or review (never vulnerability details)"}
+- {name: "type:database", color: "0e8a16", description: "Schema, migrations, data model"}
+- {name: "type:infrastructure", color: "fbca04", description: "CI, environments, deployment, backups"}
+- {name: "type:documentation", color: "0075ca", description: "Docs, runbooks, ADRs"}
+- {name: "type:investigation", color: "c5def5", description: "Spike: answer a question in writing"}
+
+- {name: "area:contracts", color: "bfd4f2", description: "contracts/openapi.yaml and mocks"}
+- {name: "area:ratel-link", color: "bfd4f2", description: "RatelLink (keys, subscriber writes)"}
+- {name: "area:ratel-meter", color: "bfd4f2", description: "RatelMeter agent and API"}
+- {name: "area:bss-lines", color: "bfd4f2", description: "RatelBSS: lines"}
+- {name: "area:bss-money", color: "bfd4f2", description: "RatelBSS: money"}
+- {name: "area:ratel-desk", color: "bfd4f2", description: "RatelDesk staff web app"}
+- {name: "area:ratel-pay", color: "bfd4f2", description: "RatelPay top-up page"}
+- {name: "area:network", color: "bfd4f2", description: "RatelCore / RatelVoice configuration (network team)"}
+- {name: "area:ops", color: "bfd4f2", description: "RatelOps monitoring configuration (network team)"}
+- {name: "area:deployment", color: "bfd4f2", description: "deploy/ files and host setup"}
+
+- {name: "priority:p0", color: "b60205", description: "Critical: blocks the weekly gate or the demo"}
+- {name: "priority:p1", color: "d93f0b", description: "High"}
+- {name: "priority:p2", color: "fbca04", description: "Normal"}
+- {name: "priority:p3", color: "c2e0c6", description: "Low"}
+
+- {name: "risk:critical", color: "b60205", description: "Keys, money, identity data, RatelLink, production"}
+- {name: "risk:high", color: "d93f0b", description: "High blast radius or hard to reverse"}
+- {name: "risk:medium", color: "fbca04", description: "Contained, reversible"}
+- {name: "risk:low", color: "c2e0c6", description: "Small and safe"}

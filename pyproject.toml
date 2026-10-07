@@ -1,0 +1,49 @@
+# Tool configuration only. The repository root is NOT an installable package.
+# Dependencies live in requirements/*.txt (see docs/DEVELOPMENT_GUIDE.md).
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["services", "."]
+extend-exclude = ["services/app/migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+  "E", "F", "W",   # pycodestyle, pyflakes
+  "I",             # import order
+  "B",             # bugbear
+  "UP",            # pyupgrade
+  "S",             # bandit-style security checks
+  "DTZ",           # naive datetime usage (time must be UTC)
+  "T20",           # stray print()
+  "RUF",
+]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106"]  # synthetic test secrets are expected in tests
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "services"
+explicit_package_bases = true
+namespace_packages = true
+files = ["services"]
+exclude = ["services/app/migrations/versions/"]
+
+[[tool.mypy.overrides]]
+module = ["pymongo.*", "alembic.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+pythonpath = ["services", "."]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not lab'"
+markers = [
+  "lab: needs the lab core (core-cp/core-up). Never run in CI by default; never run against production.",
+  "integration: needs PostgreSQL, Redis or MongoDB from compose.dev.yaml.",
+]
+log_file = ".pytest_cache/ratel-test.log"
+log_file_level = "DEBUG"
+filterwarnings = ["error::DeprecationWarning:services.*"]
