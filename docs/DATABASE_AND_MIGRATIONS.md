@@ -45,6 +45,11 @@ make migrate-heads        # offline, no database needed
 ## MongoDB (RatelLink only)
 
 - Only RatelLink touches MongoDB, over `127.0.0.1`, authentication on. Config validation enforces localhost.
-- `ratel_link` database (own MongoDB user): `sim_key` (unique `imsi`, `ki`, `opc`, `amf`, `created_at`; Ki and OPc encrypted at rest, key held outside the database), `line_state`, `audit_log` (append-only, never Ki/OPc).
+- `ratel_link` database (own MongoDB user), collections:
+  - `sim_key`: unique `imsi`, `ki` and `opc` (each an encrypted envelope `{v, alg, kid, nonce, ct}`, never plaintext), `created_at` (UTC). No `amf`: it is an open contract TODO. [ADR 0006](adr/0006-ki-opc-encryption-at-rest.md)
+  - `api_key`: unique `api_key_id`, `system_name`, `status` (`active` or `disabled`), `generations` (`generation`, `secret_hash`, `created_at`, `expires_at`, `revoked_at`), `created_at`. Hashes only. Documents are never deleted. [ADR 0007](adr/0007-api-key-verification-and-rotation.md)
+  - `audit_log`: `at`, `api_key_id`, `action`, `imsi`, `before`, `after`. Insert only: the code has no update or delete path, and a guard refuses Ki, OPc, ciphertext and tokens. **TODO (project lead):** enforce append-only in MongoDB too, with a user that may only insert into `audit_log`.
+  - `line_state` (W2-02).
 - The `open5gs` database is touched only for subscriber documents. Build each document from a template taken from a subscriber Open5GS created itself (with the ims APN). Never handwrite the schema.
-- Indexes and unique constraints on `imsi` are created by RatelLink's startup or an explicit reviewed script. TODO: decide the mechanism with the RatelLink owner. No manual changes in production.
+- Indexes (unique `sim_key.imsi`, unique `api_key.api_key_id`) are created by an explicit, idempotent command, never as an automatic side effect: `python -m ratel_link.admin_cli init-db`, run on core-cp as the service user. At startup RatelLink only checks for them and logs `startup.indexes.missing` as an error. No manual changes in production.
+- Storing the same IMSI again never creates a second document or overwrites the first.

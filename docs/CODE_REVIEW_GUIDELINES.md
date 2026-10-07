@@ -28,7 +28,8 @@
 
 For RatelLink and RatelBSS: money, the reviewer writes in the review which invariants they checked:
 
-- Ki/OPc: not logged, not returned, not sent to RatelBSS, encrypted at rest, key outside the database.
+- Ki/OPc: not logged, not returned, not sent to RatelBSS, encrypted at rest, key outside the database. No default or fallback key; startup fails closed without a valid key file outside `local`/`test`; no secret in any exception, repr or error response. ([ADR 0006](adr/0006-ki-opc-encryption-at-rest.md))
+- API keys: only a hash is stored; one generic 401 for every failure; every `/v1` route requires a key (route-protection test green); 90-day ceiling holds; the key is never logged and audit entries cite `api_key_id` only. ([ADR 0007](adr/0007-api-key-verification-and-rotation.md))
 - RatelLink is the only writer to RatelCore's subscriber database; documents come from the template.
 - Every call is idempotent; activating an active line with the same settings changes nothing.
 - Audit log entry written with the calling key id, and never contains Ki or OPc.

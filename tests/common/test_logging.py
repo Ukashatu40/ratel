@@ -1,8 +1,10 @@
 import json
 import logging
 
+import pytest
+
 from common.logging import JsonFormatter, is_sensitive_key, log_event, mask_last4, redact
-from tests.synthetic import SENTINEL_KI, SENTINEL_OPC
+from tests.synthetic import SENTINEL_API_KEY, SENTINEL_API_SECRET, SENTINEL_KI, SENTINEL_OPC
 
 
 def _format(**fields: object) -> dict[str, object]:
@@ -65,3 +67,60 @@ def test_exception_logs_type_only() -> None:
     out = json.loads(JsonFormatter().format(rec))
     assert out["exc_type"] == "ValueError"
     assert SENTINEL_KI not in json.dumps(out)
+
+
+def test_api_key_id_and_generation_are_logged() -> None:
+    out = _format(api_key_id="bss-app", api_key_generation=2)
+    assert out["api_key_id"] == "bss-app"
+    assert out["api_key_generation"] == 2
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "api_key",
+        "authorization",
+        "token",
+        "bearer",
+        "key_hash",
+        "secret_hash",
+        "ciphertext",
+        "plaintext",
+        "ki",
+        "opc",
+        # The allowlist is exact names only. Near misses stay redacted.
+        "api_key_id_value",
+        "api_key_secret",
+        "API_KEY",
+    ],
+)
+def test_credential_like_keys_are_redacted(key: str) -> None:
+    out = _format(**{key: SENTINEL_API_KEY})
+    assert out[key] == "[REDACTED]"
+    assert SENTINEL_API_KEY not in json.dumps(out)
+
+
+def test_allowlist_does_not_unredact_values_nested_under_other_names() -> None:
+    out = redact({"request": {"authorization": SENTINEL_API_KEY, "api_key_id": "bss-app"}})
+    assert out == {"request": {"authorization": "[REDACTED]", "api_key_id": "bss-app"}}
+
+
+def test_api_key_sentinel_has_the_real_token_shape() -> None:
+    assert len(SENTINEL_API_SECRET) == 43
+    assert SENTINEL_API_KEY == "rlk_bss-app." + SENTINEL_API_SECRET
+
+
+def test_configure_logging_can_send_logs_to_another_stream() -> None:
+    import io
+
+    from common.logging import configure_logging
+
+    root = logging.getLogger()
+    saved, level = root.handlers[:], root.level
+    stream = io.StringIO()
+    try:
+        configure_logging("INFO", stream=stream)
+        log_event(logging.getLogger("ratel.test"), logging.INFO, "stream.test", api_key_id="x")
+    finally:
+        root.handlers[:], root.level = saved, level
+    assert json.loads(stream.getvalue())["event"] == "stream.test"

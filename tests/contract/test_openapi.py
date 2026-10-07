@@ -37,8 +37,8 @@ def check_auth_everywhere(spec: dict[str, Any]) -> list[str]:
         if "security" in o.raw and o.raw["security"] != [{"ApiKeyAuth": []}]:
             problems.append(f"{o.op_id}: overrides global API-key auth")
     scheme = spec["components"]["securitySchemes"]["ApiKeyAuth"]
-    if (scheme["type"], scheme["in"], scheme["name"]) != ("apiKey", "header", "Authorization"):
-        problems.append("ApiKeyAuth must be an apiKey in the Authorization header")
+    if (scheme.get("type"), scheme.get("scheme")) != ("http", "bearer"):
+        problems.append("ApiKeyAuth must be an http bearer scheme (Authorization: Bearer <key>)")
     return problems
 
 
@@ -159,12 +159,24 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
     def open_endpoint(s: dict[str, Any]) -> None:
         s["paths"]["/v1/assignments"]["get"]["security"] = []
 
+    def old_api_key_header(s: dict[str, Any]) -> None:
+        s["components"]["securitySchemes"]["ApiKeyAuth"] = {
+            "type": "apiKey",
+            "in": "header",
+            "name": "Authorization",
+        }
+
+    def basic_auth(s: dict[str, Any]) -> None:
+        s["components"]["securitySchemes"]["ApiKeyAuth"] = {"type": "http", "scheme": "basic"}
+
     return {
         "drop_idempotency": (drop_idempotency, check_idempotency_on_state_changes),
         "leak_ki": (leak_ki, check_no_secrets_in_responses),
         "float_time": (float_time, check_epoch_fields_are_integers),
         "bad_error": (bad_error, check_error_shape),
         "open_endpoint": (open_endpoint, check_auth_everywhere),
+        "old_api_key_header": (old_api_key_header, check_auth_everywhere),
+        "basic_auth": (basic_auth, check_auth_everywhere),
     }
 
 

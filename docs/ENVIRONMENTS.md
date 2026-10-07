@@ -26,9 +26,27 @@ See `.env.example`. By component:
 | --------- | --------- |
 | all | `RATEL_ENV`, `LOG_LEVEL` |
 | app | `DATABASE_URL`, `REDIS_URL`, `RATEL_LINK_BASE_URL`, `RATEL_LINK_API_KEY` |
-| ratel-link | `MONGO_URI` (localhost only), `OPEN5GS_DB_NAME`, `RATEL_LINK_DB_NAME`, `RATEL_LINK_KEY_FILE` |
-| meter-agent | `METER_AGENT_MODE`, `METER_API_BASE_URL`, `METER_API_KEY`, `METER_SPOOL_DIR` |
+| ratel-link | `MONGO_URI` (localhost only), `OPEN5GS_DB_NAME`, `RATEL_LINK_DB_NAME`, `RATEL_LINK_KEY_FILE`, `RATEL_LINK_KEY_ID`, `RATEL_LINK_API_KEY_MAX_AGE_DAYS`, `RATEL_LINK_API_KEY_ROTATION_OVERLAP_DAYS`, `RATEL_LINK_API_KEY_EXPIRY_WARN_DAYS` |
+| meter-agent | `METER_AGENT_MODE`, `METER_API_BASE_URL`, `METER_API_KEY`, `METER_SPOOL_DIR`, `METER_AGENT_RATEL_LINK_API_KEY` |
 | local containers | `POSTGRES_*`, `REDIS_PASSWORD`, `MONGO_ROOT_*` |
+
+### RatelLink security settings
+
+Decisions: [ADR 0006](adr/0006-ki-opc-encryption-at-rest.md) (encryption) and
+[ADR 0007](adr/0007-api-key-verification-and-rotation.md) (API keys).
+
+| Variable | Default | Rule |
+| -------- | ------- | ---- |
+| `RATEL_LINK_KEY_FILE` | none | Path to a file holding base64 of 32 random bytes. Required outside `local` and `test`; without a usable file RatelLink does not start. Must be a regular file owned by the service user with no group or other permissions. The key itself is never in an environment variable or in Git. |
+| `RATEL_LINK_KEY_ID` | `1` | Id stored in each encrypted record, so a later key can be told apart. 1 to 32 characters: lowercase letters, digits, `.`, `_`, `-`. |
+| `RATEL_LINK_API_KEY_MAX_AGE_DAYS` | `90` | Lifetime of each API key. 1 to 90. Values above 90 are rejected (Build Plan: rotated every 90 days). |
+| `RATEL_LINK_API_KEY_ROTATION_OVERLAP_DAYS` | `7` | How long the old key keeps working after `rotate`. 1 to 30, and not longer than the key lifetime. |
+| `RATEL_LINK_API_KEY_EXPIRY_WARN_DAYS` | `14` | `api_key.expiring` is logged for keys this close to expiry. 1 to 90. |
+
+Callers present their key as `Authorization: Bearer <key>`. The env vars `RATEL_LINK_API_KEY`
+(RatelBSS) and `METER_AGENT_RATEL_LINK_API_KEY` (the RatelMeter agent, which calls
+`GET /v1/assignments`) hold the bare key value, `rlk_<api_key_id>.<secret>`. Each calling system has
+its own key. The overlap and warning defaults are proposals for the project lead to confirm.
 
 Settings classes (`services/*/config.py`) read the process environment. They do not read `.env`
 files themselves; load `.env` with your shell or process manager.

@@ -55,7 +55,7 @@ driver, `ratel_link` or `meter_agent`.
 
 | Data | Lives only in | Never in |
 | ---- | ------------- | -------- |
-| Ki, OPc | RatelLink's store (encrypted at rest, key held outside the database) and Open5GS's MongoDB | PostgreSQL, logs, tickets, chat, test fixtures, AI tools, unencrypted backups leaving core-cp |
+| Ki, OPc | RatelLink's store (AES-256-GCM encrypted at rest, key in a file outside the database, [ADR 0006](adr/0006-ki-opc-encryption-at-rest.md)) and Open5GS's MongoDB (plaintext there: see [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md), Backups) | PostgreSQL, logs, tickets, chat, test fixtures, AI tools, unencrypted backups leaving core-cp |
 | Customer, KYC, NIN | RatelBSS PostgreSQL | RatelPay pages, logs, RatelLink |
 | Usage and call records | RatelMeter's PostgreSQL tables on bss-app | Logs (call records are personal data) |
 | Money (wallets, ledger, vouchers, payments) | RatelBSS PostgreSQL | Floating point anywhere |
@@ -84,10 +84,13 @@ Repository layout: [README](../README.md). Why it differs slightly from the exam
 
 **RatelLink.** Owns the SIM key store and every write to the `subscribers` collection in the
 `open5gs` database, including the ims APN and MSISDN RatelVoice depends on. Collections in its own
-`ratel_link` database: `sim_key` (Ki and OPc encrypted at rest), `line_state`, `audit_log`
-(append-only, never contains Ki or OPc). Status: `provisioned`, `active`, `barred`. Data mode:
+`ratel_link` database: `sim_key` (`imsi`, and `ki` and `opc` each as an encrypted envelope
+`{v, alg, kid, nonce, ct}`, plus `created_at`), `api_key` (one document per calling system, with its
+key generations and only their hashes, [ADR 0007](adr/0007-api-key-verification-and-rotation.md)),
+`line_state`, `audit_log` (append-only, never contains Ki, OPc or keys). Status: `provisioned`, `active`, `barred`. Data mode:
 `full`, `slow`, `off`. Every line gets a fixed IPv4 address from `10.45.0.0/16` at activation;
-released addresses are not reused for 24 hours. Every call is idempotent. Subscriber documents are
+released addresses are not reused for 24 hours. Every call is idempotent. Every `/v1` call requires a valid API key (`Authorization: Bearer <key>`),
+and `audit_log` entries carry the calling system's `api_key_id`. Subscriber documents are
 built from a template taken from a subscriber Open5GS created itself, never handwritten.
 Until live changes land, every change takes effect at the line's next attach.
 

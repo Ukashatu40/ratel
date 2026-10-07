@@ -4,3 +4,6 @@ fastapi>=0.115,<1
 uvicorn>=0.30,<1
 pydantic-settings>=2.4,<3
 pymongo>=4.8,<5
+# AES-256-GCM for Ki/OPc at rest (ADR 0006). 50 is the floor: earlier releases have open advisories
+# (pip-audit). Releases from 49 on ship no wheels for Intel Macs; there, build needs a Rust toolchain.
+cryptography>=50,<51

@@ -36,7 +36,7 @@ Notes:
 | Package | May import | Must not import |
 | ------- | ---------- | --------------- |
 | `common` | stdlib, FastAPI, Pydantic | `app`, `ratel_link`, `meter_agent`, database drivers |
-| `ratel_link` | `common`, `pymongo` | `app`, `meter_agent`, SQLAlchemy, Alembic, psycopg, redis |
+| `ratel_link` | `common`, `pymongo`, `cryptography` | `app`, `meter_agent`, SQLAlchemy, Alembic, psycopg, redis |
 | `meter_agent` | `common`, `httpx` | `app`, `ratel_link`, MongoDB drivers, SQLAlchemy |
 | `app` | `common`, SQLAlchemy, Redis, httpx | `ratel_link`, `meter_agent`, MongoDB drivers |
 | `app.bss_lines` | `app.db`, `common` | `app.bss_money`, `app.meter_api` |
@@ -46,8 +46,12 @@ Notes:
 TODO (see [DECISIONS_PENDING.md](DECISIONS_PENDING.md)): whether BSS Money reads RatelMeter data
 through the HTTP contract or an in-process interface, since both live in one process on bss-app.
 
+Inside `ratel_link` the direction is one way: `config` <- `key_provider` <- `crypto` <- `models` <-
+`repositories` <- `sim_keys`, `auth` and `audit` <- `main` and `admin_cli`. Production code never
+imports `tests/` (tested).
+
 ## Third-party dependencies
 
 Pinned in `requirements/constraints.txt`, declared in `requirements/*.txt`. Adding one needs a
-reason in the PR. Prefer the standard library and what the Build Plan already names. No Kafka, no
+reason in the PR. `cryptography` (RatelLink only) provides AES-256-GCM for Ki and OPc ([ADR 0006](adr/0006-ki-opc-encryption-at-rest.md)). Prefer the standard library and what the Build Plan already names. No Kafka, no
 Kubernetes, no extra frameworks.

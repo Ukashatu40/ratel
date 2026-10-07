@@ -10,7 +10,7 @@ The Build Plan's three "Done when" statements for RatelLink exist as repeatable 
 ## Scope
 1. A line created through the API attaches through our radio, browses, and registers for calls (manual lab procedure, recorded; automated parts where possible). Depends on W2-07.
 2. Its Open5GS document matches the template field for field, apart from its own values (automated, `lab` marker plus a local template-comparison unit test).
-3. A test searches every log file after a full test run and finds no Ki or OPc value. The sentinel guard in `tests/conftest.py` covers the pytest log; extend it to RatelLink's process logs and any log files written by integration tests.
+3. A test searches every log file after a full test run and finds no Ki or OPc value. The sentinel guard in `tests/conftest.py` covers the pytest log (Ki, OPc and API-key sentinels); extend it to RatelLink's process logs and any log files written by integration tests.
 
 ## Out of scope
 New features.

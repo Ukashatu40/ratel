@@ -12,6 +12,11 @@ def utc_epoch_now() -> int:
     return int(time.time())
 
 
+def utc_now() -> datetime:
+    """Timezone-aware UTC now, in whole seconds. Tests inject their own clock, they never sleep."""
+    return from_epoch(utc_epoch_now())
+
+
 def to_epoch(dt: datetime) -> int:
     if dt.tzinfo is None or dt.utcoffset() is None:
         raise ValueError("naive datetime rejected: time must be timezone-aware UTC")

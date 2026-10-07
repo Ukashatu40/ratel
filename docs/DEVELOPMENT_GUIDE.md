@@ -26,7 +26,45 @@ curl http://127.0.0.1:8081/healthz
 ```
 
 Mock of the two contracts for BSS and frontend work: `make mock` (http://127.0.0.1:4010). The mock
-requires an `Authorization` header and serves example responses from `contracts/openapi.yaml`.
+requires `Authorization: Bearer <anything>` and serves example responses from `contracts/openapi.yaml`.
+It does not check the key. Use any placeholder, never a real key.
+
+## RatelLink locally: encryption key and API key
+
+RatelLink needs an encryption key file to handle SIM keys, and an API key to be called. Locally both
+are throwaway values you create yourself. Nothing here needs a real key. `make up` must be running,
+and your `.env` must have the local `MONGO_URI` (see `.env.example`).
+
+```
+set -a; . ./.env; set +a
+export PYTHONPATH=services
+umask 077 && mkdir -p ~/.ratel-dev                      # a folder outside the repository
+.venv/bin/python -m ratel_link.admin_cli key generate --out ~/.ratel-dev/ratel_link.key
+export RATEL_LINK_KEY_FILE=~/.ratel-dev/ratel_link.key  # also put this line in your untracked .env
+.venv/bin/python -m ratel_link.admin_cli init-db        # unique indexes, safe to run again
+.venv/bin/python -m ratel_link.admin_cli api-key create --id bss-app --name "RatelBSS (local)"
+```
+
+`key generate` refuses to overwrite and prints nothing secret. `api-key create` prints the new key
+**once** on stdout. Copy it into your untracked `.env` as `RATEL_LINK_API_KEY`, and do not paste it
+anywhere else. Callers send it as `Authorization: Bearer <key>`:
+
+```
+curl -H "Authorization: Bearer $RATEL_LINK_API_KEY" http://127.0.0.1:8081/v1/assignments
+```
+
+There are no `/v1` routes yet (W2-01 to W2-03), so that call has nothing to answer until they land.
+Other commands: `api-key list`, `rotate`, `revoke`, `disable`, `check-expiry`. Details:
+[runbooks/ratel-link.md](runbooks/ratel-link.md). To run the MongoDB integration tests:
+`export RATEL_TEST_MONGO_URI='mongodb://<user>:<password>@127.0.0.1:27017/?authSource=admin'` (the
+`MONGO_ROOT_*` values from your `.env`, never real ones) and `make test-integration`. They use their
+own throwaway database and drop it afterwards.
+
+Without `RATEL_LINK_KEY_FILE`, RatelLink still starts in `local` and `test`, but any encrypt or
+decrypt call fails. Outside those it refuses to start.
+
+Wheels for `cryptography` 49 and later are not published for Intel Macs. On one, `make install`
+needs a Rust toolchain, or run the checks in a Linux container (Python 3.12).
 
 ## Code style
 

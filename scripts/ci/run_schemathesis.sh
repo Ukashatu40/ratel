@@ -5,7 +5,13 @@
 #
 # Env:
 #   BIN                 venv bin dir (default .venv/bin when unset; set BIN= to use PATH)
-#   RATEL_TEST_API_KEY  synthetic API key the services accept in test (never a real key)
+#   RATEL_TEST_API_KEY  synthetic API key, sent as `Authorization: Bearer <key>` (never a real key)
+#
+# TODO(W2-03): RatelLink now rejects every /v1 request that has no valid key (ADR 0007), and there
+# is no CI backend that accepts RATEL_TEST_API_KEY. Nothing is implemented yet, so every operation
+# is skipped below and this does not bite. When the first RatelLink operation is implemented, CI
+# needs a way to seed a test api_key: an in-memory test mode or a MongoDB service container.
+# Do not fake it here by weakening authentication.
 #   SCHEMATHESIS_EXTRA  extra flags, e.g. "--max-examples 50"
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -23,13 +29,28 @@ SERVICES=(
 
 status=0
 pids=()
-# shellcheck disable=SC2329  # invoked via trap
-cleanup() { for p in "${pids[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null || true; done; }
+# shellcheck disable=SC2317,SC2329  # runs from the trap; older and newer shellcheck name this differently
+cleanup() {
+  local p
+  for p in "${pids[@]:-}"; do
+    if [ -n "$p" ]; then
+      kill "$p" 2>/dev/null || true
+    fi
+  done
+}
 trap cleanup EXIT
 
 for entry in "${SERVICES[@]}"; do
   IFS='|' read -r tag module port <<<"$entry"
-  mapfile -t ids < <(PYTHONPATH=services:. "$PY" -m tests.contract.helpers implemented "$tag" | sed '/^$/d')
+  # Assigned first so a failing helper stops the script (set -e) instead of looking like "none".
+  implemented=$(PYTHONPATH=services:. "$PY" -m tests.contract.helpers implemented "$tag")
+  # Not `mapfile`: macOS ships bash 3.2, which does not have it.
+  ids=()
+  while IFS= read -r op_id; do
+    if [ -n "$op_id" ]; then
+      ids+=("$op_id")
+    fi
+  done <<<"$implemented"
   if [ "${#ids[@]}" -eq 0 ]; then
     echo "[$tag] no implemented operations yet, skipping Schemathesis"
     continue
@@ -48,6 +69,6 @@ for entry in "${SERVICES[@]}"; do
   for i in "${ids[@]}"; do include+=(--include-operation-id "$i"); done
   # shellcheck disable=SC2086
   "$ST" run contracts/openapi.yaml --url "http://127.0.0.1:$port" "${include[@]}" \
-    -H "Authorization: $KEY" --checks all ${SCHEMATHESIS_EXTRA:-} || status=1
+    -H "Authorization: Bearer $KEY" --checks all ${SCHEMATHESIS_EXTRA:-} || status=1
 done
 exit "$status"

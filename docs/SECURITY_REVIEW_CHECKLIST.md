@@ -8,10 +8,15 @@ not a claim about the Build Plan.
 
 - [ ] **Secrets.** Ki and OPc exist only in RatelLink's store and Open5GS's MongoDB. Not in PostgreSQL, logs, tickets, chat, fixtures or backups leaving core-cp unencrypted.
 - [ ] **Secrets.** RatelBSS never holds Ki or OPc. SIM import is split (keys to RatelLink; ICCID, IMSI, batch to RatelBSS).
-- [ ] **Secrets.** Ki/OPc encrypted at rest with the key held outside the database. API keys and the encryption key are in owner-only environment files, never in the repo.
+- [ ] **Secrets.** Ki/OPc encrypted at rest (AES-256-GCM envelope, `kid`, per-record associated data, fresh random nonce) with the key in an owner-only file outside the database, never in the repo, no default or fallback key. Startup fails closed without a valid key file outside `local`/`test` ([ADR 0006](adr/0006-ki-opc-encryption-at-rest.md)).
+- [ ] **Secrets.** API keys live in owner-only files on the caller's host, never in the repo. RatelLink stores only a one-way hash.
+- [ ] **Secrets.** Any backup that contains the `open5gs` database is encrypted before it leaves core-cp (Open5GS keeps Ki and OPc in plaintext). The encryption key file is backed up offline, apart from database backups.
 - [ ] **Sensitive-data exposure.** No endpoint returns Ki or OPc. `GET /v1/lines/{imsi}` never returns keys.
 - [ ] **Logging.** Structured JSON; no keys, no full PINs; card and PIN numbers masked to the last four digits. A test run finds no Ki/OPc in any log.
-- [ ] **Authentication.** Every call carries an API key in `Authorization`; one key per calling system; rotated every 90 days.
+- [ ] **Authentication.** Every call carries `Authorization: Bearer <key>`; one key per calling system; no key lives longer than 90 days (a hard ceiling, not only a default) and rotation works without a contract change ([ADR 0007](adr/0007-api-key-verification-and-rotation.md)).
+- [ ] **Authentication.** Only hashes are stored. Comparison is constant time over every generation. Every failure (missing, malformed, unknown, wrong, revoked, expired, disabled) returns the same 401 with `WWW-Authenticate: Bearer`, and the reason appears only in the operational log, without the key.
+- [ ] **Authentication.** Every `/v1` route is on `new_v1_router()` and the route-protection test is green. Authentication runs before the body is read. `/healthz` is the only open route.
+- [ ] **Audit.** Entries cite `api_key_id`, never a key, and pass the content guard. Failed authentication is an operational log event, not an audit entry.
 - [ ] **Access.** Every API and RatelDesk reachable only over the WireGuard VPN. Only RatelPay and the payment webhook are public.
 - [ ] **Webhook verification.** Signature verified, then the transaction re-queried with the provider before crediting anything.
 - [ ] **Replay and idempotency.** `Idempotency-Key` honored on state-changing calls; webhook delivered twice credits once (`provider_ref` unique); voucher redeemed twice credits once; usage replays overwrite on `imsi + period_start` and `call_id`.
