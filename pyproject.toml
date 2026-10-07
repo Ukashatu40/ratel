@@ -39,7 +39,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 pythonpath = ["services", "."]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers --import-mode=importlib -m 'not lab'"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not lab and not integration'"
 markers = [
   "lab: needs the lab core (core-cp/core-up). Never run in CI by default; never run against production.",
   "integration: needs PostgreSQL, Redis or MongoDB from compose.dev.yaml.",

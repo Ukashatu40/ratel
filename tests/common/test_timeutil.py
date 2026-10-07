@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from common.timeutil import from_epoch, interval_start, to_epoch
+from common.timeutil import from_epoch, interval_start, to_epoch, utc_now
 
 
 def test_interval_start_aligns_to_clock() -> None:
@@ -35,3 +35,9 @@ def test_from_epoch_requires_int() -> None:
         from_epoch(1.5)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         from_epoch(True)
+
+
+def test_utc_now_is_aware_utc_and_whole_seconds() -> None:
+    now = utc_now()
+    assert now.utcoffset() == timedelta(0)
+    assert now.microsecond == 0
