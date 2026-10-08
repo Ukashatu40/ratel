@@ -30,7 +30,7 @@ field "Priority" SINGLE_SELECT "P0,P1,P2,P3"
 field "Risk" SINGLE_SELECT "Critical,High,Medium,Low"
 field "Workstream" SINGLE_SELECT "Contracts,RatelLink,RatelMeter,BSS Lines,BSS Money,RatelDesk,RatelPay,Cross-cutting"
 field "Week" SINGLE_SELECT "Week 1,Week 2,Week 3,Week 4,Week 5,Week 6,Week 7,Week 8,Demo"
-field "Type" SINGLE_SELECT "Feature,Bug,Refactor,Security,Database,Infrastructure,Documentation,Investigation"
+field "Type" SINGLE_SELECT "Feature,Bug,Refactor,Security,Database,Infrastructure,Documentation,Investigation,Onboarding"
 field "Target Date" DATE
 # Assignee and Reviewers are built-in project fields. Status exists already (edit its options by hand).
 echo "Done. Now finish Status options and views in the web UI (docs/GITHUB_SETUP.md)."

@@ -9,6 +9,7 @@
 - {name: "type:infrastructure", color: "fbca04", description: "CI, environments, deployment, backups"}
 - {name: "type:documentation", color: "0075ca", description: "Docs, runbooks, ADRs"}
 - {name: "type:investigation", color: "c5def5", description: "Spike: answer a question in writing"}
+- {name: "type:onboarding", color: "bfdadc", description: "Learning task for a new team member: setup, first pull request, first review"}
 
 - {name: "area:contracts", color: "bfd4f2", description: "contracts/openapi.yaml and mocks"}
 - {name: "area:ratel-link", color: "bfd4f2", description: "RatelLink (keys, subscriber writes)"}
@@ -20,6 +21,7 @@
 - {name: "area:network", color: "bfd4f2", description: "RatelCore / RatelVoice configuration (network team)"}
 - {name: "area:ops", color: "bfd4f2", description: "RatelOps monitoring configuration (network team)"}
 - {name: "area:deployment", color: "bfd4f2", description: "deploy/ files and host setup"}
+- {name: "area:repository", color: "bfd4f2", description: "Repository, CI, GitHub, docs and process (governance)"}
 
 - {name: "priority:p0", color: "b60205", description: "Critical: blocks the weekly gate or the demo"}
 - {name: "priority:p1", color: "d93f0b", description: "High"}
@@ -30,3 +32,6 @@
 - {name: "risk:high", color: "d93f0b", description: "High blast radius or hard to reverse"}
 - {name: "risk:medium", color: "fbca04", description: "Contained, reversible"}
 - {name: "risk:low", color: "c2e0c6", description: "Small and safe"}
+
+# GitHub's own label for tasks suited to someone new. Small, well specified, low risk.
+- {name: "good first issue", color: "7057ff", description: "Small, clear and low risk: suited to someone new to the project"}

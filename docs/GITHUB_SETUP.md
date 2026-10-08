@@ -10,7 +10,7 @@ Oct 7):
 | Repository | `Ukashatu40/ratel`, **public** (see "Repository visibility" below) |
 | Collaborators | All six people have write access; @Ukashatu40 is admin |
 | Ruleset `main-protection` | Applied, active, no bypass actors. Squash only, 1 approval, code-owner review, last-push approval, conversations resolved, linear history, required checks `ci-success`, `critical-review-gate`, `secret-scan` |
-| Labels | Applied (36) |
+| Labels | Applied (36). This change adds `type:onboarding`, `area:repository` and `good first issue`: run `scripts/github/setup_labels.sh` again (it is safe to repeat) |
 | `CODEOWNERS` | Active, with real usernames (this change fixes the single-owner deadlock) |
 | `critical-reviewers.txt` | Was empty until this change: PR #10 ran with the gate accepting any two approvers |
 | Issues | None created yet (`scripts/github/create_issues.sh` not run) |

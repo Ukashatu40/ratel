@@ -1,0 +1,37 @@
+name: Onboarding / first pull request
+description: A learning task for a new team member. Created by the project lead, one per person.
+title: "[Onboarding] "
+labels: ["type:onboarding", "good first issue", "priority:p2", "risk:low"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Follow docs/TEAM_ONBOARDING.md. Ask questions in this issue, not in private messages, so
+        the answer helps the next person. Never paste secrets, keys or real customer data here.
+  - type: input
+    id: person
+    attributes: {label: Who, description: "GitHub username."}
+    validations: {required: true}
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Checklist
+      description: "Tick each box as you finish it. Comment here when you get stuck."
+      value: |
+        - [ ] Two-factor authentication is on for my GitHub account
+        - [ ] I accepted the repository invitation and can open the Project board
+        - [ ] I read README.md, CONTRIBUTING.md and docs/WORKFLOW.md
+        - [ ] I cloned the repository, ran `make install` and `make check`, and it passed
+        - [ ] I know what must never be committed (secrets, keys, Ki/OPc, customer data) and who to tell if I do
+        - [ ] I created a branch with the right name and made one small change
+        - [ ] I opened a pull request with the template filled in, and CI went green
+        - [ ] I responded to every review comment and the PR was merged (squash)
+        - [ ] I reviewed someone else's pull request (comments only for now)
+        - [ ] I wrote down anything in the setup guide that was unclear (docs/DEVELOPMENT_GUIDE.md)
+    validations: {required: true}
+  - type: input
+    id: first_task
+    attributes: {label: My first real task, description: "Filled in by the project lead when the checklist is done.", value: "TODO"}
+  - type: input
+    id: mentor
+    attributes: {label: Mentor, description: "The person who answers questions and reviews the first PRs.", value: "TODO"}
