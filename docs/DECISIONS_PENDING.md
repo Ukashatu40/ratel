@@ -9,10 +9,10 @@ Nothing here was decided silently except where marked "assumed", and assumptions
 | 1 | Layout follows the Build Plan tree (`services/app/{bss_lines,bss_money,meter_api}`), not your sketch (`services/bss_lines` ...), because the Build Plan says RatelBSS, the RatelMeter API and the front ends are modules of **one process**. `ops/` is top level, as in your sketch (the Build Plan's tree is ambiguous about `ops/` and `network/`). | [ADR 0001](adr/0001-repository-layout.md) | Do not silently reinterpret the architecture |
 | 2 | Dependencies: plain `requirements/*.txt` plus a verified `constraints.txt`, `pip` and `make`. No Poetry or uv. | [ADR 0002](adr/0002-python-dependency-management.md) | Boring and auditable. Easy to change later. |
 | 3 | A tiny `services/common/` library (error shape, JSON logging with redaction, UTC time, kobo). | [ADR 0003](adr/0003-shared-common-package.md) | Those rules must be identical in both deployables. It is a library, not a service. Approve or fold into each service. |
-| 4 | Two-reviewer rule enforced by a `critical-review-gate` workflow, since CODEOWNERS accepts any one owner. | [ADR 0004](adr/0004-two-reviewer-enforcement.md) | GitHub cannot express "2 for these paths" natively. Verify on the first real PR. |
+| 4 | Two-reviewer rule enforced by a `critical-review-gate` workflow, since CODEOWNERS accepts any one owner. | [ADR 0004](adr/0004-two-reviewer-enforcement.md) | GitHub cannot express "2 for these paths" natively. Verified on PR #10: it works on review events. It ran with an empty `critical-reviewers.txt` until 2026-10-08, so the independent reviewer did not review that PR (see item 26). |
 | 5 | `contracts/not_implemented.txt` ratchet and a Prism mock. | [ADR 0005](adr/0005-contract-ratchet-and-mock.md) | Makes drift visible while nothing is implemented yet. |
 | 6 | Squash-merge only, ruleset with **no bypass actors**. | [GITHUB_SETUP.md](GITHUB_SETUP.md) | Trunk-based, tidy history. Decide whether you want an emergency bypass. |
-| 7 | `docs/source/Ratelplus_Build_Plan.pdf` is committed so tools and teammates can read it. It contains internal LAN addresses. | [source/README.md](source/README.md) | **Confirm the repo is private**, or remove the file. |
+| 7 | `docs/source/Ratelplus_Build_Plan.pdf` was committed so teammates can read it. It contains internal LAN addresses and business plans. **The repo is public** (rulesets need it on a free plan), so the PDF was untracked on 2026-10-08 and is shared privately. It remains in Git history. | [source/README.md](source/README.md), [GITHUB_SETUP.md](GITHUB_SETUP.md) | Decide: accept the exposure, rewrite history (force push, forbidden by the ruleset), or pay for GitHub Pro and go private. Risk R-15. |
 | 8 | Validation failures return **422** (FastAPI default) in the standard error shape. | `contracts/openapi.yaml` | Build Plan says "standard HTTP status codes" without specifying. |
 
 ## Decided
@@ -34,7 +34,7 @@ Nothing here was decided silently except where marked "assumed", and assumptions
 8. **Staff authentication** and roles for RatelDesk (not specified in the Build Plan).
 9. **Versions:** PostgreSQL, Redis and the lab's MongoDB; dev containers use 16, 7 and 7 as placeholders.
 10. **Pilot environment:** the lab machines or new ones (decide before week 7).
-11. **GitHub plan:** rulesets on private repos need a paid plan.
+11. **GitHub plan:** rulesets on private repos need a paid plan. The repo is public today for that reason (item 7). Deciding to pay (GitHub Pro on the owner account, or an organization plan) is what allows a private repo with enforced rules.
 
 ### Raised by the encryption and API-key work (2026-10-07)
 
@@ -52,6 +52,15 @@ Nothing here was decided silently except where marked "assumed", and assumptions
 23. **Encryption key rotation and KMS.** Re-encrypting records under a new key (the `kid` makes it possible) and any KMS or secret manager are out of scope for now.
 24. **Contract security scheme.** `ApiKeyAuth` changed from an `apiKey` header named `Authorization` to `http` with scheme `bearer` (same name, same header, standard form), and the 401 description now says "Bearer". No new fields. The project lead and the RatelBSS developers confirm.
 25. **`cryptography` on Intel Macs.** Releases from 49 on have no Intel-Mac wheels, and earlier ones have open advisories (`pip-audit`), so the pin is 50. On an Intel Mac `make install` needs a Rust toolchain. Decide whether that is acceptable or the team develops in a Linux container.
+
+### Raised while finishing the team setup (2026-10-08)
+
+26. **Independent review of PR #10.** The RatelLink key code (encryption, API keys, audit, CLI) was merged with approvals from @capitanaserdel and @Abbalolo because `critical-reviewers.txt` was empty and `CODEOWNERS` was still commented out. @CaptRaven has not reviewed it. Ask for that review before any real SIM key is imported, using the "RatelLink / critical changes" checklist in [CODE_REVIEW_GUIDELINES.md](CODE_REVIEW_GUIDELINES.md).
+27. **Backup for RatelLink and BSS money.** Both critical backends have one owner and no backup (risk R-08). A second person who can read and change them, and who is not the independent reviewer, is not identified yet.
+28. **Network team and network lead.** Whether @CaptRaven is the network lead the Build Plan describes, and who else is on the network team, is not recorded. `OWNERSHIP_MATRIX.md` still says "Network team (TODO name)" for RatelVoice, RatelOps and RatelCore.
+29. **RatelMeter agent owner (W2-09).** Suggested pairing: @ml-lawarn with @CaptRaven. Not assigned.
+30. **Week 2 capacity.** The Week 2 gate is Oct 9. Several issues had target dates of Oct 7 and Oct 8 and have no work started. Three spikes (W2-05, W2-06, W2-08) are assigned to @CaptRaven, who is also on the network team (risk R-10). Re-plan with the owners.
+31. **GitHub housekeeping for the project lead.** Turn on "Automatically delete head branches"; run `gh auth refresh -s project` before `create_project.sh` or listing the project; run `scripts/github/create_issues.sh` once after reviewing the issue files (it now assigns owners).
 
 ## Information I did not have (TODOs in the files)
 

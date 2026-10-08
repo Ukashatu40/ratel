@@ -5,7 +5,7 @@ real customer data in a ticket, a chat message or this file. If you see one in a
 the project lead (see "If a key is exposed").
 
 - **Last verified:** never, TODO (nobody has followed these steps on core-cp yet)
-- **Owner:** TODO
+- **Owner:** @Ukashatu40 (RatelLink owner)
 - **Runs on:** core-cp. TODO: systemd unit name and unit file (`deploy/core-cp/`)
 
 Decisions behind this page: [ADR 0006](../adr/0006-ki-opc-encryption-at-rest.md) (encryption of Ki

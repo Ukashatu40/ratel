@@ -1,6 +1,13 @@
 # GitHub usernames who MUST approve a critical change (project lead + independent reviewer).
-# Leave empty and the gate only requires two distinct approvals from anyone other than the author.
+# Critical = the paths in critical-paths.txt (RatelLink, RatelBSS: money).
 # If the author is on this list, they are skipped (nobody approves their own PR), and the
 # remaining named reviewers plus the two-approval minimum still apply.
-# TODO: add GitHub username of the project lead
-# TODO: add GitHub username of the independent reviewer
+#
+# So when the project lead writes a critical change: CaptRaven must approve, and one more person
+# (anyone but the author) must approve as well. When anyone else writes one: both names below
+# must approve.
+#
+# Every name here is required. There is no "either of these" form, so do not add a backup
+# reviewer here: add them to CODEOWNERS instead.
+Ukashatu40
+CaptRaven
