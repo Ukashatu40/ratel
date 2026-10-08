@@ -78,7 +78,7 @@ those rules checkable.
 - **Every RatelLink `/v1` route requires a valid API key.** Routes are added to `new_v1_router()` so they are protected by default, and a test fails the build if one is not ([ADR 0007](adr/0007-api-key-verification-and-rotation.md)). Only `/healthz` is open.
 - **No endpoint returns Ki or OPc, and neither the encryption key nor an API key is ever logged, put in an audit record or echoed in an error.** Sensitive fields are `SecretStr`.
 - Customer records and call records are protected personal data. Same access rules for both. [Build Plan]
-- Every API and RatelDesk is reachable only over the WireGuard VPN. Public: RatelPay and the payment webhook only. Verify every webhook signature, rate-limit both. [Build Plan]
+- Every API and RatelDesk is reachable only over the WireGuard VPN. Public: RatelPay and the payment webhook only. Verify every webhook signature, rate-limit both. [Build Plan] **Management decision (2026-10-08): WireGuard VPN is deferred to production. For the lab and pilot, RatelLink binds to `127.0.0.1` and is fronted by a TLS reverse proxy accepting `/v1` from bss-app only. The goal (every internal API behind WireGuard in production) is unchanged. TODO: project lead to confirm.**
 - Credit a payment only after verifying the webhook signature and re-querying the provider. [Build Plan]
 - No line activates until KYC is verified. Exact verification rules are compliance's call. TODO: confirm current NCC SIM registration requirements with compliance before the pilot. [Build Plan]
 - Do not weaken security to make development easier. See [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md).
