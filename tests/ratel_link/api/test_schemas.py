@@ -1,11 +1,10 @@
-import dataclasses
-import json
+"""Request bodies: SimImport accepts only well-formed Ki/OPc and never echoes them."""
 
 import pytest
 from pydantic import SecretStr, ValidationError
 from pydantic_core import to_json
 
-from ratel_link.models import SimImport, SimKeys, check_key_hex, is_imsi
+from ratel_link.api.schemas import SimImport
 from tests.synthetic import (
     SENTINEL_KI,
     SENTINEL_OPC,
@@ -15,6 +14,8 @@ from tests.synthetic import (
 )
 
 HEX_KI = SYNTHETIC_KI_HEX
+
+
 HEX_OPC = SYNTHETIC_OPC_HEX.upper()  # upper case hex is valid too
 
 
@@ -69,33 +70,6 @@ def test_unknown_fields_are_rejected() -> None:
         SimImport.model_validate(
             {"imsi": SYNTHETIC_IMSI, "ki": HEX_KI, "opc": HEX_OPC, "amf": "8000"}
         )
-
-
-def test_is_imsi() -> None:
-    assert is_imsi(SYNTHETIC_IMSI)
-    assert not is_imsi(SYNTHETIC_IMSI + "\n")
-    assert not is_imsi({"$ne": ""})
-    assert not is_imsi(None)
-
-
-def test_check_key_hex_message_has_no_value() -> None:
-    with pytest.raises(ValueError, match="32 hexadecimal") as exc:
-        check_key_hex(SecretStr(SENTINEL_OPC))
-    assert SENTINEL_OPC not in str(exc.value)
-
-
-def test_sim_keys_hide_secrets_and_cannot_be_serialised() -> None:
-    keys = SimKeys(imsi=SYNTHETIC_IMSI, ki=SecretStr(HEX_KI), opc=SecretStr(HEX_OPC))
-    for text in (repr(keys), str(keys), f"{keys}", f"{keys!r}", to_json(keys).decode()):
-        assert HEX_KI not in text
-        assert HEX_OPC not in text
-    assert SYNTHETIC_IMSI not in repr(keys)
-    with pytest.raises(TypeError):
-        json.dumps(dataclasses.asdict(keys))
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        keys.ki = SecretStr("x")  # type: ignore[misc]
-    # Even a plain tuple of the fields keeps the values masked.
-    assert HEX_KI not in repr(dataclasses.astuple(keys))
 
 
 def test_invalid_import_over_http_does_not_echo_the_keys() -> None:

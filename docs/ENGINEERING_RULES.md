@@ -31,6 +31,13 @@ those rules checkable.
 - Contracts return the standard error shape `{"error": {"code", "message"}}` and carry an API key in `Authorization` (`Authorization: Bearer <key>`), one key per calling system, rotated every 90 days. [Build Plan, [ADR 0007](adr/0007-api-key-verification-and-rotation.md)]
 - Until live changes land, nothing in RatelBSS may assume a RatelLink change applies mid-session. It applies at the next attach. [Build Plan]
 
+## Code organisation
+
+- Code lives in layers inside each component: `api` (HTTP), `services` (use cases), `domain` (rules, no I/O), `repositories` (storage), `security` (keys and crypto). Imports flow inward only, with no cycles. Entry points and settings are the only files at a package root. [ADR 0008](adr/0008-code-organisation-inside-components.md)
+- No `utils.py`, `helpers.py` or `misc.py` in a component: name a file for what it holds.
+- Tests mirror the source tree (`tests/<component>/<layer>/test_<module>.py`).
+- `tests/architecture/test_layers.py` fails the build when a layer imports what it may not. Do not weaken it to get green.
+
 ## Database changes and migrations
 
 - Schema changes go through Alembic migrations in `services/app/migrations/`, reviewed like code.

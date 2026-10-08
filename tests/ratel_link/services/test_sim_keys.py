@@ -4,9 +4,9 @@ import json
 import pytest
 from pydantic import SecretStr
 
-from ratel_link.crypto import DecryptionError
-from ratel_link.key_provider import KeyUnavailableError, NoKeyProvider
-from ratel_link.sim_keys import SimKeyStore
+from ratel_link.security.crypto import DecryptionError
+from ratel_link.security.key_provider import KeyUnavailableError, NoKeyProvider
+from ratel_link.services.sim_keys import SimKeyStore
 from tests.ratel_link.fakes import FakeClock, InMemorySimKeyRepository, StaticKeyProvider
 from tests.synthetic import (
     SENTINEL_KI,

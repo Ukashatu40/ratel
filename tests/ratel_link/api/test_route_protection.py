@@ -9,15 +9,18 @@ from pathlib import Path
 from fastapi import APIRouter, FastAPI
 from fastapi.dependencies.models import Dependant
 
-from ratel_link.auth import require_api_key
+from ratel_link.api.dependencies import require_api_key
+from ratel_link.api.router import new_v1_router
 from ratel_link.config import Settings
-from ratel_link.main import create_app, new_v1_router
+from ratel_link.main import create_app
 from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
 from tests.route_walk import effective_routes
 
 # Routes that are public on purpose. /healthz is liveness only and exposes nothing.
 UNPROTECTED_ALLOWLIST = {"/healthz"}
-MAIN = Path(__file__).resolve().parents[2] / "services" / "ratel_link" / "main.py"
+PACKAGE = Path(__file__).resolve().parents[3] / "services" / "ratel_link"
+MAIN = PACKAGE / "main.py"
+ROUTER = PACKAGE / "api" / "router.py"
 
 
 def _requires_key(dependant: Dependant) -> bool:
@@ -113,19 +116,25 @@ def test_the_checker_flags_a_mounted_app() -> None:
     assert any("/v1/static" in p for p in unprotected_routes(app))
 
 
-# --- the wiring in main.py ----------------------------------------------------------------------
+# --- the wiring in api/router.py and main.py ---------------------------------------------------
 
 
-def test_main_builds_the_v1_router_with_the_key_dependency_and_includes_it() -> None:
-    tree = ast.parse(MAIN.read_text())
-    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)]
-    routers = [c for c in calls if getattr(c.func, "id", "") == "APIRouter"]
-    assert len(routers) == 1, "main.py must create exactly one APIRouter"
+def test_the_v1_router_has_the_key_dependency_and_main_includes_it() -> None:
+    router_calls = [n for n in ast.walk(ast.parse(ROUTER.read_text())) if isinstance(n, ast.Call)]
+    routers = [c for c in router_calls if getattr(c.func, "id", "") == "APIRouter"]
+    assert len(routers) == 1, "api/router.py must create exactly one APIRouter"
     kwargs = {k.arg: ast.unparse(k.value) for k in routers[0].keywords}
     assert kwargs["prefix"] == "'/v1'"
     assert "Depends(require_api_key)" in kwargs["dependencies"]
     assert kwargs["route_class"] == "AuthFirstRoute"
-    includes = [ast.unparse(c) for c in calls if getattr(c.func, "attr", "") == "include_router"]
+
+    main_calls = [n for n in ast.walk(ast.parse(MAIN.read_text())) if isinstance(n, ast.Call)]
+    assert not [c for c in main_calls if getattr(c.func, "id", "") == "APIRouter"], (
+        "main.py must not build its own router: routes go on api/router.new_v1_router()"
+    )
+    includes = [
+        ast.unparse(c) for c in main_calls if getattr(c.func, "attr", "") == "include_router"
+    ]
     assert includes == ["app.include_router(new_v1_router())"]
 
 

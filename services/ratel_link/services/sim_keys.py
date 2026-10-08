@@ -12,10 +12,11 @@ from datetime import datetime
 from pydantic import SecretStr
 
 from common.timeutil import utc_now
-from ratel_link.crypto import Envelope, FieldName, decrypt_field, encrypt_field
-from ratel_link.key_provider import KeyProvider
-from ratel_link.models import SimKeyDocument, SimKeys, check_key_hex, is_imsi
-from ratel_link.repositories import SimKeyRepository
+from ratel_link.domain.identifiers import is_imsi
+from ratel_link.domain.sim_keys import Envelope, SimKeyDocument, SimKeys, check_key_hex
+from ratel_link.repositories.ports import SimKeyRepository
+from ratel_link.security.crypto import FieldName, decrypt_field, encrypt_field
+from ratel_link.security.key_provider import KeyProvider
 
 
 def _require_imsi(imsi: str) -> None:

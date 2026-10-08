@@ -5,15 +5,15 @@ from typing import Any
 
 import pytest
 
-from ratel_link.crypto import (
+from ratel_link.domain.sim_keys import Envelope
+from ratel_link.security.crypto import (
     ALGORITHM,
     NONCE_BYTES,
     DecryptionError,
-    Envelope,
     decrypt_field,
     encrypt_field,
 )
-from ratel_link.key_provider import KEY_BYTES, KeyUnavailableError
+from ratel_link.security.key_provider import KEY_BYTES, KeyUnavailableError
 from tests.ratel_link.fakes import StaticKeyProvider
 from tests.synthetic import SENTINEL_KI, SENTINEL_OPC, SYNTHETIC_IMSI, SYNTHETIC_IMSI_2
 

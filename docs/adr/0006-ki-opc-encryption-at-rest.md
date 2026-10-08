@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-07
 - **Deciders:** Project lead
+- **Module paths** are those after [ADR 0008](0008-code-organisation-inside-components.md) (the code was first written as flat files).
 - **Related:** Build Plan "RatelLink" (`sim_key`: "ki and opc encrypted at rest, with the key held outside the database") and "Engineering rules" (SIM keys); [ADR 0007](0007-api-key-verification-and-rotation.md); [DECISIONS_PENDING.md](../DECISIONS_PENDING.md); issue W2-01; [runbook](../runbooks/ratel-link.md)
 
 ## Context
@@ -23,8 +24,8 @@ Two facts shape the decision:
 ## Decision
 
 1. Ki and OPc are encrypted with **AES-256-GCM** before they are persisted. Encryption and
-   decryption happen only inside RatelLink, in `services/ratel_link/crypto.py`, reached through
-   `SimKeyStore` (`sim_keys.py`). Decryption is for the activation path only.
+   decryption happen only inside RatelLink, in `services/ratel_link/security/crypto.py`, reached through
+   `SimKeyStore` (`services/sim_keys.py`). Decryption is for the activation path only.
 2. The encryption key is **not in MongoDB**. It is supplied as a file on core-cp (below).
 3. No endpoint returns Ki or OPc. They never appear in logs, audit records, tickets, chat, test
    fixtures, PostgreSQL, or unencrypted external backups of `ratel_link`.
@@ -65,7 +66,7 @@ class KeyProvider(Protocol):
     def get_key(self, kid: str) -> bytes: ...  # raises KeyUnavailableError
 ```
 
-All crypto code depends on this interface only (`services/ratel_link/key_provider.py`). The v1
+All crypto code depends on this interface only (`services/ratel_link/security/key_provider.py`). The v1
 implementation is `FileKeyProvider`:
 
 - `RATEL_LINK_KEY_FILE` names a file holding base64 text of 32 random bytes. `RATEL_LINK_KEY_ID`
@@ -83,7 +84,7 @@ implementation is `FileKeyProvider`:
 ### Assumption to confirm
 
 The contract leaves the format of `ki` and `opc` as `TODO(contract)`. The code accepts exactly
-**32 hexadecimal characters (128 bits)** for each, defined in one place (`models.py`). This is an
+**32 hexadecimal characters (128 bits)** for each, defined in one place (`domain/sim_keys.py`). This is an
 assumption, flagged in [DECISIONS_PENDING.md](../DECISIONS_PENDING.md) for the project lead and the
 network team. The contract is not changed for it. `amf` is not stored (another open contract TODO).
 

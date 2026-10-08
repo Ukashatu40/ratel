@@ -11,8 +11,10 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from common.timeutil import utc_now
-from ratel_link.key_provider import KEY_BYTES, KeyUnavailableError
-from ratel_link.models import ApiKeyRecord, AuditEntry, SimKeyDocument
+from ratel_link.domain.api_keys import ApiKeyRecord
+from ratel_link.domain.audit import AuditEntry
+from ratel_link.domain.sim_keys import SimKeyDocument
+from ratel_link.security.key_provider import KEY_BYTES, KeyUnavailableError
 
 
 class StaticKeyProvider:
