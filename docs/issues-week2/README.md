@@ -11,16 +11,19 @@ Seeded strictly from the Build Plan's Week 2 software objectives:
 
 **Week 2 gate:** a real SIM, created through RatelLink, attaches, browses and registers for calls.
 
-Owners and reviewers are **TODO**: the project lead assigns them after assessments. "Suggested skill
-level" describes the kind of work, not a person. Items that depend on Week 1 work say
-"TODO confirm" because the status of Week 1 was not visible when these were written.
+Owners and reviewers were assigned by the project lead on 2026-10-08 (see
+[../OWNERSHIP_MATRIX.md](../OWNERSHIP_MATRIX.md)). "Suggested skill level" describes the kind of work.
+W2-09 still has no named owner. Items that depend on Week 1 work say "TODO confirm" because the
+status of Week 1 was not visible when these were written. Several target dates (Oct 7 and Oct 8)
+have already passed: re-plan against the Week 2 gate on Oct 9.
 
 The Ki/OPc encryption ([ADR 0006](../adr/0006-ki-opc-encryption-at-rest.md)) and API-key authentication
 ([ADR 0007](../adr/0007-api-key-verification-and-rotation.md)) are decided and built in the security PR,
 so W2-01 to W2-03 build on them instead of waiting for those decisions.
 
 `scripts/github/create_issues.sh` turns each `W2-*.md` file into a GitHub issue (title from the
-first line, labels from the `Labels:` line, the rest as the body). Review them first.
+first line, labels from the `Labels:` line, assignee from `**Owner:** @login` when there is one, the
+rest as the body). Review them first. Run it once: running it again creates duplicates.
 
 | File | Workstream | Risk | Reviewers |
 | ---- | ---------- | ---- | --------- |

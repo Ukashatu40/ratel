@@ -1,7 +1,7 @@
 # Contracts: reconcile with the merged contract, close TODOs, keep the mock current
 Labels: type:documentation, area:contracts, priority:p1, risk:high
 
-**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** TODO | **Reviewer:** TODO (controlled review: project lead, network lead consulted)
+**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** @Ukashatu40 | **Reviewer:** @CaptRaven (controlled review: project lead, network lead consulted)
 **Source:** Build Plan, "The two contracts to freeze on day one", week one gate ("`openapi.yaml` is merged"), "Where a spec and a contract disagree, the contract wins".
 **TODO confirm:** whether a contract was merged in Week 1. `contracts/openapi.yaml` in this repository is a draft created at setup from the Build Plan text. Reconcile with whatever was merged; the merged one wins, do not keep two.
 

@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("gate", ROOT / "scripts/ci/critical_review_gate.py")
 assert spec and spec.loader
@@ -76,7 +78,10 @@ def test_money_module_is_critical() -> None:
     assert not run(["services/app/bss_money/rating.py"], [review("a")])[0]
 
 
-def test_main_wires_api_calls(tmp_path: Path) -> None:
+def test_main_wires_api_calls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Independent of the repository's real reviewer list, which names real people.
+    lists = {"critical-paths.txt": ["services/ratel_link/"], "critical-reviewers.txt": []}
+    monkeypatch.setattr(gate, "read_list", lambda path: lists[path.name])
     event = tmp_path / "event.json"
     event.write_text(json.dumps({"pull_request": {"number": 7}}))
 

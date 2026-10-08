@@ -1,7 +1,7 @@
 # RatelLink: SIM key store and POST /v1/sims
 Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 
-**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** TODO | **Reviewers:** TODO + TODO (two required)
+**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
 **Source:** Build Plan, Contract 1, RatelLink spec ("What it owns", "Data it keeps", "Rules"), Week 1 RatelLink bullets.
 
 ## Objective

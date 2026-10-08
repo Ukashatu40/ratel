@@ -12,7 +12,7 @@ RatelLink, attaches, browses and registers for calls.* See [docs/ROADMAP.md](doc
 ## Authoritative documents
 
 1. The Ratel Plus Subscriber Platform PRD (product behavior). Not in this repo yet, see [docs/source/README.md](docs/source/README.md).
-2. [docs/source/Ratelplus_Build_Plan.pdf](docs/source/Ratelplus_Build_Plan.pdf) (the how). Where the PRD and the Build Plan disagree about the product, the PRD wins.
+2. The Build Plan PDF (the how). Not in Git because the repository is public: ask the project lead, see [docs/source/README.md](docs/source/README.md). Where the PRD and the Build Plan disagree about the product, the PRD wins.
 3. [contracts/openapi.yaml](contracts/openapi.yaml) (the two cross-system contracts). Where a component spec and the contract disagree, the contract wins.
 4. [docs/ENGINEERING_RULES.md](docs/ENGINEERING_RULES.md) (rules that apply to every change).
 

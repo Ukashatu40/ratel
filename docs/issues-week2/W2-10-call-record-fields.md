@@ -1,7 +1,7 @@
 # Agree the call record fields with the network team
 Labels: type:documentation, area:ratel-meter, area:network, priority:p1, risk:high
 
-**Week:** 2 | **Target date:** TODO (by Oct 9) | **Owner:** TODO | **Reviewer:** TODO + network lead
+**Week:** 2 | **Target date:** TODO (by Oct 9) | **Owner:** @ml-lawarn | **Reviewers:** @Ukashatu40 + @CaptRaven (network lead)
 **Source:** Build Plan, RatelMeter spec "How calls work"; week two RatelVoice column ("call record fields agreed with RatelMeter").
 
 ## Objective

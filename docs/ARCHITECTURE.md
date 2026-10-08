@@ -25,8 +25,8 @@ links an ADR.
 | RatelDesk | Staff web app | React, TypeScript | bss-app | Software team |
 | RatelPay | Customer top-up page, light enough for 3G | Small page served by RatelBSS | bss-app, public through a reverse proxy | Software team |
 
-Lab machines (Build Plan): core-cp `192.168.1.184` (MME, HSS, SMF, PCRF, MongoDB; RatelLink),
-core-up `192.168.1.162` (SGW-U, UPF; RatelMeter agent in data mode). `voice`, `bss-app` and `ops`
+Lab machines (Build Plan; addresses are in the Build Plan, not in this public repository): core-cp
+(MME, HSS, SMF, PCRF, MongoDB; RatelLink), core-up (SGW-U, UPF; RatelMeter agent in data mode). `voice`, `bss-app` and `ops`
 are not created yet. TODO: confirm production host details.
 
 ## The two touch points

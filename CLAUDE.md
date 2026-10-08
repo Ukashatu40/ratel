@@ -5,7 +5,8 @@ this code. The developer who asks you is, and they answer for every line.
 
 ## Read first, every session
 
-1. `docs/source/Ratelplus_Build_Plan.pdf` is the primary technical source of truth. Read the parts
+1. `docs/source/Ratelplus_Build_Plan.pdf` is the primary technical source of truth. It is kept out of
+   Git (the repository is public): ask the project lead for a copy, see `docs/source/README.md`. Read the parts
    relevant to your task before changing anything. The PRD wins on product behavior (it is not in
    the repo yet, see `docs/source/README.md`).
 2. `contracts/openapi.yaml` is the contract. Where a component spec and the contract disagree, the
@@ -46,7 +47,7 @@ this code. The developer who asks you is, and they answer for every line.
 - Diagnose from actual error output. Say plainly what you are unsure about in generated code.
 - **Ask before** deleting files, rewriting history, changing migrations that already merged, changing CI or branch rules, adding dependencies, or anything destructive.
 - **Never** touch production systems, production databases or real SIM data. Never bypass review, CI or the PR flow. Never disable a test or check to make something pass.
-- Do not assign owners or reviewers, and do not invent GitHub usernames. Use `TODO`.
+- Owners and reviewers are set by the project lead (`.github/CODEOWNERS`, `docs/OWNERSHIP_MATRIX.md`). Do not assign or change them, and do not invent GitHub usernames. Use `TODO` where none is recorded.
 
 ## Commands
 

@@ -54,5 +54,9 @@ cassettes/
 Thumbs.db
 *.swp
 
+# Source documents with internal details (the Build Plan) are shared privately, not in Git.
+# See docs/source/README.md.
+docs/source/*.pdf
+
 # Agent spool files (written on core-up and voice, never committed)
 spool/

@@ -1,7 +1,7 @@
 # RatelLink: line status, assignments and audit entries on writes
 Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 
-**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** TODO | **Reviewers:** TODO + TODO (two required)
+**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
 **Source:** Build Plan, Contract 1 (`GET /v1/lines/{imsi}`, `GET /v1/assignments`), RatelLink spec ("Interfaces", "Rules"), Access rule.
 
 ## Objective
