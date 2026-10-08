@@ -1,7 +1,7 @@
 # Real-SIM path: first attach uses a line created through RatelLink (software-owned part)
 Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 
-**Week:** 2 | **Target date:** Oct 9 | **Owner:** TODO | **Reviewers:** TODO + TODO (two required)
+**Week:** 2 | **Target date:** Oct 9 | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
 **Source:** Build Plan, Week 2 gate; RatelLink "Done when"; week one detail ("The first real-SIM attach ... must use a line created through this API, not by hand. That attach is RatelLink's acceptance test.").
 
 ## Objective

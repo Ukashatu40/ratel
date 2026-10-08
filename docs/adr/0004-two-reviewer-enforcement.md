@@ -29,8 +29,11 @@ checks out the base branch so a PR cannot weaken the gate in the same PR.
 ## Consequences
 
 One small script to maintain (unit-tested). Governance files are in the critical review set via
-CODEOWNERS (project lead). The check's behavior on `pull_request_review` events was not tested
-against live GitHub when written; verify on the first PR.
+CODEOWNERS (project lead). The check's behavior on `pull_request_review` events was verified on
+PR #10 (2026-10-07): it failed after the first approval and passed after the second without a
+re-push. That PR also showed a gap: with `critical-reviewers.txt` empty the gate accepts any two
+approvers, so the required reviewers must stay listed (`tests/tooling/test_governance_files.py`
+checks it).
 
 ## Security implications
 

@@ -1,7 +1,7 @@
 # RatelMeter data agent running on core-up
 Labels: type:feature, area:ratel-meter, priority:p1, risk:high
 
-**Week:** 2 | **Target date:** TODO (running by Oct 9) | **Owner:** TODO | **Reviewer:** TODO
+**Week:** 2 | **Target date:** TODO (running by Oct 9) | **Owner:** TODO (suggested: @ml-lawarn paired with @CaptRaven) | **Reviewer:** @CaptRaven + @Ukashatu40
 **Source:** Build Plan, RatelMeter spec; week two software column ("RatelMeter's data agent running on core-up"); week 3 completes the API and `/v1/usage`.
 
 ## Objective
