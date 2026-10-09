@@ -25,6 +25,10 @@ links an ADR.
 | RatelDesk | Staff web app | React, TypeScript | bss-app | Software team |
 | RatelPay | Customer top-up page, light enough for 3G | Small page served by RatelBSS | bss-app, public through a reverse proxy | Software team |
 
+Lab machines: core-cp `102.214.241.42` (MME, HSS, SMF, PCRF, MongoDB; RatelLink),
+core-up `102.214.241.43` (SGW-U, UPF; RatelMeter agent in data mode),
+voice `102.214.241.44` (Kamailio IMS, rtpengine; RatelMeter agent in call mode).
+`bss-app` and `ops` VMs are not yet confirmed. TODO: confirm bss-app and ops host details before Week 3.
 Lab machines (Build Plan; addresses are in the Build Plan, not in this public repository): core-cp
 (MME, HSS, SMF, PCRF, MongoDB; RatelLink), core-up (SGW-U, UPF; RatelMeter agent in data mode). `voice`, `bss-app` and `ops`
 are not created yet. TODO: confirm production host details.
@@ -67,6 +71,12 @@ be able to take RatelCore down. Only RatelLink touches MongoDB, over `127.0.0.1`
 (config validation in `services/ratel_link/config.py` rejects any other host). Access rules: every
 API and RatelDesk is reachable only over the WireGuard VPN. Public by design: RatelPay and the
 payment gateway's webhook. Expose only those paths, verify every webhook signature, rate-limit both.
+
+> **Note (management decision, 2026-10-08):** The WireGuard VPN is deferred to the production
+> phase. RatelLink binds to `127.0.0.1` and is fronted by a TLS reverse proxy that accepts `/v1`
+> only from bss-app for the lab and pilot. The intent (every API and RatelDesk behind WireGuard) is
+> unchanged for production. TODO: project lead to confirm the replacement access-control design
+> before the pilot.
 
 ## Deployables and repository layout
 
