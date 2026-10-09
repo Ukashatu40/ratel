@@ -6,10 +6,10 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
-from ratel_link.auth import KeyPolicy, create_system
 from ratel_link.config import Settings
+from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.main import create_app
-from ratel_link.models import ApiKeyRecord
+from ratel_link.services.api_key_admin import KeyPolicy, create_system
 from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
 
 

@@ -1,7 +1,7 @@
 # Spike: live changes, written up by the end of Week 2
 Labels: type:investigation, area:ratel-link, priority:p1, risk:high
 
-**Week:** 2 | **Target date:** Oct 9 | **Owner:** TODO | **Reviewer:** TODO
+**Week:** 2 | **Target date:** Oct 9 | **Owner:** @CaptRaven | **Reviewer:** @Ukashatu40
 **Source:** Build Plan, RatelLink spec "Live changes" (PRD CHG-6, P1).
 
 ## Objective

@@ -1,7 +1,7 @@
 # RatelBSS lines: run the line flow against the real RatelLink
 Labels: type:feature, area:bss-lines, priority:p1, risk:high
 
-**Week:** 2 | **Target date:** TODO (by Oct 9) | **Owner:** TODO | **Reviewer:** TODO
+**Week:** 2 | **Target date:** TODO (by Oct 9) | **Owner:** @Abbalolo | **Reviewer:** @Ukashatu40
 **Source:** Build Plan, RatelBSS: lines spec "Done when"; week one "line flow ... against a mock of RatelLink"; week two "RatelBSS's line flow calling the real RatelLink".
 **TODO confirm:** whether the Week 1 line flow against the mock (customer, SIM, number, plan, activate) exists. If not, it is a prerequisite.
 

@@ -29,6 +29,9 @@ Lab machines: core-cp `102.214.241.42` (MME, HSS, SMF, PCRF, MongoDB; RatelLink)
 core-up `102.214.241.43` (SGW-U, UPF; RatelMeter agent in data mode),
 voice `102.214.241.44` (Kamailio IMS, rtpengine; RatelMeter agent in call mode).
 `bss-app` and `ops` VMs are not yet confirmed. TODO: confirm bss-app and ops host details before Week 3.
+Lab machines (Build Plan; addresses are in the Build Plan, not in this public repository): core-cp
+(MME, HSS, SMF, PCRF, MongoDB; RatelLink), core-up (SGW-U, UPF; RatelMeter agent in data mode). `voice`, `bss-app` and `ops`
+are not created yet. TODO: confirm production host details.
 
 ## The two touch points
 
@@ -86,6 +89,12 @@ payment gateway's webhook. Expose only those paths, verify every webhook signatu
 `services/common/` is a small shared library (error shape, JSON logging with redaction, UTC time,
 kobo type). It is a library, not a service. See [ADR 0003](adr/0003-shared-common-package.md).
 Repository layout: [README](../README.md). Why it differs slightly from the example tree: [ADR 0001](adr/0001-repository-layout.md).
+
+**Inside a component**, code is organised in layers with one-way imports: `api`, `services`,
+`domain`, `repositories`, and for RatelLink also `security`. RatelLink has it today; `app` modules,
+`meter_agent` and the front ends follow the same vocabulary when they get code. The rules, the
+structure per component and where each kind of code goes are in
+[ADR 0008](adr/0008-code-organisation-inside-components.md), enforced by `tests/architecture/test_layers.py`.
 
 ## Component responsibilities
 

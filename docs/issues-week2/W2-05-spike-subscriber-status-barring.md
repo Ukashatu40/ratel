@@ -1,7 +1,7 @@
 # Spike: does Open5GS v2.8.0 enforce subscriber_status barring?
 Labels: type:investigation, area:ratel-link, priority:p1, risk:high
 
-**Week:** 2 (carried from Week 1) | **Target date:** TODO (by Oct 7) | **Owner:** TODO | **Reviewer:** TODO
+**Week:** 2 (carried from Week 1) | **Target date:** TODO (by Oct 7) | **Owner:** @CaptRaven | **Reviewer:** @Ukashatu40
 **Source:** Build Plan, Contract 1 "Deactivation is delete and rewrite, for now"; RatelLink spec "Data it keeps"; Week 1 RatelLink bullets.
 **TODO confirm:** this was a Week 1 task. If the answer is already written down, link it and close this issue.
 

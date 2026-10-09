@@ -7,9 +7,11 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
-from ratel_link.audit import FORBIDDEN_KEYS, AuditContentError, AuditLog
-from ratel_link.crypto import encrypt_field
-from ratel_link.repositories import AuditLogRepository, MongoAuditLogRepository
+from ratel_link.domain.audit import FORBIDDEN_KEYS, AuditContentError
+from ratel_link.repositories.mongo import MongoAuditLogRepository
+from ratel_link.repositories.ports import AuditLogRepository
+from ratel_link.security.crypto import encrypt_field
+from ratel_link.services.audit_log import AuditLog
 from tests.ratel_link.fakes import (
     FakeClock,
     InMemoryAuditLogRepository,
@@ -22,7 +24,7 @@ from tests.synthetic import (
     SYNTHETIC_IMSI,
 )
 
-SERVICES = Path(__file__).resolve().parents[2] / "services"
+PACKAGE = Path(__file__).resolve().parents[3] / "services" / "ratel_link"
 
 
 def _log() -> tuple[AuditLog, InMemoryAuditLogRepository, FakeClock]:
@@ -168,8 +170,13 @@ def test_the_audit_log_class_offers_only_append() -> None:
 
 
 def test_authentication_code_never_touches_the_audit_log() -> None:
-    tree = ast.parse((SERVICES / "ratel_link" / "auth.py").read_text())
-    imported = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module} | {
-        a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names
-    }
-    assert "ratel_link.audit" not in imported
+    for relative in (
+        "services/authentication.py",
+        "api/dependencies.py",
+        "services/api_key_admin.py",
+    ):
+        tree = ast.parse((PACKAGE / relative).read_text())
+        imported = {
+            n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module
+        } | {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+        assert not {m for m in imported if "audit" in m}, f"{relative} imports the audit log"
