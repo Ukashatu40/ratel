@@ -46,9 +46,11 @@ Notes:
 TODO (see [DECISIONS_PENDING.md](DECISIONS_PENDING.md)): whether BSS Money reads RatelMeter data
 through the HTTP contract or an in-process interface, since both live in one process on bss-app.
 
-Inside `ratel_link` the direction is one way: `config` <- `key_provider` <- `crypto` <- `models` <-
-`repositories` <- `sim_keys`, `auth` and `audit` <- `main` and `admin_cli`. Production code never
-imports `tests/` (tested).
+Inside a component the direction is one way too, by layer ([ADR 0008](adr/0008-code-organisation-inside-components.md)).
+For `ratel_link`: `api -> services -> (domain, security, repositories.ports)`, `repositories.mongo -> domain`,
+`security -> domain`, and `main` / `admin_cli` wire everything. `domain` imports no other layer,
+no framework, no driver. Services never import `repositories.mongo`. No import cycles anywhere.
+Production code never imports `tests/`. All of this is tested (`tests/architecture/`).
 
 ## Third-party dependencies
 

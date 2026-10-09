@@ -16,12 +16,13 @@ import base64
 import binascii
 import secrets
 from collections.abc import Mapping
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from ratel_link.key_provider import KEY_BYTES, KeyProvider, KeyUnavailableError
+from ratel_link.domain.sim_keys import Envelope
+from ratel_link.security.key_provider import KEY_BYTES, KeyProvider, KeyUnavailableError
 
 ALGORITHM = "AES-256-GCM"
 ENVELOPE_VERSION = 1
@@ -30,14 +31,6 @@ _TAG_BYTES = 16
 _AAD_PREFIX = b"ratel-link|sim_key|v1|"
 
 FieldName = Literal["ki", "opc"]
-
-
-class Envelope(TypedDict):
-    v: int
-    alg: str
-    kid: str
-    nonce: str
-    ct: str
 
 
 class DecryptionError(Exception):

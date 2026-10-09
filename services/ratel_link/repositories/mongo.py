@@ -1,62 +1,34 @@
-"""RatelLink's MongoDB access: one Protocol per collection, plus the Mongo implementation.
+"""RatelLink's MongoDB access: the implementations of repositories/ports.py.
 
-Only this module talks to pymongo for RatelLink's own `ratel_link` database. Domain code
-(`sim_keys.py`, `auth.py`, `audit.py`) depends on the Protocols, so tests use in-memory fakes
-(tests/ratel_link/fakes.py) and the real classes are exercised by integration tests.
+Only this module talks to pymongo for RatelLink's own `ratel_link` database. Services depend on
+the ports, so tests use in-memory fakes and these classes are covered by integration tests.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol
+from typing import Any
 
 from pymongo import ASCENDING, MongoClient
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from ratel_link.config import Settings
-from ratel_link.models import ApiKeyRecord, AuditEntry, SimKeyDocument
+from ratel_link.domain.api_keys import ApiKeyRecord
+from ratel_link.domain.audit import AuditEntry
+from ratel_link.domain.sim_keys import SimKeyDocument
 
 SIM_KEY = "sim_key"
+
+
 API_KEY = "api_key"
+
+
 AUDIT_LOG = "audit_log"
+
 
 # Collection -> field that must be unique. Created by `admin_cli init-db`, checked at startup.
 UNIQUE_INDEXES: dict[str, str] = {SIM_KEY: "imsi", API_KEY: "api_key_id"}
-
-
-class SimKeyRepository(Protocol):
-    def insert_if_absent(self, document: SimKeyDocument) -> bool:
-        """Store the document unless its IMSI exists. True if stored, False if already there."""
-        ...
-
-    def get(self, imsi: str) -> SimKeyDocument | None: ...
-
-
-class ApiKeyRepository(Protocol):
-    """Calling systems and their keys. Systems are never deleted: audit records cite them."""
-
-    def get(self, api_key_id: str) -> ApiKeyRecord | None: ...
-
-    def list_all(self) -> list[ApiKeyRecord]: ...
-
-    def insert(self, record: ApiKeyRecord) -> bool:
-        """False if a system with this id already exists."""
-        ...
-
-    def replace(self, record: ApiKeyRecord) -> None:
-        """Overwrite an existing system. Raises KeyError if it does not exist.
-
-        Not safe against two operators changing the same system at the same moment. Key
-        administration is a rare, single-operator task (admin_cli).
-        """
-        ...
-
-
-class AuditLogRepository(Protocol):
-    """Append-only: insert is the only operation. There is deliberately no update or delete."""
-
-    def insert(self, entry: AuditEntry) -> None: ...
 
 
 def open_database(settings: Settings) -> Database[Any]:

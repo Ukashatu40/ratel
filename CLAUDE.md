@@ -24,6 +24,7 @@ this code. The developer who asks you is, and they answer for every line.
 - RatelBSS never talks to the network or MongoDB. It uses RatelLink and RatelMeter contracts only.
   Only RatelLink writes to RatelCore's subscriber database. Tests in `tests/architecture/` enforce this.
 - Dependencies flow one way (see `docs/DEPENDENCIES.md`). No circular imports.
+- Put code in the layer it belongs to (`docs/adr/0008-code-organisation-inside-components.md`): `api`, `services`, `domain`, `repositories`, `security`. No `utils.py` or `helpers.py`, nothing but entry points and settings at a package root, no file dumped in one folder. `tests/architecture/test_layers.py` enforces it. Tests mirror the source tree.
 - Money is whole kobo (`int`), never float. The ledger is append-only. Time is UTC, epoch seconds on the wire.
 - State changes go through the state machine. State-changing operations are idempotent.
 - API change means `contracts/openapi.yaml` (and `contracts/not_implemented.txt`) change in the same commit.

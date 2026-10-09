@@ -28,17 +28,13 @@ from pymongo.errors import PyMongoError
 
 from common.logging import configure_logging
 from common.timeutil import utc_now
-from ratel_link import auth
-from ratel_link.auth import ApiKeyError, KeyPolicy
 from ratel_link.config import Settings
-from ratel_link.key_provider import write_new_key_file
-from ratel_link.models import ApiKeyGeneration
-from ratel_link.repositories import (
-    ApiKeyRepository,
-    MongoApiKeyRepository,
-    ensure_indexes,
-    open_database,
-)
+from ratel_link.domain.api_keys import ApiKeyGeneration
+from ratel_link.repositories.mongo import MongoApiKeyRepository, ensure_indexes, open_database
+from ratel_link.repositories.ports import ApiKeyRepository
+from ratel_link.security.key_provider import write_new_key_file
+from ratel_link.services import api_key_admin
+from ratel_link.services.api_key_admin import ApiKeyError, KeyPolicy
 
 
 @dataclass(frozen=True)
@@ -108,18 +104,18 @@ def run(args: argparse.Namespace, svc: Services) -> int:
             for name in svc.create_indexes():
                 svc.out.write(f"index ready: {name}\n")
         elif args.action == "create":
-            token = auth.create_system(svc.api_keys, args.id, args.name, now, svc.policy)
+            token = api_key_admin.create_system(svc.api_keys, args.id, args.name, now, svc.policy)
             _show_new_key(svc, token, args.id, 1)
         elif args.action == "rotate":
-            token = auth.rotate(svc.api_keys, args.id, now, svc.policy)
+            token = api_key_admin.rotate(svc.api_keys, args.id, now, svc.policy)
             record = svc.api_keys.get(args.id)
             generation = max(g.generation for g in record.generations) if record else 0
             _show_new_key(svc, token, args.id, generation)
         elif args.action == "revoke":
-            auth.revoke(svc.api_keys, args.id, args.generation, now)
+            api_key_admin.revoke(svc.api_keys, args.id, args.generation, now)
             svc.out.write(f"revoked {args.id} generation {args.generation}\n")
         elif args.action == "disable":
-            auth.disable(svc.api_keys, args.id)
+            api_key_admin.disable(svc.api_keys, args.id)
             svc.out.write(f"disabled {args.id}\n")
         elif args.action == "list":
             for record in svc.api_keys.list_all():
@@ -131,7 +127,7 @@ def run(args: argparse.Namespace, svc: Services) -> int:
                         f"revoked {_when(g.revoked_at)}\n"
                     )
         elif args.action == "check-expiry":
-            expiring = auth.log_expiring(svc.api_keys, now, svc.policy)
+            expiring = api_key_admin.log_expiring(svc.api_keys, now, svc.policy)
             svc.err.write(f"{len(expiring)} key(s) expire within {svc.policy.warn_days} days\n")
     except ApiKeyError as exc:
         svc.err.write(f"error: {exc}\n")

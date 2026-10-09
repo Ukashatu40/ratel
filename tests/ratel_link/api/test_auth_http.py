@@ -20,19 +20,14 @@ from pydantic import BaseModel
 
 from common.errors import ApiError
 from common.logging import JsonFormatter
-from ratel_link.auth import (
-    ApiPrincipal,
-    KeyPolicy,
-    create_system,
-    disable,
-    hash_secret,
-    require_api_key,
-    revoke,
-    rotate,
-)
+from ratel_link.api.dependencies import require_api_key
+from ratel_link.api.router import new_v1_router
 from ratel_link.config import Settings
-from ratel_link.main import create_app, new_v1_router
-from ratel_link.models import ApiKeyGeneration, ApiKeyRecord
+from ratel_link.domain.api_keys import ApiKeyGeneration, ApiKeyRecord
+from ratel_link.main import create_app
+from ratel_link.security.api_key_tokens import hash_secret
+from ratel_link.services.api_key_admin import KeyPolicy, create_system, disable, revoke, rotate
+from ratel_link.services.authentication import ApiPrincipal
 from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
 from tests.synthetic import (
     SENTINEL_API_KEY,
