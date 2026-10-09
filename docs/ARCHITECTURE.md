@@ -80,6 +80,12 @@ payment gateway's webhook. Expose only those paths, verify every webhook signatu
 kobo type). It is a library, not a service. See [ADR 0003](adr/0003-shared-common-package.md).
 Repository layout: [README](../README.md). Why it differs slightly from the example tree: [ADR 0001](adr/0001-repository-layout.md).
 
+**Inside a component**, code is organised in layers with one-way imports: `api`, `services`,
+`domain`, `repositories`, and for RatelLink also `security`. RatelLink has it today; `app` modules,
+`meter_agent` and the front ends follow the same vocabulary when they get code. The rules, the
+structure per component and where each kind of code goes are in
+[ADR 0008](adr/0008-code-organisation-inside-components.md), enforced by `tests/architecture/test_layers.py`.
+
 ## Component responsibilities
 
 **RatelLink.** Owns the SIM key store and every write to the `subscribers` collection in the

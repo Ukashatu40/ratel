@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import FastAPI
 from pymongo.database import Database
 from starlette.concurrency import run_in_threadpool
 
@@ -14,15 +14,12 @@ from common.errors import install_error_handlers
 from common.http import install_request_context
 from common.logging import configure_logging, log_event
 from common.timeutil import utc_now
-from ratel_link.auth import AuthFirstRoute, KeyPolicy, log_expiring, require_api_key
+from ratel_link.api.router import new_v1_router
 from ratel_link.config import Settings
-from ratel_link.key_provider import build_key_provider
-from ratel_link.repositories import (
-    ApiKeyRepository,
-    MongoApiKeyRepository,
-    missing_indexes,
-    open_database,
-)
+from ratel_link.repositories.mongo import MongoApiKeyRepository, missing_indexes, open_database
+from ratel_link.repositories.ports import ApiKeyRepository
+from ratel_link.security.key_provider import build_key_provider
+from ratel_link.services.api_key_admin import KeyPolicy, log_expiring
 
 log = logging.getLogger("ratel.link.startup")
 
@@ -44,14 +41,6 @@ def _startup_checks(
     except Exception as exc:
         # MongoDB may not be up yet. The service still starts. Type only: messages can carry hosts.
         log_event(log, logging.ERROR, "startup.checks.failed", exc_type=type(exc).__name__)
-
-
-def new_v1_router() -> APIRouter:
-    """The router for every /v1 route. Add Contract 1 routes here (/v1/sims,
-    /v1/lines/{imsi}/..., /v1/assignments) and they require a valid API key by default."""
-    return APIRouter(
-        prefix="/v1", dependencies=[Depends(require_api_key)], route_class=AuthFirstRoute
-    )
 
 
 def create_app(

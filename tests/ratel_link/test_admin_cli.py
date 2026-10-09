@@ -9,12 +9,9 @@ import pytest
 
 from ratel_link import admin_cli
 from ratel_link.admin_cli import Services, build_parser, main, run
-from ratel_link.auth import (
-    ApiPrincipal,
-    KeyPolicy,
-    authenticate,
-)
-from ratel_link.key_provider import read_key_file
+from ratel_link.security.key_provider import read_key_file
+from ratel_link.services.api_key_admin import KeyPolicy
+from ratel_link.services.authentication import ApiPrincipal, authenticate
 from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
 
 TOKEN_RE = re.compile(r"rlk_[a-z][a-z0-9-]{2,31}\.[A-Za-z0-9_-]{43}")

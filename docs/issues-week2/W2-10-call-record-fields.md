@@ -2,6 +2,7 @@
 Labels: type:documentation, area:ratel-meter, area:network, priority:p1, risk:high
 
 **Week:** 2 | **Target date:** 2026-10-14 (draft 2026-10-12) | **Owner:** @ml-lawarn | **Reviewers:** @Ukashatu40 + @CaptRaven (network lead)
+**Week:** 2 | **Target date:** TODO (by Oct 9) | **Owner:** @ml-lawarn | **Reviewers:** @Ukashatu40 + @CaptRaven (network lead)
 **Source:** Build Plan, RatelMeter spec "How calls work"; week two RatelVoice column ("call record fields agreed with RatelMeter").
 
 ## Re-planned 2026-10-08

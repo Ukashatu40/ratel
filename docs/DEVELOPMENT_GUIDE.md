@@ -74,6 +74,7 @@ needs a Rust toolchain, or run the checks in a Linux container (Python 3.12).
 - Money: `int` kobo, `common.money.Kobo`. Time: UTC, `common.timeutil`. Errors: `common.errors.ApiError`. Logs: `common.logging.log_event`.
 - Keep modules small and boring. No new framework or service without an ADR.
 - Mind the import rules in [DEPENDENCIES.md](DEPENDENCIES.md). They are tested.
+- Put code in the layer it belongs to ([ADR 0008](adr/0008-code-organisation-inside-components.md)): `api` for HTTP, `services` for use cases, `domain` for rules with no I/O, `repositories` for storage, `security` for keys and crypto. No `utils.py` or `helpers.py`. The package root holds entry points and settings only. A test fails if you break the import direction.
 
 ## Branches and commits
 
@@ -101,7 +102,7 @@ Add a test that fails without your change. Failure paths too. See [TESTING_STRAT
 ## Implementing a contract operation
 
 1. Make sure the operation in `contracts/openapi.yaml` has no unresolved `TODO(contract)` you depend on; if it does, ask.
-2. Implement the route in the owning service (RatelLink operations in `ratel_link`, `/v1/usage` and `/v1/calls` in `app`).
+2. Implement it in the owning service (RatelLink operations in `ratel_link`, `/v1/usage` and `/v1/calls` in `app`), layer by layer ([ADR 0008](adr/0008-code-organisation-inside-components.md)). For RatelLink: the request body in `api/schemas.py`; the route on `api/router.new_v1_router()` (thin: validate, call a service, shape the response); the logic in a service in `services/`; any rule with no I/O in `domain/`; what the service needs from storage as an interface in `repositories/ports.py` and its MongoDB version in `repositories/mongo.py`. Tests go in the matching folder under `tests/ratel_link/`.
 3. Delete its `operationId` from `contracts/not_implemented.txt` in the same PR.
 4. `make contract`: the drift test and Schemathesis now check your route. Fix real disagreements in the code, not by weakening the contract.
 

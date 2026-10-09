@@ -2,6 +2,7 @@
 Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 
 **Week:** 2 | **Target date:** 2026-10-09 | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
+**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
 **Source:** Build Plan, Contract 1, RatelLink spec ("What it owns", "Data it keeps", "Rules"), Week 1 RatelLink bullets.
 
 ## Objective
@@ -34,8 +35,8 @@ Activation (W2-02). Re-encryption or rotation tooling for the encryption key, an
 - SIM keys settled with the supplier (network team, Week 2). Use synthetic keys until then.
 
 ## Acceptance criteria
-- A stored document's `ki` and `opc` are not plaintext (test reads the raw document). Already covered by `tests/ratel_link/test_sim_keys.py` and `test_integration_mongo.py`; the endpoint test repeats it through `POST /v1/sims`.
-- Startup fails clearly if the key file is missing or unreadable; the key is never in MongoDB, logs or the repo. Already covered by `tests/ratel_link/test_key_provider.py`.
+- A stored document's `ki` and `opc` are not plaintext (test reads the raw document). Already covered by `tests/ratel_link/services/test_sim_keys.py` and `tests/ratel_link/repositories/test_mongo_integration.py`; the endpoint test repeats it through `POST /v1/sims`.
+- Startup fails clearly if the key file is missing or unreadable; the key is never in MongoDB, logs or the repo. Already covered by `tests/ratel_link/security/test_key_provider.py`.
 - `POST /v1/sims` without a valid key is 401, including with an invalid or malformed body (the route-protection and authentication tests keep passing).
 - No endpoint returns Ki or OPc; the contract has no response field for them (existing contract check).
 - Repeating the call with the same `Idempotency-Key` returns the first result; storing the same IMSI again does not create a second document.

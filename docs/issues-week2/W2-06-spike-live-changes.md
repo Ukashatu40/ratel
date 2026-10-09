@@ -2,6 +2,7 @@
 Labels: type:investigation, area:ratel-link, priority:p1, risk:high
 
 **Week:** 2 | **Target date:** 2026-10-13 | **Owner:** @CaptRaven | **Reviewer:** @Ukashatu40
+**Week:** 2 | **Target date:** Oct 9 | **Owner:** @CaptRaven | **Reviewer:** @Ukashatu40
 **Source:** Build Plan, RatelLink spec "Live changes" (PRD CHG-6, P1).
 
 ## Re-planned 2026-10-08

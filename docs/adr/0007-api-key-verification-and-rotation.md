@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-07
 - **Deciders:** Project lead
+- **Module paths** are those after [ADR 0008](0008-code-organisation-inside-components.md) (the code was first written as flat files).
 - **Related:** Build Plan "The two contracts to freeze on day one" (an API key in the `Authorization` header, one key per calling system) and "Engineering rules" (Access: one API key per calling system, rotated every 90 days; audit log with the calling system's key id); [ADR 0006](0006-ki-opc-encryption-at-rest.md); [DECISIONS_PENDING.md](../DECISIONS_PENDING.md); issues W2-01, W2-03; [runbook](../runbooks/ratel-link.md)
 
 ## Context
@@ -21,7 +22,7 @@ an additional layer and not a substitute.
 - **Header.** `Authorization: Bearer <key>`. The scheme name is case-insensitive. No new protocol:
   no JWT, OAuth, mTLS or request signing.
 - **Every `/v1` route requires a valid key.** `GET /healthz` stays open (liveness only, exposes
-  nothing, not in the contract). A router wrapper (`new_v1_router()` in `main.py`) carries the
+  nothing, not in the contract). A router wrapper (`new_v1_router()` in `api/router.py`) carries the
   dependency, so a route added later is protected by default, and a test walks the real app's routes
   and fails if any `/v1` route lacks it.
 - **Authentication runs before the body is read.** Otherwise malformed JSON from an unauthenticated

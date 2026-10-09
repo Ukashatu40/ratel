@@ -7,8 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from ratel_link.config import Settings
-from ratel_link.crypto import encrypt_field
-from ratel_link.key_provider import (
+from ratel_link.main import create_app
+from ratel_link.security.crypto import encrypt_field
+from ratel_link.security.key_provider import (
     KEY_BYTES,
     FileKeyProvider,
     KeyFileError,
@@ -19,7 +20,6 @@ from ratel_link.key_provider import (
     read_key_file,
     write_new_key_file,
 )
-from ratel_link.main import create_app
 from tests.synthetic import SYNTHETIC_IMSI
 
 # Looks like key material, is not one. Used to prove error messages never echo file contents.

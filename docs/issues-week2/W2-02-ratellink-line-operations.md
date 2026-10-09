@@ -2,6 +2,7 @@
 Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 
 **Week:** 2 | **Target date:** 2026-10-13 | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
+**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
 **Source:** Build Plan, Contract 1; RatelLink spec; Week 1 RatelLink bullets; RatelVoice "Changes on RatelCore".
 
 ## Objective

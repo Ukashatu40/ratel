@@ -21,12 +21,9 @@ from pymongo.errors import DuplicateKeyError
 
 from common.timeutil import utc_now
 from ratel_link import admin_cli
-from ratel_link.audit import AuditLog
-from ratel_link.auth import ApiPrincipal, KeyPolicy, authenticate, create_system, revoke, rotate
 from ratel_link.config import Settings
-from ratel_link.crypto import DecryptionError
-from ratel_link.models import ApiKeyRecord
-from ratel_link.repositories import (
+from ratel_link.domain.api_keys import ApiKeyRecord
+from ratel_link.repositories.mongo import (
     MongoApiKeyRepository,
     MongoAuditLogRepository,
     MongoSimKeyRepository,
@@ -34,7 +31,11 @@ from ratel_link.repositories import (
     missing_indexes,
     open_database,
 )
-from ratel_link.sim_keys import SimKeyStore
+from ratel_link.security.crypto import DecryptionError
+from ratel_link.services.api_key_admin import KeyPolicy, create_system, revoke, rotate
+from ratel_link.services.audit_log import AuditLog
+from ratel_link.services.authentication import ApiPrincipal, authenticate
+from ratel_link.services.sim_keys import SimKeyStore
 from tests.ratel_link.fakes import StaticKeyProvider
 from tests.synthetic import (
     SYNTHETIC_IMSI,

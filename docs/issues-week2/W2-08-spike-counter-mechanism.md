@@ -2,6 +2,7 @@
 Labels: type:investigation, area:ratel-meter, priority:p1, risk:high
 
 **Week:** 2 | **Target date:** 2026-10-12 | **Owner:** @CaptRaven | **Reviewer:** @Ukashatu40
+**Week:** 2 | **Target date:** TODO (by Oct 7) | **Owner:** @CaptRaven | **Reviewer:** @Ukashatu40
 **Source:** Build Plan, Week 1 RatelMeter bullets ("Spike the counter mechanism ..."), RatelMeter spec "How data works".
 **TODO confirm:** a Week 1 item. If already done, link the write-up and close.
 
