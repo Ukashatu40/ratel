@@ -1,8 +1,12 @@
 # Agree the call record fields with the network team
 Labels: type:documentation, area:ratel-meter, area:network, priority:p1, risk:high
 
+**Week:** 2 | **Target date:** 2026-10-14 (draft 2026-10-12) | **Owner:** @ml-lawarn | **Reviewers:** @Ukashatu40 + @CaptRaven (network lead)
 **Week:** 2 | **Target date:** TODO (by Oct 9) | **Owner:** @ml-lawarn | **Reviewers:** @Ukashatu40 + @CaptRaven (network lead)
 **Source:** Build Plan, RatelMeter spec "How calls work"; week two RatelVoice column ("call record fields agreed with RatelMeter").
+
+## Re-planned 2026-10-08
+@ml-lawarn drafts the proposal from the contract's `CallRecord` fields and a list of questions; @CaptRaven (network side) answers what Kamailio can produce. The agreement is the network lead's to sign off, not the drafter's. Draft by 2026-10-12.
 
 ## Objective
 The software and network teams agree, in writing, exactly what RatelVoice writes and what `/v1/calls` returns, so call mode can start.

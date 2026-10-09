@@ -1,8 +1,18 @@
 # RatelMeter data agent running on core-up
 Labels: type:feature, area:ratel-meter, priority:p1, risk:high
 
+**Week:** 2 | **Target date:** 2026-10-16 | **Owner:** @ml-lawarn (with @CaptRaven for reading the counters) | **Reviewer:** @CaptRaven + @Ukashatu40
 **Week:** 2 | **Target date:** TODO (running by Oct 9) | **Owner:** TODO (suggested: @ml-lawarn paired with @CaptRaven) | **Reviewer:** @CaptRaven + @Ukashatu40
 **Source:** Build Plan, RatelMeter spec; week two software column ("RatelMeter's data agent running on core-up"); week 3 completes the API and `/v1/usage`.
+
+## Re-planned 2026-10-08: this is the epic, built from smaller issues
+It was too big for one issue. It now **assembles** the pieces and runs them on core-up:
+- [ ] W2-14: interval alignment and counter delta logic (pure functions)
+- [ ] W2-15: disk spool and ordered replay
+- [ ] W2-08: the counter mechanism, measured
+- [ ] W2-03 (or the mock): `GET /v1/assignments` for the address-to-IMSI lookup
+
+This issue is the reader of the counters, the 300-second loop that ties the pieces together, the service on core-up and its runbook note. It starts when W2-14 and W2-08 are done.
 
 ## Objective
 The data-mode agent runs on core-up, reads per-address counters, and produces correct 300-second records ready for the RatelMeter API.

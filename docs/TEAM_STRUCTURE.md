@@ -5,6 +5,8 @@ each person. The skill matrix is still the lead's to fill in (`?` means not asse
 are not a proxy for ability: if an assessment changes an assignment, change
 [OWNERSHIP_MATRIX.md](OWNERSHIP_MATRIX.md), `.github/CODEOWNERS` and the issue owners together.
 
+How work flows and how new people are taught: [WORKFLOW.md](WORKFLOW.md) and [TEAM_ONBOARDING.md](TEAM_ONBOARDING.md).
+
 ## The team (GitHub usernames)
 
 | GitHub | Role | Background, as stated by the project lead | Works on |

@@ -5,7 +5,7 @@ not modified here.** A week is not finished until its gate passes, and the next 
 it has. Three tracks run side by side: RatelCore and the radio, RatelVoice (both network team), and
 the software (this repository).
 
-**Today: Tuesday, October 6, 2026. Active phase: Week 2.**
+**Active phase: Week 2. Re-planned on 2026-10-08: the Week 2 gate carries into the week of Oct 12 (see [issues-week2/README.md](issues-week2/README.md)). The Nov 26 demo date is unchanged.**
 
 | Week | Dates | Software work | Gate |
 | ---- | ----- | ------------- | ---- |

@@ -1,8 +1,12 @@
 # Spike: live changes, written up by the end of Week 2
 Labels: type:investigation, area:ratel-link, priority:p1, risk:high
 
+**Week:** 2 | **Target date:** 2026-10-13 | **Owner:** @CaptRaven | **Reviewer:** @Ukashatu40
 **Week:** 2 | **Target date:** Oct 9 | **Owner:** @CaptRaven | **Reviewer:** @Ukashatu40
 **Source:** Build Plan, RatelLink spec "Live changes" (PRD CHG-6, P1).
+
+## Re-planned 2026-10-08
+The Build Plan asks for the write-up at the end of Week 2. Its only consumer is the Week 5 decision (build live changes or not), so a slip to 2026-10-13 costs nothing. The project lead decides whether to keep the original date.
 
 ## Objective
 Decide, in writing, whether live changes (slow or cut a connected line) are small enough to build in Week 5, or whether "changes at next attach" is the plan for the demo.

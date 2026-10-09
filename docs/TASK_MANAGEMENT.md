@@ -1,5 +1,7 @@
 # Task management
 
+Start with [WORKFLOW.md](WORKFLOW.md), the one-page walkthrough. This page is the detail behind it.
+
 ## From the Build Plan to merged code
 
 ```
@@ -72,5 +74,6 @@ Workflow state lives in the Status field, not in labels. Setup: [GITHUB_SETUP.md
 ## Week 2 seed
 
 The most immediate issues, derived strictly from the Build Plan's Week 2 objectives, are in
-[issues-week2/](issues-week2/). Owners are not assigned. `scripts/github/create_issues.sh` creates
-them on GitHub after review by the project lead.
+[issues-week2/](issues-week2/), with owners assigned and a re-plan dated 2026-10-08.
+`scripts/github/create_issues.sh` creates them on GitHub (assigning the owners) after review by the
+project lead. The whole path from issue to merged code is explained in [WORKFLOW.md](WORKFLOW.md).

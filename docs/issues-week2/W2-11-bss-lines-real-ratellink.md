@@ -1,9 +1,13 @@
 # RatelBSS lines: run the line flow against the real RatelLink
 Labels: type:feature, area:bss-lines, priority:p1, risk:high
 
+**Week:** 2 | **Target date:** 2026-10-16 | **Owner:** @Abbalolo | **Reviewer:** @Ukashatu40
 **Week:** 2 | **Target date:** TODO (by Oct 9) | **Owner:** @Abbalolo | **Reviewer:** @Ukashatu40
 **Source:** Build Plan, RatelBSS: lines spec "Done when"; week one "line flow ... against a mock of RatelLink"; week two "RatelBSS's line flow calling the real RatelLink".
 **TODO confirm:** whether the Week 1 line flow against the mock (customer, SIM, number, plan, activate) exists. If not, it is a prerequisite.
+
+## Re-planned 2026-10-08
+Two parts. (1) The flow against the **mock**, which needs the state machine first: W2-13. (2) The same flow against the **real** RatelLink on the lab, which waits for W2-02 and W2-03. Part 2 is this issue's lab run. Owner @Abbalolo, with @Ukashatu40 as mentor.
 
 ## Objective
 The sell-to-activate flow runs against the real RatelLink on the lab and produces **exactly one** `/activate` call.
