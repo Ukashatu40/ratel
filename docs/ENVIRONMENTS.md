@@ -16,7 +16,7 @@
 - `RATEL_ENV` is one of `local`, `test`, `lab`, `staging`, `production`. Code may use it for safety checks (refusing dangerous defaults), never for different business behavior.
 - No developer has write access to production databases. [Build Plan]
 - Lab and production credentials are never shared in chat, tickets or AI tools.
-- Lab host addresses: core-cp `102.214.241.42`, core-up `102.214.241.43`, voice `102.214.241.44`. `bss-app` and `ops` addresses are not yet confirmed. TODO: production host details, deployment credentials handling, network-team contact.
+- Lab host addresses are not recorded here: they are public internet addresses and this repository is public. They are in the Build Plan and the team's private notes. `bss-app` and `ops` addresses are not yet confirmed. TODO: production host details, deployment credentials handling, network-team contact.
 
 ## Variables
 

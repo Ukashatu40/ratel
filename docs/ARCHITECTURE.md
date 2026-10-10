@@ -25,9 +25,11 @@ links an ADR.
 | RatelDesk | Staff web app | React, TypeScript | bss-app | Software team |
 | RatelPay | Customer top-up page, light enough for 3G | Small page served by RatelBSS | bss-app, public through a reverse proxy | Software team |
 
-Lab machines: core-cp `102.214.241.42` (MME, HSS, SMF, PCRF, MongoDB; RatelLink),
-core-up `102.214.241.43` (SGW-U, UPF; RatelMeter agent in data mode),
-voice `102.214.241.44` (Kamailio IMS, rtpengine; RatelMeter agent in call mode).
+Lab machines: core-cp (MME, HSS, SMF, PCRF, MongoDB; RatelLink),
+core-up (SGW-U, UPF; RatelMeter agent in data mode),
+voice (Kamailio IMS, rtpengine; RatelMeter agent in call mode).
+Their addresses are public internet addresses, so they are **not recorded in this public repository**:
+they are in the Build Plan and the team's private notes.
 `bss-app` and `ops` VMs are not yet confirmed. TODO: confirm bss-app and ops host details before Week 3.
 Lab machines (Build Plan; addresses are in the Build Plan, not in this public repository): core-cp
 (MME, HSS, SMF, PCRF, MongoDB; RatelLink), core-up (SGW-U, UPF; RatelMeter agent in data mode). `voice`, `bss-app` and `ops`
