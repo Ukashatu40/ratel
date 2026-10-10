@@ -93,6 +93,8 @@ PR title follows `type: summary` because merges are squashed. See [CONTRIBUTING.
 ```
 make test               # unit tests
 make contract           # openapi validity, drift, Schemathesis for implemented operations
+                        # RatelLink's operations also need a MongoDB: make up, then export
+                        # RATEL_TEST_MONGO_URI (see below). Without it that part is skipped locally, never in CI.
 make test-integration   # needs make up
 pytest -m lab           # lab only; read TESTING_STRATEGY.md first. Never against production.
 ```

@@ -5,10 +5,12 @@ The MongoDB implementations are in mongo.py; tests use in-memory fakes (tests/ra
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.domain.audit import AuditEntry
+from ratel_link.domain.ip_pool import IpAllocation
 from ratel_link.domain.sim_keys import SimKeyDocument
 
 
@@ -44,3 +46,31 @@ class AuditLogRepository(Protocol):
     """Append-only: insert is the only operation. There is deliberately no update or delete."""
 
     def insert(self, entry: AuditEntry) -> None: ...
+
+
+class IpAllocationRepository(Protocol):
+    """Who holds which address. Each claim is one atomic step, so two activations at the same
+    moment can never be given the same address."""
+
+    def find_by_imsi(self, imsi: str) -> IpAllocation | None:
+        """The address this line holds, or held most recently. At most one per line."""
+        ...
+
+    def unavailable(self, hold_cutoff: datetime) -> set[str]:
+        """Addresses in use, plus those released after `hold_cutoff` (still on hold)."""
+        ...
+
+    def claim_free(self, ue_ip: str, imsi: str, now: datetime, hold_cutoff: datetime) -> bool:
+        """Take an address that was never used, or was released at or before `hold_cutoff`.
+
+        False if it is taken, on hold, or this line already holds another address.
+        """
+        ...
+
+    def reclaim(self, ue_ip: str, imsi: str, now: datetime) -> bool:
+        """Take back this line's own released address. False if it is no longer this line's."""
+        ...
+
+    def release(self, imsi: str, now: datetime) -> bool:
+        """Release the line's address. False if it had no active address."""
+        ...

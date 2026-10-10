@@ -28,7 +28,12 @@ from ratel_link.main import create_app
 from ratel_link.security.api_key_tokens import hash_secret
 from ratel_link.services.api_key_admin import KeyPolicy, create_system, disable, revoke, rotate
 from ratel_link.services.authentication import ApiPrincipal
-from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
+from tests.ratel_link.fakes import (
+    FakeClock,
+    InMemoryApiKeyRepository,
+    InMemoryAuditLogRepository,
+    InMemorySimKeyRepository,
+)
 from tests.synthetic import (
     SENTINEL_API_KEY,
     SENTINEL_API_KEY_ID,
@@ -67,7 +72,13 @@ class Env:
     def __init__(self) -> None:
         self.repo = InMemoryApiKeyRepository()
         self.clock = FakeClock()
-        self.app: FastAPI = create_app(Settings(), api_keys=self.repo, clock=self.clock)
+        self.app: FastAPI = create_app(
+            Settings(),
+            api_keys=self.repo,
+            sim_keys=InMemorySimKeyRepository(),
+            audit=InMemoryAuditLogRepository(),
+            clock=self.clock,
+        )
         self.app.include_router(_test_router())
         self.client = TestClient(self.app)
         self.logs = io.StringIO()

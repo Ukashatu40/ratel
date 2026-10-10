@@ -7,6 +7,7 @@ the ports, so tests use in-memory fakes and these classes are covered by integra
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from pymongo import ASCENDING, MongoClient
@@ -16,19 +17,22 @@ from pymongo.errors import DuplicateKeyError
 from ratel_link.config import Settings
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.domain.audit import AuditEntry
+from ratel_link.domain.ip_pool import IpAllocation
 from ratel_link.domain.sim_keys import SimKeyDocument
 
 SIM_KEY = "sim_key"
-
-
 API_KEY = "api_key"
-
-
 AUDIT_LOG = "audit_log"
+IP_ALLOCATION = "ip_allocation"
 
-
-# Collection -> field that must be unique. Created by `admin_cli init-db`, checked at startup.
-UNIQUE_INDEXES: dict[str, str] = {SIM_KEY: "imsi", API_KEY: "api_key_id"}
+# (collection, field) pairs that must be unique. Created by `admin_cli init-db`, checked at startup.
+# A line holds at most one address and an address belongs to at most one line.
+UNIQUE_INDEXES: list[tuple[str, str]] = [
+    (SIM_KEY, "imsi"),
+    (API_KEY, "api_key_id"),
+    (IP_ALLOCATION, "ue_ip"),
+    (IP_ALLOCATION, "imsi"),
+]
 
 
 def open_database(settings: Settings) -> Database[Any]:
@@ -50,15 +54,15 @@ def open_database(settings: Settings) -> Database[Any]:
 
 def ensure_indexes(database: Database[Any]) -> list[str]:
     """Create the unique indexes. Safe to run again. Returns 'collection.field' for each."""
-    for collection, field in UNIQUE_INDEXES.items():
+    for collection, field in UNIQUE_INDEXES:
         database[collection].create_index([(field, ASCENDING)], unique=True)
-    return [f"{c}.{f}" for c, f in UNIQUE_INDEXES.items()]
+    return [f"{c}.{f}" for c, f in UNIQUE_INDEXES]
 
 
 def missing_indexes(database: Database[Any]) -> list[str]:
     """'collection.field' for each required unique index that does not exist."""
     missing = []
-    for collection, field in UNIQUE_INDEXES.items():
+    for collection, field in UNIQUE_INDEXES:
         existing = database[collection].index_information().values()
         wanted = [(field, ASCENDING)]
         if not any(i.get("unique") and list(i["key"]) == wanted for i in existing):
@@ -121,3 +125,46 @@ class MongoAuditLogRepository:
 
     def insert(self, entry: AuditEntry) -> None:
         self._collection.insert_one(dict(entry))  # a copy: the driver adds an _id to what it gets
+
+
+class MongoIpAllocationRepository:
+    def __init__(self, database: Database[Any]) -> None:
+        self._collection = database[IP_ALLOCATION]
+
+    def find_by_imsi(self, imsi: str) -> IpAllocation | None:
+        doc: Any = self._collection.find_one({"imsi": imsi}, {"_id": 0})
+        return None if doc is None else IpAllocation.from_document(doc)
+
+    def unavailable(self, hold_cutoff: datetime) -> set[str]:
+        held = {"state": "released", "released_at": {"$gt": hold_cutoff}}
+        cursor = self._collection.find({"$or": [{"state": "active"}, held]}, {"ue_ip": 1, "_id": 0})
+        return {doc["ue_ip"] for doc in cursor}
+
+    def claim_free(self, ue_ip: str, imsi: str, now: datetime, hold_cutoff: datetime) -> bool:
+        taken = {"imsi": imsi, "state": "active", "allocated_at": now, "released_at": None}
+        try:
+            # An address released long enough ago is re-used by updating its document in place...
+            reused = self._collection.update_one(
+                {"ue_ip": ue_ip, "state": "released", "released_at": {"$lte": hold_cutoff}},
+                {"$set": taken},
+            )
+            if reused.modified_count == 1:
+                return True
+            # ...a never-used one is inserted. The unique indexes make a second claim fail.
+            self._collection.insert_one({"ue_ip": ue_ip, **taken})
+        except DuplicateKeyError:
+            return False
+        return True
+
+    def reclaim(self, ue_ip: str, imsi: str, now: datetime) -> bool:
+        result = self._collection.update_one(
+            {"ue_ip": ue_ip, "imsi": imsi, "state": "released"},
+            {"$set": {"state": "active", "allocated_at": now, "released_at": None}},
+        )
+        return result.modified_count == 1
+
+    def release(self, imsi: str, now: datetime) -> bool:
+        result = self._collection.update_one(
+            {"imsi": imsi, "state": "active"}, {"$set": {"state": "released", "released_at": now}}
+        )
+        return result.modified_count == 1

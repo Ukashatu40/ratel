@@ -25,7 +25,7 @@ Two facts shape the decision:
 
 1. Ki and OPc are encrypted with **AES-256-GCM** before they are persisted. Encryption and
    decryption happen only inside RatelLink, in `services/ratel_link/security/crypto.py`, reached through
-   `SimKeyStore` (`services/sim_keys.py`). Decryption is for the activation path only.
+   `SimKeyStore` (`services/sim_keys.py`). Decryption is for the activation path, and for recognising a repeated `POST /v1/sims` (the stored and the received keys are compared in constant time, inside one call, and neither is returned or logged).
 2. The encryption key is **not in MongoDB**. It is supplied as a file on core-cp (below).
 3. No endpoint returns Ki or OPc. They never appear in logs, audit records, tickets, chat, test
    fixtures, PostgreSQL, or unencrypted external backups of `ratel_link`.

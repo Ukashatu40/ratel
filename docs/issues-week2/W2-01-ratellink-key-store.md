@@ -18,6 +18,9 @@ Do not rebuild these. This issue builds on them.
 - API-key authentication on `new_v1_router()`, so any route added there needs a valid `Authorization: Bearer <key>`. See [ADR 0007](../adr/0007-api-key-verification-and-rotation.md).
 - The audit writer `AuditLog.append(action, imsi, before, after, api_key_id)` with its content guard.
 
+## Delivered by the W2-01 pull request (`feature/ratellink-sim-import-and-ip-pool`)
+`POST /v1/sims` on `build_v1_router()`: validated with `SimImport`, stored encrypted, one audit entry with the caller's `api_key_id`, `link_create_sim` removed from `contracts/not_implemented.txt`, and the contract updated in the same change (a 409 response, the 32-hex pattern for `ki` and `opc`). The same keys again return 200 and change nothing; different keys return 409 and never replace the stored ones (decided 2026-10-10). Without an encryption key the answer is 503 and nothing is stored. CI now runs Schemathesis against it with a throwaway MongoDB. What remains open here: the lab run with a real MongoDB on core-cp, and the items in "Dependencies".
+
 ## Scope
 - `POST /v1/sims` on `new_v1_router()` per the contract: validate with `SimImport`, call `SimKeyStore.put_if_absent`, write an audit entry (no keys) with the caller's `api_key_id` (from the `ApiPrincipal`), standard error shape.
 - Idempotency: `Idempotency-Key` handling, and a repeated import of the same IMSI.

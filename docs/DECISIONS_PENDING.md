@@ -38,15 +38,15 @@ Nothing here was decided silently except where marked "assumed", and assumptions
 
 ### Raised by the encryption and API-key work (2026-10-07)
 
-12. **SIM re-import with different keys (W2-01).** `SimKeyStore.put_if_absent` returns `False` for an existing IMSI and never overwrites, whatever keys arrive. What `POST /v1/sims` should answer when the IMSI exists with the same keys (idempotent success) and with different keys (conflict, or replace?) is not decided. Not decided silently.
+12. **SIM re-import with different keys (W2-01). Decided 2026-10-10 and built:** the same keys again return 200 and change nothing; different keys return 409 `conflict` and never replace the stored ones. Replacing a SIM's keys will be a deliberate admin action, if it is ever needed.
 13. **Append-only `audit_log` in MongoDB itself.** The code offers insert only, but a database user that may only insert into `audit_log` is not set up. Decide with the network team.
 14. **Ki and OPc format.** The code accepts exactly 32 hexadecimal characters (128 bits) for each, in one place (`domain/sim_keys.py`). This is an assumption: the contract still says `TODO(contract)`. The project lead and the network team confirm it, then the contract is updated in the same commit as any change. Also confirm the case to store (the code keeps the case it was given).
 15. **`amf` handling.** The Build Plan's `sim_key` lists `amf`; the contract's `SimImport` does not. It is not stored. Decide whether it is part of the request, and its default.
 16. **Overlap and warning defaults.** API key rotation overlap 7 days (allowed 1 to 30) and expiry warning 14 days (allowed 1 to 90) are proposals. The 90-day lifetime is the Build Plan's.
 17. **Encryption key file: backup procedure and owner, and its path on core-cp.** The key needs a separate, secure, offline backup that is never stored with database backups. Nobody owns this yet. Required before the first real SIM key is imported (risk R-14).
 18. **Backup encryption for the `open5gs` database.** Open5GS keeps Ki and OPc in plaintext there, so any backup containing it must be encrypted before leaving core-cp (network team, Week 6, risk R-06). Mechanism and location are TODO.
-19. **CI authentication for Schemathesis (W2-03).** RatelLink now rejects every `/v1` call without a valid key, and no CI backend accepts the test key. When the first RatelLink operation is implemented, CI needs a way to seed a test `api_key`: an in-memory test mode or a MongoDB service container. Nothing is skipped silently today because nothing is implemented.
-20. **MongoDB integration tests in CI.** `tests/ratel_link/repositories/test_mongo_integration.py` runs against the compose MongoDB locally. CI does not run integration tests yet. A MongoDB service container job is a CI change for the project lead.
+19. **CI authentication for Schemathesis. Built with W2-01 (pending your review of the CI change):** the `contract` job has a throwaway MongoDB service, and `scripts/ci/run_schemathesis.sh` creates its own database, key file and test API key with the admin CLI. The service has no test mode. Locally the script skips RatelLink with a warning unless `RATEL_TEST_MONGO_URI` is set.
+20. **MongoDB integration tests in CI. Built with W2-01 (pending your review of the CI change):** a new `integration` job runs `pytest -m integration` against a MongoDB service container, and `ci-success` waits for it. PostgreSQL and Redis containers come when something needs them.
 21. **Rate limiting of failed authentication.** Not built. Revisit with the Week 6 security review.
 22. **Operating the API keys.** A scheduled `api-key check-expiry` and who is alerted; delivery of a new key to a caller (by hand today); whether a disabled system needs an `enable` command; concurrent administration (not safe for two operators at once).
 23. **Encryption key rotation and KMS.** Re-encrypting records under a new key (the `kid` makes it possible) and any KMS or secret manager are out of scope for now.
@@ -61,6 +61,14 @@ Nothing here was decided silently except where marked "assumed", and assumptions
 29. **RatelMeter agent owner (W2-09).** Suggested pairing: @ml-lawarn with @CaptRaven. Not assigned.
 30. **Week 2 capacity.** The Week 2 gate is Oct 9. Several issues had target dates of Oct 7 and Oct 8 and have no work started. Three spikes (W2-05, W2-06, W2-08) are assigned to @CaptRaven, who is also on the network team (risk R-10). Re-plan with the owners.
 31. **GitHub housekeeping for the project lead.** Turn on "Automatically delete head branches"; run `gh auth refresh -s project` before `create_project.sh` or listing the project; run `scripts/github/create_issues.sh` once after reviewing the issue files (it now assigns owners).
+
+### Raised while building W2-01 and the address allocator (2026-10-10)
+
+32. **The audit entry is written after the keys are stored, not in the same step.** MongoDB without a replica set has no transaction. If the audit write fails, the keys are stored, the caller gets a 500, and a retry reports "unchanged" without the missing entry. Options: accept (the failure is rare and visible), run MongoDB as a single-node replica set to get transactions, or write the audit entry first. Suggested: accept for now, revisit with the network team's MongoDB setup.
+33. **Gateway address of the UE pool.** The allocator never hands out the network address, the broadcast address or the first host (10.45.0.1, the usual gateway on `ogstun`). Confirm with the network team which addresses in the lab pool are already used, and set `RATEL_LINK_UE_POOL` if the pool is different.
+34. **A line may take its own released address back during the 24-hour hold.** The Build Plan's rule ("a released address isn't reused for 24 hours, so a late counter reading can never be charged to the wrong person") is about other people. The same line getting its own address back cannot charge anyone wrongly. Suggested: keep. Say if you want the hold to apply to the same line too.
+35. **Idempotency-Key handling for `activate`, `data` and `deactivate`** (decision B9 in the queue above) is still open. `POST /v1/sims` does not need it. The header is validated as the contract says (not empty).
+36. **`ki` and `opc` now have a pattern in the contract** (32 hexadecimal characters), because the contract fuzzer needs the format to tell valid from invalid. This is still the assumption in item 14. If the SIM supplier uses another format, change `domain/sim_keys.py` and the contract together.
 
 ## Information I did not have (TODOs in the files)
 

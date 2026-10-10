@@ -54,10 +54,11 @@ services/ratel_link/
   main.py              entry point: builds the FastAPI app, startup checks
   admin_cli.py         entry point: init-db, key generate, api-key ...
   config.py            settings
-  api/                 dependencies.py (require_api_key, AuthFirstRoute), router.py (new_v1_router),
-                       schemas.py (request bodies)
-  services/            authentication.py, api_key_admin.py, audit_log.py, sim_keys.py
-  domain/              identifiers.py, sim_keys.py, api_keys.py, audit.py
+  api/                 dependencies.py (require_api_key, AuthFirstRoute), router.py (new_v1_router,
+                       build_v1_router), schemas.py (request bodies), sims.py (POST /v1/sims)
+  services/            authentication.py, api_key_admin.py, audit_log.py, sim_keys.py,
+                       sim_import.py, ip_allocation.py
+  domain/              identifiers.py, sim_keys.py, api_keys.py, audit.py, ip_pool.py
   repositories/        ports.py (interfaces), mongo.py (MongoDB)
   security/            crypto.py, key_provider.py, api_key_tokens.py
 ```

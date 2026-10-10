@@ -15,6 +15,9 @@ Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 - Every line gets a fixed IPv4 address from `10.45.0.0/16` at activation; none activates without one; a released address is not reused for 24 hours.
 - Until live changes land, every change takes effect at the next attach.
 
+## Already delivered (W2-01 pull request): the address allocator
+`IpAllocator` (`services/ip_allocation.py`) with its pure rules in `domain/ip_pool.py` and atomic MongoDB claims in the `ip_allocation` collection: the lowest free address from `RATEL_LINK_UE_POOL`, one address per line and one line per address, idempotent allocation, release, a 24-hour hold before another line can take a released address (the same line can take its own back), and a clear error when the pool is full. This issue only has to call `allocate` on activation and `release` on deactivation. Open questions are items 33 and 34 in DECISIONS_PENDING.md.
+
 ## Scope
 - Build documents from a **template taken from a subscriber Open5GS created itself**, one that already has the ims APN. Never handwrite the schema.
 - Static IP assignment and the 24-hour hold. Confirm the fixed-address rule with the network team on day one (Build Plan).

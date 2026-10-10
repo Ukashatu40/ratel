@@ -13,6 +13,7 @@ from typing import Any
 from common.timeutil import utc_now
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.domain.audit import AuditEntry
+from ratel_link.domain.ip_pool import IpAllocation
 from ratel_link.domain.sim_keys import SimKeyDocument
 from ratel_link.security.key_provider import KEY_BYTES, KeyUnavailableError
 
@@ -98,3 +99,51 @@ class InMemoryAuditLogRepository:
 
     def insert(self, entry: AuditEntry) -> None:
         self.entries.append(copy.deepcopy(entry))
+
+
+class InMemoryIpAllocationRepository:
+    """Same rules as the MongoDB version: one record per address and per line, each claim atomic."""
+
+    def __init__(self) -> None:
+        self.by_ip: dict[str, IpAllocation] = {}
+        self.claim_attempts = 0
+
+    def find_by_imsi(self, imsi: str) -> IpAllocation | None:
+        return next((a for a in self.by_ip.values() if a.imsi == imsi), None)
+
+    def unavailable(self, hold_cutoff: datetime) -> set[str]:
+        return {
+            ip
+            for ip, a in self.by_ip.items()
+            if a.state == "active" or (a.released_at is not None and a.released_at > hold_cutoff)
+        }
+
+    def claim_free(self, ue_ip: str, imsi: str, now: datetime, hold_cutoff: datetime) -> bool:
+        self.claim_attempts += 1
+        if self.find_by_imsi(imsi) is not None:  # a line holds at most one address
+            return False
+        current = self.by_ip.get(ue_ip)
+        if current is not None and not (
+            current.state == "released"
+            and current.released_at is not None
+            and current.released_at <= hold_cutoff
+        ):
+            return False
+        self.by_ip[ue_ip] = IpAllocation(ue_ip, imsi, "active", now)
+        return True
+
+    def reclaim(self, ue_ip: str, imsi: str, now: datetime) -> bool:
+        current = self.by_ip.get(ue_ip)
+        if current is None or current.imsi != imsi or current.state != "released":
+            return False
+        self.by_ip[ue_ip] = IpAllocation(ue_ip, imsi, "active", now)
+        return True
+
+    def release(self, imsi: str, now: datetime) -> bool:
+        current = self.find_by_imsi(imsi)
+        if current is None or current.state != "active":
+            return False
+        self.by_ip[current.ue_ip] = IpAllocation(
+            current.ue_ip, imsi, "released", current.allocated_at, now
+        )
+        return True

@@ -145,3 +145,63 @@ def test_sentinel_values_never_land_in_a_document() -> None:
     store.put_if_absent(SYNTHETIC_IMSI, SecretStr(ki), SecretStr(opc))
     text = json.dumps(repo.documents, default=str)
     assert ki not in text and opc not in text
+
+
+# --- recognising a repeated import (W2-01) ------------------------------------------------------
+
+OTHER_HEX = "0f0e0d0c0b0a09080706050403020100"
+
+
+def _stored() -> SimKeyStore:
+    store, _, _ = _store()
+    store.put_if_absent(SYNTHETIC_IMSI, SecretStr(HEX_KI), SecretStr(HEX_OPC))
+    return store
+
+
+def test_the_same_keys_are_recognised() -> None:
+    assert _stored().has_same_keys(SYNTHETIC_IMSI, SecretStr(HEX_KI), SecretStr(HEX_OPC))
+
+
+def test_hex_case_does_not_matter() -> None:
+    store = _stored()
+    assert store.has_same_keys(
+        SYNTHETIC_IMSI, SecretStr(HEX_KI.upper()), SecretStr(HEX_OPC.upper())
+    )
+
+
+@pytest.mark.parametrize("which", ["ki", "opc", "both"])
+def test_any_difference_is_not_the_same(which: str) -> None:
+    ki = SecretStr(OTHER_HEX if which in ("ki", "both") else HEX_KI)
+    opc = SecretStr(OTHER_HEX if which in ("opc", "both") else HEX_OPC)
+    assert _stored().has_same_keys(SYNTHETIC_IMSI, ki, opc) is False
+
+
+def test_an_unknown_imsi_has_no_same_keys() -> None:
+    assert _stored().has_same_keys(SYNTHETIC_IMSI_2, SecretStr(HEX_KI), SecretStr(HEX_OPC)) is False
+
+
+def test_both_values_are_always_compared(monkeypatch: pytest.MonkeyPatch) -> None:
+    import hmac
+
+    calls: list[int] = []
+    real = hmac.compare_digest
+    monkeypatch.setattr(hmac, "compare_digest", lambda a, b: calls.append(1) or real(a, b))
+    # The Ki differs, but the OPc must still be compared, so timing does not say which differs.
+    assert (
+        _stored().has_same_keys(SYNTHETIC_IMSI, SecretStr(OTHER_HEX), SecretStr(HEX_OPC)) is False
+    )
+    assert len(calls) == 2
+
+
+def test_a_malformed_value_is_refused_without_echoing_it() -> None:
+    with pytest.raises(ValueError) as exc:
+        _stored().has_same_keys(SYNTHETIC_IMSI, SecretStr(SENTINEL_KI), SecretStr(HEX_OPC))
+    assert SENTINEL_KI not in str(exc.value)
+
+
+def test_comparing_does_not_change_what_is_stored() -> None:
+    store, repo, _ = _store()
+    store.put_if_absent(SYNTHETIC_IMSI, SecretStr(HEX_KI), SecretStr(HEX_OPC))
+    before = json.dumps(repo.documents, default=str)
+    store.has_same_keys(SYNTHETIC_IMSI, SecretStr(OTHER_HEX), SecretStr(OTHER_HEX))
+    assert json.dumps(repo.documents, default=str) == before

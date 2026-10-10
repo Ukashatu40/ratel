@@ -103,9 +103,9 @@ structure per component and where each kind of code goes are in
 `ratel_link` database: `sim_key` (`imsi`, and `ki` and `opc` each as an encrypted envelope
 `{v, alg, kid, nonce, ct}`, plus `created_at`), `api_key` (one document per calling system, with its
 key generations and only their hashes, [ADR 0007](adr/0007-api-key-verification-and-rotation.md)),
-`line_state`, `audit_log` (append-only, never contains Ki, OPc or keys). Status: `provisioned`, `active`, `barred`. Data mode:
+`ip_allocation` (one document per address and per line: `ue_ip`, `imsi`, `state`, `allocated_at`, `released_at`), `line_state`, `audit_log` (append-only, never contains Ki, OPc or keys). Status: `provisioned`, `active`, `barred`. Data mode:
 `full`, `slow`, `off`. Every line gets a fixed IPv4 address from `10.45.0.0/16` at activation;
-released addresses are not reused for 24 hours. Every call is idempotent. Every `/v1` call requires a valid API key (`Authorization: Bearer <key>`),
+released addresses are not given to another line for 24 hours (the same line can take its own back). Every call is idempotent. Every `/v1` call requires a valid API key (`Authorization: Bearer <key>`),
 and `audit_log` entries carry the calling system's `api_key_id`. Subscriber documents are
 built from a template taken from a subscriber Open5GS created itself, never handwritten.
 Until live changes land, every change takes effect at the line's next attach.
