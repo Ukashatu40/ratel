@@ -2,6 +2,8 @@
 
 ## The flow
 
+A plain-language walkthrough with commands is in [docs/WORKFLOW.md](docs/WORKFLOW.md). New to the team? Start with [docs/TEAM_ONBOARDING.md](docs/TEAM_ONBOARDING.md).
+
 ```
 Issue -> Branch -> Implementation -> Tests -> Pull Request -> Review -> CI -> QA/Integration -> Merge
 ```

@@ -14,8 +14,12 @@ works without changing the contract. RatelLink guards every line's keys and is t
 RatelCore's subscriber database, so this had to be settled before the first endpoint is built.
 
 Calling systems today (implied by the Build Plan): RatelBSS (calls Contract 1) and the RatelMeter
-agent (reads `GET /v1/assignments`). The services are reached only over the WireGuard VPN, which is
-an additional layer and not a substitute.
+agent (reads `GET /v1/assignments`). The Build Plan puts the services behind the WireGuard VPN, an
+additional layer and not a substitute for authentication. **Management deferred the VPN to production
+(2026-10-08).** In the lab and pilot, RatelLink binds to 127.0.0.1 behind a TLS reverse proxy that
+accepts `/v1` only from known hosts (ARCHITECTURE.md). Until then the API key is the only credential
+between the internet and the SIM-key service, which raises the weight of everything in this ADR and of
+risk R-16.
 
 ## Decision
 
@@ -105,7 +109,7 @@ unique index is created by `admin_cli init-db`.
   `enable` command (open item).
 - Administrative changes are not safe against two operators editing one system at the same moment.
   Run one at a time.
-- No rate limiting on failed authentication yet. Week 6 security review.
+- No rate limiting on failed authentication yet. **With the VPN deferred, put it on the reverse proxy before real SIM keys are imported** (DECISIONS_PENDING.md), not at the Week 6 review. Failed attempts are logged as `auth.rejected` and can flood the log.
 - Callers keep their key in an owner-only environment file on their own host (Build Plan). Delivery
   of a new key to the caller is by hand today.
 
@@ -120,9 +124,10 @@ the method, route template and status only.
 unknown id and a wrong secret: with storage removed, the two differ by about 1 microsecond (one
 comparison versus two). Against a real MongoDB the unknown-id request is still about 40 microseconds
 faster, because the database returns a document for a known id and nothing for an unknown one.
-Application code cannot remove that. The id is not secret, the service is reachable only over the
-VPN, and failed-authentication rate limiting is planned for Week 6, so this is accepted and stated
-here instead of hidden. The numbers come from a throwaway script, not a test, because timing tests
+Application code cannot remove that. The id is not secret, and a 256-bit key cannot be guessed, so this leaks
+little. It is accepted and stated here instead of hidden. With the VPN deferred, rate limiting of
+failed authentication should move from Week 6 to the reverse proxy before the service is exposed
+(DECISIONS_PENDING.md). The numbers come from a throwaway script, not a test, because timing tests
 are flaky.
 
 ## Data implications

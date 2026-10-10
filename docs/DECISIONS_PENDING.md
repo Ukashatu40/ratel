@@ -2,6 +2,59 @@
 
 Nothing here was decided silently except where marked "assumed", and assumptions are reversible.
 
+## Decision queue (2026-10-09): what the project lead decides next, with a suggestion for each
+
+The project lead decides all of these. "Suggested" is a recommendation, not a decision. Older items
+keep their numbers below; this queue is ordered by urgency.
+
+### A. Decide now (they block work, or they are security-sensitive)
+
+| # | Decision | Suggested | Why now |
+| - | -------- | --------- | ------- |
+| 1 | The **public** addresses of core-cp, core-up and voice (102.214.x.x) are in this **public** repository since PR #12. Keep them? | Remove them from the documents (names only; addresses stay in the privately shared Build Plan). Do not rewrite history: the exposure happened and addresses cannot be changed. Ask the network team to confirm the hosts' firewalls deny inbound by default and that MongoDB and SSH are not reachable from the internet. | These are the hosts that hold every SIM key |
+| 2 | **Access without the VPN** (management, 2026-10-08): RatelLink sits behind a TLS reverse proxy on a public address. Who confirms the design, and what does it include? | Proxy allows `/v1` only from bss-app and the meter-agent hosts, TLS only, **rate limit on failed authentication at the proxy now** (not Week 6), host firewall default-deny, MongoDB on 127.0.0.1 with authentication. Verified by the network lead before any real SIM key. Risk R-16. | The API key is the only credential left between the internet and the key store |
+| 3 | **Week 2 gate** cannot pass on Oct 9. Tell management, and set the new date? | Tell management today: the gate moves to Oct 14 to 16 (the Build Plan allows "next week if keys are not ready"). The Nov 26 demo date does not move. | Honest reporting; the next weeks assume the gate |
+| 4 | `POST /v1/sims` for an IMSI that **already exists** (W2-01, open item 12) | Same keys: 200, nothing changes. Different keys: **409 conflict, never overwrite.** Changing a SIM's keys becomes a deliberate admin action later. | Blocks the W2-01 endpoint |
+| 5 | **Who is the network contact** for the Open5GS template, MongoDB authentication, SIM key status and the radio? | Name one person. Fallback: the lead makes the template on the lab (W2-02 now says how). | Everything on the critical path waits on it |
+| 6 | **Backup** for RatelLink and BSS money (risk R-08) | `capitanaserdel` (already the second approver, so must know the code). **Not** `CaptRaven`: if he also maintains it he can no longer review it independently. Goal: by Week 4 he can make a small RatelLink change that you and `CaptRaven` review. | One person cannot be a single point of failure for the keys |
+| 7 | Turn **"Require review from Code Owners"** back on in the ruleset | Yes, now. `CODEOWNERS` no longer deadlocks you. | It was switched off to merge #11 |
+| 8 | W2-06 date | **Decided:** keep Oct 9 if possible, else Oct 13. It needs the lab, so Oct 13 is the hard date. | Recorded |
+
+### B. Decide this week (they shape the next issues)
+
+| # | Decision | Suggested |
+| - | -------- | --------- |
+| 9 | **`Idempotency-Key`** for RatelLink (the contract leaves format and retention open) | Accept the header on every state-changing call. `POST /v1/sims` is already idempotent by design. For `activate`, `data`, `deactivate`: store key and first response in `ratel_link.idempotency` for 24 hours; the key is an opaque string of 1 to 128 characters. |
+| 10 | **Contract field formats** (W2-12) | `ki`, `opc`: 32 hex characters (confirm with the SIM supplier). `msisdn`: digits only, like `2340000000001` (confirm with the Kamailio side). Speeds: a decimal number of Mbps (slow plans need fractions). `reason` on `/deactivate`: one of `expired`, `suspended`, `terminated`, taken from the Build Plan's state table. Validation errors stay 422. `amf`: ask the network team; do not store until decided. |
+| 11 | **Payment provider** (one gateway, with a sandbox) | Pick one that has a sandbox and signed webhooks and is usable for naira payments (Paystack and Flutterwave are the common choices; check fees and availability). Nobody can start gateway work until this is chosen. |
+| 12 | **The BSS API** that RatelDesk and RatelPay call (open item 4) | `Abbalolo` (BSS lines) and `capitanaserdel` (the consumer) draft it, you approve. It needs the PRD. |
+| 13 | **Staff authentication** for RatelDesk (open item 8) | Decide after reading the PRD. A simple default: staff accounts in PostgreSQL, hashed passwords, server-side sessions. |
+| 14 | Who writes the **rating function** in Week 3 | `capitanaserdel`, after W2-16. It is money, so you and `CaptRaven` both review it, and the gate enforces that. |
+| 15 | The meter agent's **first reading** (W2-14): no previous reading exists | Store it as the baseline and count zero for that interval, so nothing is ever double counted. Confirm with `CaptRaven`. |
+| 16 | **Failure in the middle of a transition** (open item 6) | The line's state does not change, the call is retried with the same `Idempotency-Key`, and an alert fires after repeated failure. Decide at W2-11. |
+
+### C. Before the first real SIM key is imported
+
+| # | Decision | Suggested |
+| - | -------- | --------- |
+| 17 | **Encryption key file**: path, owner, offline backup (R-14, open item 17) | Path `/etc/ratel-link/ratel_link.key`, mode 0600, owned by the service user. Owner of the key: you. Backup: two offline encrypted copies held by two named people, never with the database backups, and a restore tested once on the lab before the first real key. |
+| 18 | **Insert-only `audit_log`** in MongoDB (open item 13) | Use a MongoDB custom role that can only insert into `audit_log`. I can write the exact `mongosh` script (with the other least-privilege roles RatelLink needs) into `deploy/core-cp/` for the network lead to review and apply. |
+| 19 | **Encrypting backups of the `open5gs` database** (open item 18) | Encrypt on core-cp before the backup leaves it, with `age` or GPG. Network team, Week 6 at the latest. |
+| 20 | **CI for MongoDB and Schemathesis** (open items 19, 20) | Add a MongoDB service-container job with W2-01. In it, create a test key with `admin_cli api-key create` and pass it as `RATEL_TEST_API_KEY`. No special test mode in the service. |
+| 21 | **Operating the API keys** (open item 22) | A daily `api-key check-expiry` on a systemd timer, owned by you; alert through RatelOps later. Add an `enable` command when first needed. |
+
+### D. Can wait (with a suggestion)
+
+| # | Decision | Suggested |
+| - | -------- | --------- |
+| 22 | Repository **public or private**, and the Build Plan in history (R-15) | Accept for now. Move to private when GitHub Pro is affordable, then re-run `apply_ruleset.sh`. Do not rewrite history during Week 2. |
+| 23 | ADR status: 0001 to 0005 and 0008 are still "Proposed" | Mark them Accepted. They are in use. |
+| 24 | `cryptography` pin 50 and Intel Macs (open item 25) | Accept. Use a Linux container or install a Rust toolchain on an Intel Mac. |
+| 25 | `ApiKeyAuth` is now `http`/`bearer` in the contract (open item 24) | Accept. |
+| 26 | Append-only ledger mechanism, and how BSS money reads RatelMeter (open items 5, 7) | Database triggers plus permissions for the ledger; an in-process interface for usage data (same process), keeping the HTTP shape. Decide when each is built. |
+| 27 | **Outside the software team:** NCC SIM registration and KYC rules, number quarantine period, data retention, VAT rate | Compliance and finance. Ask now; the Week 6 security review and the pilot depend on them. |
+| 28 | Pilot environment (lab or new machines), PostgreSQL, Redis and MongoDB versions, GitHub plan (open items 9, 10, 11) | Decide before Week 7. |
+
 ## Decisions I made as proposals (change them if you disagree)
 
 | # | Decision | Where | Why |
