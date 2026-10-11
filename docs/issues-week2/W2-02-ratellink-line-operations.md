@@ -2,7 +2,6 @@
 Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 
 **Week:** 2 | **Target date:** 2026-10-13 | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
-**Week:** 2 | **Target date:** TODO (by Oct 8) | **Owner:** @Ukashatu40 | **Reviewers:** @CaptRaven + @capitanaserdel (two required)
 **Source:** Build Plan, Contract 1; RatelLink spec; Week 1 RatelLink bullets; RatelVoice "Changes on RatelCore".
 
 ## Objective
@@ -27,6 +26,7 @@ Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 Live changes (throttle or detach mid-session). Switching deactivation to `subscriber_status` barring (decide after W2-05). Reading lines (W2-03).
 
 ## Dependencies
+- **If the network team cannot supply the template in time, make it yourself on the lab:** in the Open5GS WebUI add one **test** subscriber with a **dummy** IMSI and **dummy** Ki/OPc (never a real SIM key) and the `internet` and `ims` APNs, then export that one document from the lab MongoDB (`db.subscribers.findOne({imsi: "<the test imsi>"})` in `mongosh` on core-cp) to a file **outside the repository**. That is a subscriber "Open5GS created itself", with the ims APN, which is what the Build Plan asks for. Replace the key values with placeholders before sharing the file with anyone, and keep it out of Git; only the field shape matters. Confirm with the network lead that the ims APN settings are the final ones.
 - W2-01 (and the SIM key store, authentication and audit writer already delivered by the security PR). The Open5GS template and the ims APN/pool from the network team (TODO: obtain the template). Open5GS v2.8.0 on the lab core-cp.
 - `TODO(contract)`: response bodies, `reason` values, whether speeds are required for `data` mode `off`, number formats.
 
