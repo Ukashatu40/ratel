@@ -1,11 +1,13 @@
 """The SIM key store: Ki and OPc are encrypted before they reach the repository.
 
-This is the only place plaintext keys are handled. Nothing here logs, and `get_keys` is meant for
-the activation path only (W2-02). No endpoint returns what it gives back.
+This is the only place plaintext keys are handled. Nothing here logs. `get_keys` is for the
+activation path (W2-02) and `has_same_keys` is for recognising a repeated import (W2-01): the
+decrypted values live only for the length of the call. No endpoint returns what they give back.
 """
 
 from __future__ import annotations
 
+import hmac
 from collections.abc import Callable
 from datetime import datetime
 
@@ -25,6 +27,10 @@ def _require_imsi(imsi: str) -> None:
         raise ValueError("invalid IMSI")
 
 
+def _normal(value: SecretStr) -> bytes:
+    return value.get_secret_value().lower().encode()
+
+
 class SimKeyStore:
     def __init__(
         self,
@@ -39,8 +45,8 @@ class SimKeyStore:
     def put_if_absent(self, imsi: str, ki: SecretStr, opc: SecretStr) -> bool:
         """Encrypt and store a SIM's keys. False if the IMSI already has keys (nothing changes).
 
-        What the API should do when an existing IMSI arrives with DIFFERENT keys is not decided
-        (DECISIONS_PENDING.md). This method never overwrites and does not compare.
+        This never overwrites and does not compare: `has_same_keys` answers whether a repeat is the
+        same import or a conflicting one.
         """
         _require_imsi(imsi)
         document: SimKeyDocument = {
@@ -61,6 +67,21 @@ class SimKeyStore:
             ki=self._decrypt(imsi, "ki", document["ki"]),
             opc=self._decrypt(imsi, "opc", document["opc"]),
         )
+
+    def has_same_keys(self, imsi: str, ki: SecretStr, opc: SecretStr) -> bool:
+        """True if the stored Ki and OPc for this IMSI equal these (hex case does not matter).
+
+        Both values are always compared, in constant time, so the answer does not reveal which one
+        differs. False if the IMSI has no keys.
+        """
+        check_key_hex(ki)
+        check_key_hex(opc)
+        stored = self.get_keys(imsi)
+        if stored is None:
+            return False
+        ki_same = hmac.compare_digest(_normal(stored.ki), _normal(ki))
+        opc_same = hmac.compare_digest(_normal(stored.opc), _normal(opc))
+        return ki_same and opc_same
 
     def _encrypt(self, imsi: str, field: FieldName, value: SecretStr) -> Envelope:
         check_key_hex(value)

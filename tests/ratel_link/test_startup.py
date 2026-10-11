@@ -10,7 +10,14 @@ from ratel_link.config import Settings
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.main import create_app
 from ratel_link.services.api_key_admin import KeyPolicy, create_system
-from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
+from tests.ratel_link.fakes import (
+    FakeClock,
+    InMemoryApiKeyRepository,
+    InMemoryAuditLogRepository,
+    InMemorySimKeyRepository,
+)
+
+OTHER_FAKES = {"sim_keys": InMemorySimKeyRepository(), "audit": InMemoryAuditLogRepository()}
 
 
 def _events(caplog: pytest.LogCaptureFixture, name: str) -> list[dict[str, object]]:
@@ -22,7 +29,7 @@ def test_startup_warns_about_keys_close_to_expiry(caplog: pytest.LogCaptureFixtu
     token = create_system(repo, "bss-app", "RatelBSS", clock(), KeyPolicy())
     clock.advance(days=80)
     caplog.set_level(logging.INFO)
-    with TestClient(create_app(Settings(), api_keys=repo, clock=clock)) as client:
+    with TestClient(create_app(Settings(), api_keys=repo, **OTHER_FAKES, clock=clock)) as client:
         assert client.get("/healthz").status_code == 200
     (event,) = _events(caplog, "api_key.expiring")
     assert (event["api_key_id"], event["api_key_generation"], event["days_left"]) == (
@@ -39,7 +46,7 @@ def test_startup_is_quiet_when_nothing_is_close_to_expiry(
     repo, clock = InMemoryApiKeyRepository(), FakeClock()
     create_system(repo, "bss-app", "RatelBSS", clock(), KeyPolicy())
     caplog.set_level(logging.INFO)
-    with TestClient(create_app(Settings(), api_keys=repo, clock=clock)):
+    with TestClient(create_app(Settings(), api_keys=repo, **OTHER_FAKES, clock=clock)):
         pass
     assert _events(caplog, "api_key.expiring") == []
     assert _events(caplog, "startup.checks.failed") == []
@@ -53,7 +60,9 @@ def test_a_broken_database_is_logged_by_type_and_does_not_stop_startup(
             raise ConnectionError("mongodb://user:hunter2@127.0.0.1 refused")
 
     caplog.set_level(logging.INFO)
-    with TestClient(create_app(Settings(), api_keys=Down(), clock=FakeClock())) as client:
+    with TestClient(
+        create_app(Settings(), api_keys=Down(), **OTHER_FAKES, clock=FakeClock())
+    ) as client:
         assert client.get("/healthz").status_code == 200  # still serving
     (event,) = _events(caplog, "startup.checks.failed")
     assert event["exc_type"] == "ConnectionError"

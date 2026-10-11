@@ -13,7 +13,12 @@ from ratel_link.api.dependencies import require_api_key
 from ratel_link.api.router import new_v1_router
 from ratel_link.config import Settings
 from ratel_link.main import create_app
-from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
+from tests.ratel_link.fakes import (
+    FakeClock,
+    InMemoryApiKeyRepository,
+    InMemoryAuditLogRepository,
+    InMemorySimKeyRepository,
+)
 from tests.route_walk import effective_routes
 
 # Routes that are public on purpose. /healthz is liveness only and exposes nothing.
@@ -47,7 +52,13 @@ def unprotected_routes(app: FastAPI) -> list[str]:
 
 
 def _app() -> FastAPI:
-    return create_app(Settings(), api_keys=InMemoryApiKeyRepository(), clock=FakeClock())
+    return create_app(
+        Settings(),
+        api_keys=InMemoryApiKeyRepository(),
+        sim_keys=InMemorySimKeyRepository(),
+        audit=InMemoryAuditLogRepository(),
+        clock=FakeClock(),
+    )
 
 
 def test_every_route_of_the_real_app_is_protected_or_allowlisted() -> None:
@@ -130,12 +141,12 @@ def test_the_v1_router_has_the_key_dependency_and_main_includes_it() -> None:
 
     main_calls = [n for n in ast.walk(ast.parse(MAIN.read_text())) if isinstance(n, ast.Call)]
     assert not [c for c in main_calls if getattr(c.func, "id", "") == "APIRouter"], (
-        "main.py must not build its own router: routes go on api/router.new_v1_router()"
+        "main.py must not build its own router: routes are added in api/router.py"
     )
     includes = [
         ast.unparse(c) for c in main_calls if getattr(c.func, "attr", "") == "include_router"
     ]
-    assert includes == ["app.include_router(new_v1_router())"]
+    assert includes == ["app.include_router(build_v1_router())"]
 
 
 def test_the_walker_sees_routes_from_included_routers() -> None:

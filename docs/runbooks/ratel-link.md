@@ -44,6 +44,8 @@ JSON on stdout (`journalctl -u <unit>`). Events that matter:
 | `api_key.created`, `.rotated`, `.revoked`, `.disabled` | Someone ran the admin CLI. |
 | `key.provider.none` | Started with no encryption key. Never acceptable on core-cp. |
 | `startup.indexes.missing` | Run `init-db`. |
+| `sim.import.created`, `.unchanged`, `.conflict` | A SIM import. `conflict` means a caller sent different keys for a known IMSI: nothing was changed, ask the caller why. Never contains the IMSI or a key. |
+| `key.unavailable` | A request needed the encryption key and there was none. Callers got 503. Check the key file. |
 | `startup.checks.failed` | MongoDB was unreachable at startup. |
 
 Logs must not contain keys, tokens or Ki/OPc. If you find one, it is a security issue: see below.
@@ -110,7 +112,9 @@ Calling systems today: `bss-app` (RatelBSS) and `meter-agent` (the RatelMeter ag
 | `... must contain base64 of exactly 32 bytes` | The file was edited or truncated | Restore from backup. |
 | `RATEL_LINK_KEY_FILE is not set` | Environment file missing the variable | Set it and restart. |
 | A caller gets 401 | Check the log for `auth.rejected` and its `reason` | `expired`: rotate. `revoked` or `disabled`: expected until a new key is issued. `bad_secret` or `unknown_id`: the caller has the wrong key. `malformed_token`: the caller is not sending the full `rlk_...` key, or a wrong header. |
-| `startup.indexes.missing` | `init-db` never ran | Run it. |
+| `startup.indexes.missing` | `init-db` never ran | Run it. It also creates the `ip_allocation` indexes. |
+| Callers get 503 `unavailable` on `POST /v1/sims` | No usable encryption key (the key file is missing or was never configured) | Fix the key file as above. Nothing was stored. |
+| Caller gets 409 `conflict` on `POST /v1/sims` | That IMSI already has different keys | Nothing was changed. Find out which keys are right with the SIM supplier before anyone tries again. |
 | `/v1` returns 500 | MongoDB down or the `ratel_link` user cannot authenticate | Check MongoDB. TODO: readiness check. |
 | `http.unhandled_error` with `exc_type` `DecryptionError` | The key file is not the one that encrypted the record, or a record was altered | Stop. Do not retry in a loop. Tell the project lead. |
 | `a calling system with api_key_id ... already exists` | The system exists | Use `rotate`. |

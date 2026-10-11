@@ -26,7 +26,7 @@ See `.env.example`. By component:
 | --------- | --------- |
 | all | `RATEL_ENV`, `LOG_LEVEL` |
 | app | `DATABASE_URL`, `REDIS_URL`, `RATEL_LINK_BASE_URL`, `RATEL_LINK_API_KEY` |
-| ratel-link | `MONGO_URI` (localhost only), `OPEN5GS_DB_NAME`, `RATEL_LINK_DB_NAME`, `RATEL_LINK_KEY_FILE`, `RATEL_LINK_KEY_ID`, `RATEL_LINK_API_KEY_MAX_AGE_DAYS`, `RATEL_LINK_API_KEY_ROTATION_OVERLAP_DAYS`, `RATEL_LINK_API_KEY_EXPIRY_WARN_DAYS` |
+| ratel-link | `MONGO_URI` (localhost only), `OPEN5GS_DB_NAME`, `RATEL_LINK_DB_NAME`, `RATEL_LINK_KEY_FILE`, `RATEL_LINK_KEY_ID`, `RATEL_LINK_UE_POOL`, `RATEL_LINK_API_KEY_MAX_AGE_DAYS`, `RATEL_LINK_API_KEY_ROTATION_OVERLAP_DAYS`, `RATEL_LINK_API_KEY_EXPIRY_WARN_DAYS` |
 | meter-agent | `METER_AGENT_MODE`, `METER_API_BASE_URL`, `METER_API_KEY`, `METER_SPOOL_DIR`, `METER_AGENT_RATEL_LINK_API_KEY` |
 | local containers | `POSTGRES_*`, `REDIS_PASSWORD`, `MONGO_ROOT_*` |
 
@@ -39,6 +39,7 @@ Decisions: [ADR 0006](adr/0006-ki-opc-encryption-at-rest.md) (encryption) and
 | -------- | ------- | ---- |
 | `RATEL_LINK_KEY_FILE` | none | Path to a file holding base64 of 32 random bytes. Required outside `local` and `test`; without a usable file RatelLink does not start. Must be a regular file owned by the service user with no group or other permissions. The key itself is never in an environment variable or in Git. |
 | `RATEL_LINK_KEY_ID` | `1` | Id stored in each encrypted record, so a later key can be told apart. 1 to 32 characters: lowercase letters, digits, `.`, `_`, `-`. |
+| `RATEL_LINK_UE_POOL` | `10.45.0.0/16` | The pool of fixed IPv4 addresses given to lines at activation (Build Plan). A private IPv4 network of at least 4 addresses. The network and broadcast addresses and the first host are never given out. TODO(network team): confirm which addresses in the lab pool are already taken. |
 | `RATEL_LINK_API_KEY_MAX_AGE_DAYS` | `90` | Lifetime of each API key. 1 to 90. Values above 90 are rejected (Build Plan: rotated every 90 days). |
 | `RATEL_LINK_API_KEY_ROTATION_OVERLAP_DAYS` | `7` | How long the old key keeps working after `rotate`. 1 to 30, and not longer than the key lifetime. |
 | `RATEL_LINK_API_KEY_EXPIRY_WARN_DAYS` | `14` | `api_key.expiring` is logged for keys this close to expiry. 1 to 90. |

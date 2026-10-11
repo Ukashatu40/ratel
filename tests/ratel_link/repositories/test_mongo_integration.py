@@ -23,9 +23,11 @@ from common.timeutil import utc_now
 from ratel_link import admin_cli
 from ratel_link.config import Settings
 from ratel_link.domain.api_keys import ApiKeyRecord
+from ratel_link.domain.ip_pool import IpPool, hold_cutoff
 from ratel_link.repositories.mongo import (
     MongoApiKeyRepository,
     MongoAuditLogRepository,
+    MongoIpAllocationRepository,
     MongoSimKeyRepository,
     ensure_indexes,
     missing_indexes,
@@ -35,6 +37,7 @@ from ratel_link.security.crypto import DecryptionError
 from ratel_link.services.api_key_admin import KeyPolicy, create_system, revoke, rotate
 from ratel_link.services.audit_log import AuditLog
 from ratel_link.services.authentication import ApiPrincipal, authenticate
+from ratel_link.services.ip_allocation import IpAllocator
 from ratel_link.services.sim_keys import SimKeyStore
 from tests.ratel_link.fakes import StaticKeyProvider
 from tests.synthetic import (
@@ -46,6 +49,12 @@ from tests.synthetic import (
 
 pytestmark = pytest.mark.integration
 
+ALL_INDEXES = [
+    "sim_key.imsi",
+    "api_key.api_key_id",
+    "ip_allocation.ue_ip",
+    "ip_allocation.imsi",
+]
 HEX_KI = SYNTHETIC_KI_HEX
 HEX_OPC = SYNTHETIC_OPC_HEX
 
@@ -69,7 +78,7 @@ def _store(database: Database[Any]) -> SimKeyStore:
 
 
 def test_indexes_are_created_idempotently(database: Database[Any]) -> None:
-    both = ["sim_key.imsi", "api_key.api_key_id"]
+    both = ALL_INDEXES
     assert missing_indexes(database) == both
     assert ensure_indexes(database) == both
     assert missing_indexes(database) == []
@@ -79,7 +88,7 @@ def test_indexes_are_created_idempotently(database: Database[Any]) -> None:
 
 def test_a_non_unique_index_does_not_count_as_the_required_one(database: Database[Any]) -> None:
     database["sim_key"].create_index("imsi")  # same field, not unique
-    assert missing_indexes(database) == ["sim_key.imsi", "api_key.api_key_id"]
+    assert missing_indexes(database) == ALL_INDEXES
 
 
 def test_raw_document_has_no_plaintext(database: Database[Any]) -> None:
@@ -243,7 +252,7 @@ def test_startup_reports_missing_indexes_then_stays_quiet_after_init_db(
     with TestClient(create_app(settings)):
         pass
     (event,) = [r for r in caplog.records if r.__dict__.get("event") == "startup.indexes.missing"]
-    assert event.__dict__["indexes"] == ["sim_key.imsi", "api_key.api_key_id"]
+    assert event.__dict__["indexes"] == ALL_INDEXES
     assert missing_indexes(database) != []  # startup reported, it did not create anything
 
     ensure_indexes(database)
@@ -265,3 +274,108 @@ def test_audit_entries_are_stored_as_the_build_plan_describes(database: Database
     assert set(raw) == {"_id", "at", "api_key_id", "action", "imsi", "before", "after"}
     assert raw["api_key_id"] == "bss-app" and raw["before"] == {"status": "provisioned"}
     assert raw["at"].utcoffset().total_seconds() == 0
+
+
+# --- fixed IP addresses -------------------------------------------------------------------------
+
+
+def _allocator(database: Database[Any]) -> tuple[IpAllocator, MongoIpAllocationRepository]:
+    repo = MongoIpAllocationRepository(database)
+    return IpAllocator(repo, IpPool.from_cidr("10.45.0.0/16")), repo
+
+
+def test_addresses_are_allocated_and_held_in_mongodb(database: Database[Any]) -> None:
+    ensure_indexes(database)
+    allocator, repo = _allocator(database)
+    first = allocator.allocate(SYNTHETIC_IMSI)
+    assert first == "10.45.0.2" and allocator.allocate(SYNTHETIC_IMSI) == first
+    assert allocator.allocate(SYNTHETIC_IMSI_2) == "10.45.0.3"
+    allocator.release(SYNTHETIC_IMSI)
+    raw = database["ip_allocation"].find_one({"ue_ip": first})
+    assert raw is not None and raw["state"] == "released" and raw["released_at"] is not None
+    assert raw["released_at"].utcoffset().total_seconds() == 0
+    # during the hold nobody else gets it, but its own line can have it back
+    assert repo.unavailable(hold_cutoff(utc_now())) == {first, "10.45.0.3"}
+    assert allocator.allocate(SYNTHETIC_IMSI) == first
+
+
+def test_the_unique_indexes_refuse_a_second_holder(database: Database[Any]) -> None:
+    ensure_indexes(database)
+    _, repo = _allocator(database)
+    now = utc_now()
+    assert repo.claim_free("10.45.0.9", SYNTHETIC_IMSI, now, hold_cutoff(now)) is True
+    assert repo.claim_free("10.45.0.9", SYNTHETIC_IMSI_2, now, hold_cutoff(now)) is False  # taken
+    assert repo.claim_free("10.45.0.10", SYNTHETIC_IMSI, now, hold_cutoff(now)) is False  # has one
+    assert database["ip_allocation"].count_documents({}) == 1
+
+
+def test_a_released_address_is_taken_over_only_after_the_hold(database: Database[Any]) -> None:
+    ensure_indexes(database)
+    _, repo = _allocator(database)
+    from datetime import timedelta
+
+    t0 = utc_now()
+    repo.claim_free("10.45.0.9", SYNTHETIC_IMSI, t0, hold_cutoff(t0))
+    repo.release(SYNTHETIC_IMSI, t0)
+    soon = t0 + timedelta(hours=23, minutes=59)
+    assert repo.claim_free("10.45.0.9", SYNTHETIC_IMSI_2, soon, hold_cutoff(soon)) is False
+    later = t0 + timedelta(hours=24)
+    assert repo.claim_free("10.45.0.9", SYNTHETIC_IMSI_2, later, hold_cutoff(later)) is True
+    assert repo.reclaim("10.45.0.9", SYNTHETIC_IMSI, later) is False  # it is no longer theirs
+    owner = database["ip_allocation"].find_one({"ue_ip": "10.45.0.9"})
+    assert owner is not None and owner["imsi"] == SYNTHETIC_IMSI_2 and owner["state"] == "active"
+
+
+def test_many_activations_at_once_never_share_an_address(database: Database[Any]) -> None:
+    ensure_indexes(database)
+    allocator, _ = _allocator(database)
+    imsis = [f"6210000000{n:05d}" for n in range(60)]
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        addresses = list(pool.map(allocator.allocate, imsis))
+    assert len(set(addresses)) == 60
+    assert database["ip_allocation"].count_documents({}) == 60
+
+
+def test_the_same_line_activated_twice_at_once_gets_one_address(database: Database[Any]) -> None:
+    ensure_indexes(database)
+    allocator, _ = _allocator(database)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        addresses = list(pool.map(lambda _: allocator.allocate(SYNTHETIC_IMSI), range(16)))
+    assert len(set(addresses)) == 1
+    assert database["ip_allocation"].count_documents({"imsi": SYNTHETIC_IMSI}) == 1
+
+
+# --- POST /v1/sims end to end (real app, real MongoDB) -------------------------------------------
+
+
+def test_sim_import_over_http_against_mongodb(database: Database[Any]) -> None:
+    from fastapi.testclient import TestClient
+
+    from ratel_link.main import create_app
+
+    ensure_indexes(database)
+    settings = Settings(
+        mongo_uri=SecretStr(os.environ["RATEL_TEST_MONGO_URI"]), ratel_link_db_name=database.name
+    )
+    token = create_system(
+        MongoApiKeyRepository(database), "bss-app", "RatelBSS", utc_now(), KeyPolicy()
+    )
+    client = TestClient(create_app(settings, key_provider=StaticKeyProvider()))
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"imsi": SYNTHETIC_IMSI, "ki": HEX_KI, "opc": HEX_OPC}
+
+    assert client.post("/v1/sims", json=payload, headers=headers).status_code == 200
+    assert client.post("/v1/sims", json=payload, headers=headers).status_code == 200
+    other = {**payload, "ki": HEX_OPC}
+    assert client.post("/v1/sims", json=other, headers=headers).status_code == 409
+    assert client.post("/v1/sims", json=payload).status_code == 401
+
+    raw = database["sim_key"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert raw is not None and set(raw["ki"]) == {"v", "alg", "kid", "nonce", "ct"}
+    assert HEX_KI not in json.dumps(raw, default=str) and HEX_OPC not in json.dumps(
+        raw, default=str
+    )
+    assert database["sim_key"].count_documents({}) == 1
+    entries = list(database["audit_log"].find({}))
+    assert len(entries) == 1 and entries[0]["api_key_id"] == "bss-app"
+    assert HEX_KI not in json.dumps(entries, default=str)

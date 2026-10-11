@@ -77,14 +77,23 @@ jobs:
           cache: pip
           cache-dependency-path: requirements/constraints.txt
       - run: pip install -r requirements/dev.txt -c requirements/constraints.txt
-      # Lab tests are excluded by default (-m 'not lab'). CI never touches the lab or production.
-      # TODO: add an integration job with PostgreSQL, Redis and MongoDB service containers when
-      # the first tests marked `integration` exist.
+      # Lab tests and integration tests are excluded by default. CI never touches the lab or
+      # production. Integration tests run in their own job below (MongoDB).
       - run: pytest --cov=services --cov-report=term-missing
 
   contract:
     name: Contract (OpenAPI, drift, Schemathesis)
     runs-on: ubuntu-latest
+    services:
+      # A throwaway MongoDB for this run only. The password is made from the run id, so it exists
+      # nowhere else and is worthless after the job ends.
+      mongo:
+        image: mongo:7
+        env:
+          MONGO_INITDB_ROOT_USERNAME: ci
+          MONGO_INITDB_ROOT_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 27017:27017
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -99,7 +108,37 @@ jobs:
         env:
           BIN: ""
           RATEL_TEST_API_KEY: test-only-not-a-real-key
+          # RatelLink needs a database. The script creates its own database, key file and test API key.
+          RATEL_TEST_MONGO_URI: mongodb://ci:ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:27017/?authSource=admin
         run: scripts/ci/run_schemathesis.sh
+
+  integration:
+    name: Integration (MongoDB)
+    runs-on: ubuntu-latest
+    services:
+      # A throwaway MongoDB for this run only. The password is made from the run id, so it exists
+      # nowhere else and is worthless after the job ends.
+      mongo:
+        image: mongo:7
+        env:
+          MONGO_INITDB_ROOT_USERNAME: ci
+          MONGO_INITDB_ROOT_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements/constraints.txt
+      - run: pip install -r requirements/dev.txt -c requirements/constraints.txt
+      # Runs the tests marked `integration` against the MongoDB service above. TODO: PostgreSQL
+      # and Redis service containers when the first tests that need them exist.
+      - name: Integration tests
+        env:
+          RATEL_TEST_MONGO_URI: mongodb://ci:ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:27017/?authSource=admin
+        run: pytest -m integration
 
   config-validate:
     name: Config, workflows, links
@@ -156,7 +195,7 @@ jobs:
   ci-success:
     name: ci-success
     if: always()
-    needs: [pr-hygiene, lint, typecheck, test, contract, config-validate, web]
+    needs: [pr-hygiene, lint, typecheck, test, contract, integration, config-validate, web]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled

@@ -46,6 +46,8 @@ paths:
       description: |
         Stores the SIM's keys in RatelLink. Does not create service. RatelBSS never sends this:
         keys go to RatelLink and RatelBSS receives only IMSI and ICCID.
+        Idempotent: sending the same keys again for an IMSI succeeds and changes nothing. An IMSI
+        that already has DIFFERENT keys is refused with 409 and the stored keys are never replaced.
         TODO(contract): the Build Plan's sim_key store also lists `amf`; the request body here
         lists only imsi, ki, opc as in Contract 1.
       parameters:
@@ -61,6 +63,8 @@ paths:
           $ref: "#/components/responses/OkEmpty"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
         default:
@@ -330,6 +334,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Conflict:
+      description: The IMSI already has different keys stored. Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     NotFound:
       description: Unknown line.
       content:
@@ -378,14 +388,16 @@ components:
           $ref: "#/components/schemas/Imsi"
         ki:
           type: string
+          pattern: "^[0-9a-fA-F]{32}$"
           writeOnly: true
           description: Secret. Write-only. Never returned, logged or sent to RatelBSS.
-          x-todo: Format and length not specified in the Build Plan.
+          x-todo: Not in the Build Plan. 128 bits as 32 hex characters is an assumption to confirm with the SIM supplier.
         opc:
           type: string
+          pattern: "^[0-9a-fA-F]{32}$"
           writeOnly: true
           description: Secret. Write-only. Never returned, logged or sent to RatelBSS.
-          x-todo: Format and length not specified in the Build Plan.
+          x-todo: Not in the Build Plan. 128 bits as 32 hex characters is an assumption to confirm with the SIM supplier.
     ActivateRequest:
       type: object
       required: [msisdn, speed_ul_mbps, speed_dl_mbps, voice]

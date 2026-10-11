@@ -33,6 +33,9 @@ log_event(log, logging.INFO, "line.activate.succeeded", status="active", speed_d
 | `auth.rejected` | WARNING | `reason`, `api_key_id` (only if the key parsed) | A request was refused with 401. `reason` is one of `missing_header`, `wrong_scheme`, `malformed_token`, `unknown_id`, `bad_secret`, `revoked`, `expired`, `disabled`. The caller only ever sees the generic 401. Never the key, secret or hash. |
 | `api_key.expiring` | WARNING | `api_key_id`, `api_key_generation`, `days_left` | A key is within the warning window. Logged at startup and by `api-key check-expiry`. |
 | `api_key.created`, `.rotated`, `.revoked`, `.disabled` | INFO | `api_key_id`, `api_key_generation` | Administration with the admin CLI. |
+| `sim.import.created`, `.unchanged`, `.conflict` | INFO, INFO, WARNING | `api_key_id` | `POST /v1/sims` outcomes. Never the IMSI or a key. A conflict means a caller sent different keys for a known IMSI. |
+| `ip.allocated`, `.reclaimed`, `.released` | INFO | none | Address allocation. Never the IMSI. |
+| `key.unavailable` | ERROR | none | A request needed the encryption key and there was none (the caller got 503). |
 | `key.provider.none` | WARNING | `reason` | RatelLink started without an encryption key. Allowed only in `local` and `test`. If it appears anywhere else, treat it as an incident. |
 | `startup.indexes.missing` | ERROR | `indexes` | Run `admin_cli init-db`. |
 | `startup.checks.failed` | ERROR | `exc_type` | MongoDB was not reachable at startup. The service still started. |
