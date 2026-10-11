@@ -2,7 +2,6 @@
 Labels: type:feature, area:ratel-meter, priority:p1, risk:high
 
 **Week:** 2 | **Target date:** 2026-10-16 | **Owner:** @ml-lawarn (with @CaptRaven for reading the counters) | **Reviewer:** @CaptRaven + @Ukashatu40
-**Week:** 2 | **Target date:** TODO (running by Oct 9) | **Owner:** TODO (suggested: @ml-lawarn paired with @CaptRaven) | **Reviewer:** @CaptRaven + @Ukashatu40
 **Source:** Build Plan, RatelMeter spec; week two software column ("RatelMeter's data agent running on core-up"); week 3 completes the API and `/v1/usage`.
 
 ## Re-planned 2026-10-08: this is the epic, built from smaller issues

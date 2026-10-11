@@ -24,6 +24,79 @@ Build Plan  ->  Weekly gate  ->  Epic  ->  Issue  ->  Branch  ->  Pull request  
 | Merge | The author or the project lead | Squash merge into `main`, branch deleted |
 | Done | The assignee | The [Definition of Done](DEFINITION_OF_DONE.md) holds, including docs and a runbook note |
 
+## From the gate down to your issue, with the real Week 2 example
+
+The top of the picture is the part people find hardest, so here it is slowly. Each level answers one
+question and is made smaller by the level below.
+
+| Level | The question it answers | Who writes it | Size | Done when |
+| ----- | ----------------------- | ------------- | ---- | --------- |
+| **Gate** | Did the week succeed? | Nobody: it is fixed in the Build Plan's eight-week table | A whole week of the whole team | Its test passes |
+| **Epic** | What must **one workstream** deliver for the gate to pass? | Project lead | One workstream, one week | Its "Done when" lines are true |
+| **Issue** | What exactly does **one person** do next? | Project lead (the owner can propose) | A few days at most | Its acceptance criteria pass |
+| **Branch and PR** | How is it done, in a form others can check? | The assignee | Hours to a day or two | Merged |
+
+**1. The gate** is a pass/fail test that ends the week. It is not a task. For Week 2 the Build Plan
+says: *"A real SIM, created through RatelLink, attaches, browses and registers for calls."* Nobody
+works on "the gate"; people work on the things that make it true. A week is not finished until its
+gate passes, and the next week's work assumes it has.
+
+**2. Epics.** No single person can make that sentence true, so split it by **workstream**: what must
+each part of the system deliver? The Build Plan's Week 2 "Software" column answers that directly:
+
+| Epic (one per workstream) | Its "Done when" lines (copied from the Build Plan) |
+| ------------------------- | --------------------------------------------------- |
+| **RatelLink complete against the lab** | A line created through the API attaches through our radio, browses, and registers for calls. Its Open5GS document matches the template field for field. A test searches every log file after a full test run and finds no Ki or OPc value. |
+| **RatelMeter's data agent running on core-up** | Over a real session the records' totals match the interface's own counters within 1%. Stopping the agent mid-interval and restarting it loses nothing and counts nothing twice. Taking the API offline for an hour and back delivers every spooled interval. |
+| **RatelBSS's line flow calling the real RatelLink** | The sell-to-activate flow runs against RatelLink and produces exactly one `/activate` call. Tests prove every transition not in the table is refused. |
+| **Live-changes spike written up** | The three questions are answered in writing. |
+
+An epic is just a GitHub issue whose body is the "Done when" list plus a checklist of its child
+issues. Nobody codes on an epic. It tells you whether the workstream is finished and what is left.
+
+**3. Issues.** Now cut each epic into pieces one person can finish, review and demonstrate in a few
+days. The RatelLink epic becomes:
+
+| Issue | What it is | Which "Done when" line it serves |
+| ----- | ---------- | -------------------------------- |
+| W2-01 | Store SIM keys encrypted; `POST /v1/sims` | feeds "a line created through the API" |
+| W2-02 | `activate`, `data`, `deactivate` write the Open5GS document | "matches the template field for field" |
+| W2-03 | Read a line; list address assignments; audit entries | RatelBSS and RatelMeter can check the network |
+| W2-04 | The acceptance tests | "a test searches every log file ..." |
+| W2-07 | The real-SIM procedure and the first attach | "attaches, browses, registers for calls" |
+
+If you cannot finish an issue in a few days, it is two issues. If an issue serves no "Done when"
+line, ask whether it belongs before the demo at all (the Build Plan has a "What not to build yet" list).
+
+**4. Branch and PR** are yours: the issue is the assignment, the pull request is how you hand the
+result in.
+
+### Writing an epic (copy this)
+
+```
+Title:   [Epic] RatelLink complete against the lab (Week 2)
+Labels:  type:feature, area:ratel-link, priority:p0, risk:critical
+Body:
+  Gate served: Week 2 - a real SIM, created through RatelLink, attaches, browses and registers for calls.
+
+  Done when (Build Plan, RatelLink "Done when"):
+  - [ ] A line created through the API attaches through our radio, browses, and registers for calls
+  - [ ] Its Open5GS document matches the template field for field, apart from its own values
+  - [ ] A test searches every log file after a full test run and finds no Ki or OPc value
+
+  Issues:
+  - [ ] #1 SIM key store and POST /v1/sims
+  - [ ] #2 activate, data and deactivate
+  - [ ] #3 line status, assignments, audit entries
+  - [ ] #4 acceptance tests
+  - [ ] #7 real-SIM path
+
+  Blocked by: SIM keys, radio, ims APN, MongoDB authentication (network team)
+```
+
+Create the epic **after** its child issues exist, because the checklist needs their numbers. GitHub
+shows "3 of 5" on the epic as the children close.
+
 ## The people and their jobs
 
 | Role | Job in the flow |

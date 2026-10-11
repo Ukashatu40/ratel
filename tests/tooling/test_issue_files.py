@@ -74,3 +74,13 @@ def test_the_author_of_an_issue_is_not_its_only_reviewer(path: Path) -> None:
     assert reviewers
     others = [r for r in re.findall(r"@[A-Za-z0-9-]+", reviewers.group(1)) if r not in owner]
     assert others or not owner, "nobody but the owner is named as reviewer"
+
+
+@pytest.mark.parametrize("path", ISSUES, ids=lambda p: p.name[:5])
+def test_header_fields_appear_once(path: Path) -> None:
+    # A merge that keeps both sides of a conflict leaves two copies of the header line.
+    text = path.read_text()
+    assert text.count("**Week:**") == 1, "more than one **Week:** header line"
+    assert text.count("**Source:**") == 1, "more than one **Source:** line"
+    headings = [ln for ln in text.splitlines() if ln.startswith("## ")]
+    assert len(headings) == len(set(headings)), "a section appears twice"
