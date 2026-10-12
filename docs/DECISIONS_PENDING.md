@@ -2,6 +2,8 @@
 
 Nothing here was decided silently except where marked "assumed", and assumptions are reversible.
 
+> **2026-10-12:** the network team's three documents arrived. What they settle, and what is still missing (N1 to N8, with who can supply each), is in [RATELCORE_INTEGRATION_FACTS.md](RATELCORE_INTEGRATION_FACTS.md).
+
 ## Decision queue (2026-10-09): what the project lead decides next, with a suggestion for each
 
 The project lead decides all of these. "Suggested" is a recommendation, not a decision. Older items
@@ -94,7 +96,7 @@ keep their numbers below; this queue is ordered by urgency.
 12. **SIM re-import with different keys (W2-01). Decided 2026-10-10 and built:** the same keys again return 200 and change nothing; different keys return 409 `conflict` and never replace the stored ones. Replacing a SIM's keys will be a deliberate admin action, if it is ever needed.
 13. **Append-only `audit_log` in MongoDB itself.** The code offers insert only, but a database user that may only insert into `audit_log` is not set up. Decide with the network team.
 14. **Ki and OPc format.** The code accepts exactly 32 hexadecimal characters (128 bits) for each, in one place (`domain/sim_keys.py`). This is an assumption: the contract still says `TODO(contract)`. The project lead and the network team confirm it, then the contract is updated in the same commit as any change. Also confirm the case to store (the code keeps the case it was given).
-15. **`amf` handling.** The Build Plan's `sim_key` lists `amf`; the contract's `SimImport` does not. It is not stored. Decide whether it is part of the request, and its default.
+15. **`amf` handling. Resolved 2026-10-12:** the network team's Integration Guide fixes it at `"8000"`. It is a constant RatelLink writes at activation, not a request field. Nothing to store.
 16. **Overlap and warning defaults.** API key rotation overlap 7 days (allowed 1 to 30) and expiry warning 14 days (allowed 1 to 90) are proposals. The 90-day lifetime is the Build Plan's.
 17. **Encryption key file: backup procedure and owner, and its path on core-cp.** The key needs a separate, secure, offline backup that is never stored with database backups. Nobody owns this yet. Required before the first real SIM key is imported (risk R-14).
 18. **Backup encryption for the `open5gs` database.** Open5GS keeps Ki and OPc in plaintext there, so any backup containing it must be encrypted before leaving core-cp (network team, Week 6, risk R-06). Mechanism and location are TODO.
@@ -118,7 +120,7 @@ keep their numbers below; this queue is ordered by urgency.
 ### Raised while building W2-01 and the address allocator (2026-10-10)
 
 32. **The audit entry is written after the keys are stored, not in the same step.** MongoDB without a replica set has no transaction. If the audit write fails, the keys are stored, the caller gets a 500, and a retry reports "unchanged" without the missing entry. Options: accept (the failure is rare and visible), run MongoDB as a single-node replica set to get transactions, or write the audit entry first. Suggested: accept for now, revisit with the network team's MongoDB setup.
-33. **Gateway address of the UE pool.** The allocator never hands out the network address, the broadcast address or the first host (10.45.0.1, the usual gateway on `ogstun`). Confirm with the network team which addresses in the lab pool are already used, and set `RATEL_LINK_UE_POOL` if the pool is different.
+33. **Gateway address of the UE pool. Resolved 2026-10-12:** the Operations Runbook confirms the first host (`10.45.0.1`) is the UPF's own address, so the allocator is right to reserve it. What is still open is which part of the pool is outside the SMF's dynamic range (N2 in [RATELCORE_INTEGRATION_FACTS.md](RATELCORE_INTEGRATION_FACTS.md)).
 34. **A line may take its own released address back during the 24-hour hold.** The Build Plan's rule ("a released address isn't reused for 24 hours, so a late counter reading can never be charged to the wrong person") is about other people. The same line getting its own address back cannot charge anyone wrongly. Suggested: keep. Say if you want the hold to apply to the same line too.
 35. **Idempotency-Key handling for `activate`, `data` and `deactivate`** (decision B9 in the queue above) is still open. `POST /v1/sims` does not need it. The header is validated as the contract says (not empty).
 36. **`ki` and `opc` now have a pattern in the contract** (32 hexadecimal characters), because the contract fuzzer needs the format to tell valid from invalid. This is still the assumption in item 14. If the SIM supplier uses another format, change `domain/sim_keys.py` and the contract together.

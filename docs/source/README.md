@@ -3,11 +3,14 @@
 | Document | In this repo? | Notes |
 | -------- | ------------- | ----- |
 | `Ratelplus_Build_Plan.pdf` | **No, on purpose** | Primary technical source of truth. 27 pages, dated Sep 28, 2026. Contains the lab's internal addresses and company plans. |
-| Ratel Plus Subscriber Platform PRD | No | Wins over the Build Plan on product behavior. **Where it lives is not recorded.** The Build Plan's first page links to it by name, but the PDF export dropped the link (the PDF was printed from a web page; its header says "Sep 28, 2026, @Muhammad"). Ask the Build Plan's author for it, then record the location here. The Build Plan cites PRD ids such as CHG-6, VOI-1 to VOI-7, TOP-2, TOP-3, ACC-3, OPS-1, OPS-2. |
+| `RatelLink_Developer_Integration_Guide.pdf` | **No, on purpose** | 6 pages, 11 Oct 2026. The subscriber document, its rules and gotchas, and what the core guarantees. **Read before W2-02.** Summarised, without addresses, in [../RATELCORE_INTEGRATION_FACTS.md](../RATELCORE_INTEGRATION_FACTS.md). |
+| `RatelLink_Development_Documentation.pdf` | **No, on purpose** | 5 pages, 11 Oct 2026. How the core and the voice layer were built, the first VoLTE call, open items. Hosts and operational detail. |
+| `RatelCore_Operations_Runbook.pdf` | **No, on purpose** | 5 pages, 11 Oct 2026. Boot persistence, the restore point, rollback steps. Hosts and operational detail. |
+| Ratel Plus Subscriber Platform PRD | No | Wins over the Build Plan on product behavior. **Where it lives is not recorded.** The Build Plan's first page links to it by name, but the PDF export dropped the link (the PDF was printed from a web page; its header says "Sep 28, 2026, @Muhammad"). The Build Plan's author ("@Muhammad" in the header) is **@CaptRaven**: ask them for it, then record the location here. The Build Plan cites PRD ids such as CHG-6, VOI-1 to VOI-7, TOP-2, TOP-3, ACC-3, OPS-1, OPS-2. |
 
-## Getting the Build Plan
+## Getting the Build Plan and the three network documents
 
-Ask the project lead. Save your copy as `docs/source/Ratelplus_Build_Plan.pdf` on your machine.
+Ask the project lead. Save your copies in `docs/source/` on your machine (any file name).
 `.gitignore` keeps `docs/source/*.pdf` out of Git, so it cannot be committed by accident. Do not
 upload it to issues, pull requests, chat rooms outside the team, or AI tools that are not approved
 for it.

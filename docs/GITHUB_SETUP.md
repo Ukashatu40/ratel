@@ -106,7 +106,7 @@ Assignee and Reviewers are built in. **The `gh` CLI cannot do two things, so do 
    - **Team Workload**: layout Table, group by Assignee, filter `-status:Done`, show Priority, Week, Status.
    - **Risks / Blockers**: layout Table, filter `status:Blocked OR risk:Critical OR priority:P0`, sort by Priority.
 3. Turn on the built-in workflows (Project, Workflows): item added to project sets Status to Backlog; item closed sets Status to Done.
-4. Add the repository's issues to the project (project settings, or `gh project item-add`).
+4. Add the repository's issues to the project and fill their fields: `python3 scripts/github/sync_project.py <owner> <project-number>` shows what it would do; add `--apply` to do it. Run it again whenever issues are added. (The board stays empty until you do this.)
 
 ## Branch naming and PR titles
 
