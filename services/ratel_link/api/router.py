@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ratel_link.api import sims
+from ratel_link.api import assignments, lines, sims
 from ratel_link.api.dependencies import AuthFirstRoute, require_api_key
 
 
@@ -20,5 +20,7 @@ def build_v1_router() -> APIRouter:
     """The /v1 router with every Contract 1 route that exists. Add new route modules here."""
     router = new_v1_router()
     sims.add_routes(router)
-    # TODO: lines (W2-02), line status and assignments (W2-03).
+    lines.add_routes(router)
+    assignments.add_routes(router)
+    # TODO: activate, data and deactivate (W2-02).
     return router

@@ -12,6 +12,11 @@ RatelBSS can check its view against the network's, RatelMeter can map addresses 
 
 **API-key authentication, the audit writer and the key administration CLI are delivered by the security PR** ([ADR 0007](../adr/0007-api-key-verification-and-rotation.md)). This issue applies them; it does not build them.
 
+## Delivered by the W2-03 pull request (`feature/ratellink-line-status-and-assignments`)
+Both GET endpoints on `build_v1_router()`, `link_get_line` and `link_list_assignments` removed from `contracts/not_implemented.txt`, Schemathesis fuzzing them in CI with all checks, and the `line_state` store (`LineStateRepository`, unique `line_state.imsi`). `GET /v1/lines/{imsi}` returns 404 for an unknown IMSI, `provisioned` when only the keys are stored, and the stored state otherwise. `GET /v1/assignments` lists active addresses and those released less than 24 hours ago, lowest address first, so a late counter reading is still charged to the right line.
+
+**Still open here, and why:** nothing writes `line_state` yet. W2-02 (activate, data, deactivate) must call `LineStateRepository.put` and `IpAllocator.allocate/release`, and write the audit entries for those changes. Until then a line is 404 or `provisioned`, and the assignments list is empty in a real deployment.
+
 ## Scope
 - The two GET endpoints per the contract.
 - `audit_log` writes (through `AuditLog.append`, with the caller's `api_key_id`) for every change made by W2-01 and W2-02, if not already added there.

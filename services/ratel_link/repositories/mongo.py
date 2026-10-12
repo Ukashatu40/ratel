@@ -18,12 +18,14 @@ from ratel_link.config import Settings
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.domain.audit import AuditEntry
 from ratel_link.domain.ip_pool import IpAllocation
+from ratel_link.domain.line_state import LineState
 from ratel_link.domain.sim_keys import SimKeyDocument
 
 SIM_KEY = "sim_key"
 API_KEY = "api_key"
 AUDIT_LOG = "audit_log"
 IP_ALLOCATION = "ip_allocation"
+LINE_STATE = "line_state"
 
 # (collection, field) pairs that must be unique. Created by `admin_cli init-db`, checked at startup.
 # A line holds at most one address and an address belongs to at most one line.
@@ -32,6 +34,7 @@ UNIQUE_INDEXES: list[tuple[str, str]] = [
     (API_KEY, "api_key_id"),
     (IP_ALLOCATION, "ue_ip"),
     (IP_ALLOCATION, "imsi"),
+    (LINE_STATE, "imsi"),
 ]
 
 
@@ -85,6 +88,9 @@ class MongoSimKeyRepository:
             return False
         return result.upserted_id is not None
 
+    def exists(self, imsi: str) -> bool:
+        return self._collection.find_one({"imsi": imsi}, {"_id": 1}) is not None
+
     def get(self, imsi: str) -> SimKeyDocument | None:
         found: Any = self._collection.find_one({"imsi": imsi}, {"_id": 0})
         return found  # type: ignore[no-any-return]
@@ -135,6 +141,11 @@ class MongoIpAllocationRepository:
         doc: Any = self._collection.find_one({"imsi": imsi}, {"_id": 0})
         return None if doc is None else IpAllocation.from_document(doc)
 
+    def list_current(self, hold_cutoff: datetime) -> list[IpAllocation]:
+        held = {"state": "released", "released_at": {"$gt": hold_cutoff}}
+        cursor = self._collection.find({"$or": [{"state": "active"}, held]}, {"_id": 0})
+        return [IpAllocation.from_document(doc) for doc in cursor]
+
     def unavailable(self, hold_cutoff: datetime) -> set[str]:
         held = {"state": "released", "released_at": {"$gt": hold_cutoff}}
         cursor = self._collection.find({"$or": [{"state": "active"}, held]}, {"ue_ip": 1, "_id": 0})
@@ -168,3 +179,15 @@ class MongoIpAllocationRepository:
             {"imsi": imsi, "state": "active"}, {"$set": {"state": "released", "released_at": now}}
         )
         return result.modified_count == 1
+
+
+class MongoLineStateRepository:
+    def __init__(self, database: Database[Any]) -> None:
+        self._collection = database[LINE_STATE]
+
+    def get(self, imsi: str) -> LineState | None:
+        doc: Any = self._collection.find_one({"imsi": imsi}, {"_id": 0})
+        return None if doc is None else LineState.from_document(doc)
+
+    def put(self, state: LineState) -> None:
+        self._collection.replace_one({"imsi": state.imsi}, state.to_document(), upsert=True)

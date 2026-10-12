@@ -10,14 +10,11 @@ from ratel_link.config import Settings
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.main import create_app
 from ratel_link.services.api_key_admin import KeyPolicy, create_system
-from tests.ratel_link.fakes import (
-    FakeClock,
-    InMemoryApiKeyRepository,
-    InMemoryAuditLogRepository,
-    InMemorySimKeyRepository,
-)
+from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
+from tests.ratel_link.helpers import all_fakes
 
-OTHER_FAKES = {"sim_keys": InMemorySimKeyRepository(), "audit": InMemoryAuditLogRepository()}
+# Every repository except the API keys, which each test supplies itself.
+OTHER_FAKES = {name: fake for name, fake in all_fakes().items() if name != "api_keys"}
 
 
 def _events(caplog: pytest.LogCaptureFixture, name: str) -> list[dict[str, object]]:

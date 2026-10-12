@@ -31,9 +31,8 @@ from ratel_link.services.authentication import ApiPrincipal
 from tests.ratel_link.fakes import (
     FakeClock,
     InMemoryApiKeyRepository,
-    InMemoryAuditLogRepository,
-    InMemorySimKeyRepository,
 )
+from tests.ratel_link.helpers import all_fakes
 from tests.synthetic import (
     SENTINEL_API_KEY,
     SENTINEL_API_KEY_ID,
@@ -73,11 +72,7 @@ class Env:
         self.repo = InMemoryApiKeyRepository()
         self.clock = FakeClock()
         self.app: FastAPI = create_app(
-            Settings(),
-            api_keys=self.repo,
-            sim_keys=InMemorySimKeyRepository(),
-            audit=InMemoryAuditLogRepository(),
-            clock=self.clock,
+            Settings(), **{**all_fakes(), "api_keys": self.repo}, clock=self.clock
         )
         self.app.include_router(_test_router())
         self.client = TestClient(self.app)
@@ -364,7 +359,7 @@ def test_one_request_costs_one_key_lookup(env: Env) -> None:
 def test_the_router_dependency_protects_on_its_own() -> None:
     # Defence in depth: a router built without the auth-first route class is still protected.
     repo = InMemoryApiKeyRepository()
-    app = create_app(Settings(), api_keys=repo, clock=FakeClock())
+    app = create_app(Settings(), **{**all_fakes(), "api_keys": repo}, clock=FakeClock())
     plain = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key)])
 
     @plain.get("/plain")
