@@ -11,6 +11,7 @@ this order, and read `docs/GITHUB_SETUP.md` first.
 | 2 | `apply_ruleset.sh` | Creates or updates the `main-protection` ruleset |
 | 3 | `create_project.sh` | Creates the GitHub Project and its fields (views are manual) |
 | 4 | `create_issues.sh` | Creates the Week 2 issues from `docs/issues-week2/` |
+| 5 | `sync_project.py` | Adds the open issues to the Project and fills Priority, Risk, Workstream, Week and Target Date from their labels and first line. Previews by default; `--apply` changes the Project. Safe to run again |
 
 All scripts accept `OWNER/REPO` as the first argument and default to the repo of the current
 directory.

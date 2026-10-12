@@ -14,8 +14,11 @@ Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 - Every line gets a fixed IPv4 address from `10.45.0.0/16` at activation; none activates without one; a released address is not reused for 24 hours.
 - Until live changes land, every change takes effect at the next attach.
 
+## The subscriber schema is now specified
+The network team's Integration Guide (11 Oct 2026) gives the exact document, types, units and rules. Read [RATELCORE_INTEGRATION_FACTS.md](../RATELCORE_INTEGRATION_FACTS.md) before writing any code. The rules that matter most: update an existing document with `$set` on named paths only (never replace it), never write `security.sqn`, int32 for every integer, `internet` always at session index 0, `network_access_mode` 2, MSISDN as `["234" + 10 digits]`, Ki and OPc in upper case, speeds as `{value, unit}` whole numbers. Data `off` is a `$pull` of the internet session and data back `on` a `$push` at position 0.
+
 ## Already delivered (W2-01 pull request): the address allocator
-`IpAllocator` (`services/ip_allocation.py`) with its pure rules in `domain/ip_pool.py` and atomic MongoDB claims in the `ip_allocation` collection: the lowest free address from `RATEL_LINK_UE_POOL`, one address per line and one line per address, idempotent allocation, release, a 24-hour hold before another line can take a released address (the same line can take its own back), and a clear error when the pool is full. This issue only has to call `allocate` on activation and `release` on deactivation. Open questions are items 33 and 34 in DECISIONS_PENDING.md.
+`IpAllocator` (`services/ip_allocation.py`) with its pure rules in `domain/ip_pool.py` and atomic MongoDB claims in the `ip_allocation` collection: the lowest free address from `RATEL_LINK_UE_POOL`, one address per line and one line per address, idempotent allocation, release, a 24-hour hold before another line can take a released address (the same line can take its own back), and a clear error when the pool is full. This issue only has to call `allocate` on activation and `release` on deactivation. The first host of the pool is the UPF gateway, so reserving it is correct (item 33 is resolved). **Before activation runs against the lab, the network team must say which part of `10.45.0.0/16` is outside the SMF's dynamic range (N2 in the facts file)**; point `RATEL_LINK_UE_POOL` at it. Item 34 is still open.
 
 ## Scope
 - Build documents from a **template taken from a subscriber Open5GS created itself**, one that already has the ims APN. Never handwrite the schema.
@@ -29,12 +32,15 @@ Labels: type:feature, area:ratel-link, priority:p0, risk:critical
 Live changes (throttle or detach mid-session). Switching deactivation to `subscriber_status` barring (decide after W2-05). Reading lines (W2-03).
 
 ## Dependencies
-- **If the network team cannot supply the template in time, make it yourself on the lab:** in the Open5GS WebUI add one **test** subscriber with a **dummy** IMSI and **dummy** Ki/OPc (never a real SIM key) and the `internet` and `ims` APNs, then export that one document from the lab MongoDB (`db.subscribers.findOne({imsi: "<the test imsi>"})` in `mongosh` on core-cp) to a file **outside the repository**. That is a subscriber "Open5GS created itself", with the ims APN, which is what the Build Plan asks for. Replace the key values with placeholders before sharing the file with anyone, and keep it out of Git; only the field shape matters. Confirm with the network lead that the ims APN settings are the final ones.
+- **The `ims` session's voice `pcc_rule` entries must come from an exported working subscriber (N1 in the facts file); the guide's example is abbreviated on purpose.** **If the network team cannot supply the template in time, make it yourself on the lab:** in the Open5GS WebUI add one **test** subscriber with a **dummy** IMSI and **dummy** Ki/OPc (never a real SIM key) and the `internet` and `ims` APNs, then export that one document from the lab MongoDB (`db.subscribers.findOne({imsi: "<the test imsi>"})` in `mongosh` on core-cp) to a file **outside the repository**. That is a subscriber "Open5GS created itself", with the ims APN, which is what the Build Plan asks for. Replace the key values with placeholders before sharing the file with anyone, and keep it out of Git; only the field shape matters. Confirm with the network lead that the ims APN settings are the final ones.
 - W2-01 (and the SIM key store, authentication and audit writer already delivered by the security PR). The Open5GS template and the ims APN/pool from the network team (TODO: obtain the template). Open5GS v2.8.0 on the lab core-cp.
-- `TODO(contract)`: response bodies, `reason` values, whether speeds are required for `data` mode `off`, number formats.
+- `TODO(contract)`: response bodies, `reason` values, whether speeds are required for `data` mode `off`. The stored number form is now known (`234` + 10 digits); the API form is N6 in the facts file.
 
 ## Acceptance criteria
-- A document written through the API matches the template **field for field**, apart from its own values (automated comparison against the template).
+- A document created through the API matches the template **field for field**, apart from its own values (automated comparison against the template).
+- Activating a line whose document already exists changes only the fields RatelLink owns: `sqn`, `imeisv`, `mme_host`, `mm_realm`, `mme_timestamp` and `purge_flag` are untouched (test with a document that has them set). `security.sqn` is never written.
+- Integers are written as int32, `internet` is at index 0, `network_access_mode` is 2, the MSISDN is a one-item array in `234` form, Ki and OPc are upper case.
+- The `security` object never appears in any response, log line or audit entry.
 - Activate twice with the same settings: one document, no change on the second call.
 - `data` with `off` removes only the internet APN; the ims APN remains.
 - `deactivate` removes the document; a later `activate` restores it from stored keys.
