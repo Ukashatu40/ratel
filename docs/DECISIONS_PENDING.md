@@ -125,6 +125,12 @@ keep their numbers below; this queue is ordered by urgency.
 35. **Idempotency-Key handling for `activate`, `data` and `deactivate`** (decision B9 in the queue above) is still open. `POST /v1/sims` does not need it. The header is validated as the contract says (not empty).
 36. **`ki` and `opc` now have a pattern in the contract** (32 hexadecimal characters), because the contract fuzzer needs the format to tell valid from invalid. This is still the assumption in item 14. If the SIM supplier uses another format, change `domain/sim_keys.py` and the contract together.
 
+### Raised while building W2-03 (2026-10-11)
+
+37. **A line that was never imported answers 404; one with stored keys and no service answers `provisioned`.** The contract lists 404 for `GET /v1/lines/{imsi}` but does not say what a never-activated SIM looks like. I report `provisioned`, because that is the status the Build Plan gives a SIM whose keys are stored. Say if BSS should see 404 until activation.
+38. **`GET /v1/assignments` is not paginated.** The pool is a /16 (about 65,000 addresses), and a full list is a large response. The prototype has tens of lines, so the contract's single list is fine. Revisit with the Week 6 scale test; the contract would need a cursor.
+39. **`apns` is a list of strings** (contract placeholder `internet`, `ims`). Confirm the shape when W2-02 has the Open5GS template.
+
 ## Information I did not have (TODOs in the files)
 
 - GitHub usernames: project lead, independent reviewer, workstream owners, frontend lead, network lead (`CODEOWNERS`, `critical-reviewers.txt`, ownership and team docs).

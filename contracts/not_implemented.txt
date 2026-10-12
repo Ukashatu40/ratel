@@ -8,7 +8,5 @@
 link_activate_line
 link_set_data_mode
 link_deactivate_line
-link_get_line
-link_list_assignments
 meter_get_usage
 meter_get_calls

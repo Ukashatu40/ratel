@@ -23,7 +23,7 @@ from tests.ratel_link.fakes import (
     InMemorySimKeyRepository,
     StaticKeyProvider,
 )
-from tests.ratel_link.helpers import register_system
+from tests.ratel_link.helpers import all_fakes, register_system
 from tests.synthetic import SYNTHETIC_IMSI, SYNTHETIC_IMSI_2, SYNTHETIC_KI_HEX, SYNTHETIC_OPC_HEX
 
 OTHER_HEX = "0f0e0d0c0b0a09080706050403020100"
@@ -49,9 +49,12 @@ class Env:
         self.clock = FakeClock()
         self.app = create_app(
             Settings(),
-            api_keys=self.api_keys,
-            sim_keys=self.sims,
-            audit=self.audit,
+            **{
+                **all_fakes(),
+                "api_keys": self.api_keys,
+                "sim_keys": self.sims,
+                "audit": self.audit,
+            },
             key_provider=key_provider or StaticKeyProvider(),
             clock=self.clock,
         )

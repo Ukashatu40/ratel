@@ -96,7 +96,7 @@ gh api -X PUT repos/OWNER/REPO/branches/main/protection --input .github/rulesets
 ## GitHub Project
 
 Create with `scripts/github/create_project.sh <owner>` (needs `gh auth refresh -s project`). It
-creates the project and the fields Priority, Risk, Workstream, Week, Type and Target Date.
+creates the project and the fields Priority, Risk, Workstream, Week and Target Date. (There is no `Type` field: GitHub reserves that name, and the `type:*` labels carry it.)
 Assignee and Reviewers are built in. **The `gh` CLI cannot do two things, so do them by hand:**
 
 1. **Status options.** Project settings, Status field: set the options to Backlog, Ready, In Progress, Review, QA / Integration, Blocked, Done.

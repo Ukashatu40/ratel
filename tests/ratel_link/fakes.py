@@ -14,6 +14,7 @@ from common.timeutil import utc_now
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.domain.audit import AuditEntry
 from ratel_link.domain.ip_pool import IpAllocation
+from ratel_link.domain.line_state import LineState
 from ratel_link.domain.sim_keys import SimKeyDocument
 from ratel_link.security.key_provider import KEY_BYTES, KeyUnavailableError
 
@@ -60,6 +61,9 @@ class InMemorySimKeyRepository:
             return False
         self.documents[document["imsi"]] = copy.deepcopy(document)
         return True
+
+    def exists(self, imsi: str) -> bool:
+        return imsi in self.documents
 
     def get(self, imsi: str) -> SimKeyDocument | None:
         found = self.documents.get(imsi)
@@ -118,6 +122,10 @@ class InMemoryIpAllocationRepository:
             if a.state == "active" or (a.released_at is not None and a.released_at > hold_cutoff)
         }
 
+    def list_current(self, hold_cutoff: datetime) -> list[IpAllocation]:
+        unavailable = self.unavailable(hold_cutoff)
+        return [a for ip, a in self.by_ip.items() if ip in unavailable]
+
     def claim_free(self, ue_ip: str, imsi: str, now: datetime, hold_cutoff: datetime) -> bool:
         self.claim_attempts += 1
         if self.find_by_imsi(imsi) is not None:  # a line holds at most one address
@@ -147,3 +155,14 @@ class InMemoryIpAllocationRepository:
             current.ue_ip, imsi, "released", current.allocated_at, now
         )
         return True
+
+
+class InMemoryLineStateRepository:
+    def __init__(self) -> None:
+        self.states: dict[str, LineState] = {}
+
+    def get(self, imsi: str) -> LineState | None:
+        return self.states.get(imsi)
+
+    def put(self, state: LineState) -> None:
+        self.states[state.imsi] = state

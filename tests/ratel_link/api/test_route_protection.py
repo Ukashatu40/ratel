@@ -15,10 +15,8 @@ from ratel_link.config import Settings
 from ratel_link.main import create_app
 from tests.ratel_link.fakes import (
     FakeClock,
-    InMemoryApiKeyRepository,
-    InMemoryAuditLogRepository,
-    InMemorySimKeyRepository,
 )
+from tests.ratel_link.helpers import all_fakes
 from tests.route_walk import effective_routes
 
 # Routes that are public on purpose. /healthz is liveness only and exposes nothing.
@@ -52,13 +50,7 @@ def unprotected_routes(app: FastAPI) -> list[str]:
 
 
 def _app() -> FastAPI:
-    return create_app(
-        Settings(),
-        api_keys=InMemoryApiKeyRepository(),
-        sim_keys=InMemorySimKeyRepository(),
-        audit=InMemoryAuditLogRepository(),
-        clock=FakeClock(),
-    )
+    return create_app(Settings(), **all_fakes(), clock=FakeClock())
 
 
 def test_every_route_of_the_real_app_is_protected_or_allowlisted() -> None:

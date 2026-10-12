@@ -23,6 +23,14 @@ class PoolExhaustedError(Exception):
     """Every usable address is in use or still on hold."""
 
 
+@dataclass(frozen=True, slots=True)
+class Assignment:
+    """An address and the line it is charged to: what RatelMeter needs to map counters to a line."""
+
+    ue_ip: str
+    imsi: str
+
+
 def hold_cutoff(now: datetime) -> datetime:
     """An address released at or before this moment is free for anyone to take."""
     return now - RELEASE_HOLD

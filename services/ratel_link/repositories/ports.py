@@ -11,6 +11,7 @@ from typing import Protocol
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.domain.audit import AuditEntry
 from ratel_link.domain.ip_pool import IpAllocation
+from ratel_link.domain.line_state import LineState
 from ratel_link.domain.sim_keys import SimKeyDocument
 
 
@@ -20,6 +21,10 @@ class SimKeyRepository(Protocol):
         ...
 
     def get(self, imsi: str) -> SimKeyDocument | None: ...
+
+    def exists(self, imsi: str) -> bool:
+        """Whether keys are stored for this IMSI, without reading them."""
+        ...
 
 
 class ApiKeyRepository(Protocol):
@@ -73,4 +78,18 @@ class IpAllocationRepository(Protocol):
 
     def release(self, imsi: str, now: datetime) -> bool:
         """Release the line's address. False if it had no active address."""
+        ...
+
+    def list_current(self, hold_cutoff: datetime) -> list[IpAllocation]:
+        """Addresses in use, plus those released after `hold_cutoff` (still theirs)."""
+        ...
+
+
+class LineStateRepository(Protocol):
+    """What RatelLink last wrote to RatelCore for each line. One record per line."""
+
+    def get(self, imsi: str) -> LineState | None: ...
+
+    def put(self, state: LineState) -> None:
+        """Insert or replace the line's record."""
         ...

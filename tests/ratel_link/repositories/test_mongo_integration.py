@@ -12,6 +12,7 @@ import os
 import secrets
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -23,11 +24,13 @@ from common.timeutil import utc_now
 from ratel_link import admin_cli
 from ratel_link.config import Settings
 from ratel_link.domain.api_keys import ApiKeyRecord
-from ratel_link.domain.ip_pool import IpPool, hold_cutoff
+from ratel_link.domain.ip_pool import Assignment, IpPool, hold_cutoff
+from ratel_link.domain.line_state import LineState
 from ratel_link.repositories.mongo import (
     MongoApiKeyRepository,
     MongoAuditLogRepository,
     MongoIpAllocationRepository,
+    MongoLineStateRepository,
     MongoSimKeyRepository,
     ensure_indexes,
     missing_indexes,
@@ -35,6 +38,7 @@ from ratel_link.repositories.mongo import (
 )
 from ratel_link.security.crypto import DecryptionError
 from ratel_link.services.api_key_admin import KeyPolicy, create_system, revoke, rotate
+from ratel_link.services.assignments import AssignmentService
 from ratel_link.services.audit_log import AuditLog
 from ratel_link.services.authentication import ApiPrincipal, authenticate
 from ratel_link.services.ip_allocation import IpAllocator
@@ -54,6 +58,7 @@ ALL_INDEXES = [
     "api_key.api_key_id",
     "ip_allocation.ue_ip",
     "ip_allocation.imsi",
+    "line_state.imsi",
 ]
 HEX_KI = SYNTHETIC_KI_HEX
 HEX_OPC = SYNTHETIC_OPC_HEX
@@ -343,6 +348,134 @@ def test_the_same_line_activated_twice_at_once_gets_one_address(database: Databa
         addresses = list(pool.map(lambda _: allocator.allocate(SYNTHETIC_IMSI), range(16)))
     assert len(set(addresses)) == 1
     assert database["ip_allocation"].count_documents({"imsi": SYNTHETIC_IMSI}) == 1
+
+
+# --- line state, assignments, and GET /v1/lines, GET /v1/assignments -----------------------------
+
+
+def _line(imsi: str = SYNTHETIC_IMSI, **changes: Any) -> LineState:
+    fields: dict[str, Any] = {
+        "imsi": imsi,
+        "status": "active",
+        "updated_at": utc_now(),
+        "msisdn": "2340000000001",
+        "apns": ("internet", "ims"),
+        "ue_ip": "10.45.0.2",
+        "speed_ul_mbps": 5.0,
+        "speed_dl_mbps": 20.0,
+        "data_mode": "full",
+    }
+    fields.update(changes)
+    return LineState(**fields)
+
+
+def test_line_state_round_trips_with_utc_times(database: Database[Any]) -> None:
+    ensure_indexes(database)
+    repo = MongoLineStateRepository(database)
+    assert repo.get(SYNTHETIC_IMSI) is None
+    state = _line(updated_at=utc_now().replace(microsecond=0))
+    repo.put(state)
+    assert repo.get(SYNTHETIC_IMSI) == state
+    raw = database["line_state"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert raw is not None and raw["updated_at"].utcoffset().total_seconds() == 0
+    assert set(raw) == {"_id", *state.to_document()}  # no key material, nothing extra
+
+
+def test_putting_a_line_state_again_replaces_it_and_keeps_one_document(
+    database: Database[Any],
+) -> None:
+    ensure_indexes(database)
+    repo = MongoLineStateRepository(database)
+    repo.put(_line(status="active"))
+    repo.put(_line(status="barred", ue_ip=None))
+    got = repo.get(SYNTHETIC_IMSI)
+    assert got is not None and (got.status, got.ue_ip) == ("barred", None)
+    assert database["line_state"].count_documents({"imsi": SYNTHETIC_IMSI}) == 1
+
+
+def test_concurrent_puts_for_one_line_leave_one_document(database: Database[Any]) -> None:
+    ensure_indexes(database)
+    repo = MongoLineStateRepository(database)
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        list(pool.map(lambda n: repo.put(_line(speed_dl_mbps=float(n))), range(48)))
+    assert database["line_state"].count_documents({}) == 1
+
+
+def test_the_unique_index_refuses_a_second_state_document_for_a_line(
+    database: Database[Any],
+) -> None:
+    ensure_indexes(database)
+    database["line_state"].insert_one(_line().to_document())
+    with pytest.raises(DuplicateKeyError):
+        database["line_state"].insert_one(_line().to_document())
+
+
+def test_sim_key_exists_does_not_need_a_key_and_matches_what_is_stored(
+    database: Database[Any],
+) -> None:
+    ensure_indexes(database)
+    store = SimKeyStore(MongoSimKeyRepository(database), StaticKeyProvider(), utc_now)
+    repo = MongoSimKeyRepository(database)
+    assert repo.exists(SYNTHETIC_IMSI) is False
+    store.put_if_absent(SYNTHETIC_IMSI, SecretStr(HEX_KI), SecretStr(HEX_OPC))
+    assert repo.exists(SYNTHETIC_IMSI) is True
+    assert repo.exists(SYNTHETIC_IMSI_2) is False
+
+
+def test_assignments_come_from_mongodb_with_the_hold_applied(database: Database[Any]) -> None:
+    ensure_indexes(database)
+    allocator, repo = _allocator(database)
+    service = AssignmentService(repo, utc_now)
+    assert service.list_current() == []
+    first = allocator.allocate(SYNTHETIC_IMSI)
+    second = allocator.allocate(SYNTHETIC_IMSI_2)
+    assert service.list_current() == [
+        Assignment(first, SYNTHETIC_IMSI),
+        Assignment(second, SYNTHETIC_IMSI_2),
+    ]
+    allocator.release(SYNTHETIC_IMSI)
+    assert Assignment(first, SYNTHETIC_IMSI) in service.list_current()  # still on hold
+    # age the release past the hold directly in the database
+    database["ip_allocation"].update_one(
+        {"ue_ip": first}, {"$set": {"released_at": utc_now() - timedelta(hours=25)}}
+    )
+    assert service.list_current() == [Assignment(second, SYNTHETIC_IMSI_2)]
+
+
+def test_lines_and_assignments_over_http_against_mongodb(database: Database[Any]) -> None:
+    from fastapi.testclient import TestClient
+
+    from ratel_link.main import create_app
+
+    ensure_indexes(database)
+    settings = Settings(
+        mongo_uri=SecretStr(os.environ["RATEL_TEST_MONGO_URI"]), ratel_link_db_name=database.name
+    )
+    token = create_system(
+        MongoApiKeyRepository(database), "bss-app", "RatelBSS", utc_now(), KeyPolicy()
+    )
+    client = TestClient(create_app(settings, key_provider=StaticKeyProvider()))
+    headers = {"Authorization": f"Bearer {token}"}
+    line = f"/v1/lines/{SYNTHETIC_IMSI}"
+
+    assert client.get(line, headers=headers).status_code == 404
+    imported = {"imsi": SYNTHETIC_IMSI, "ki": HEX_KI, "opc": HEX_OPC}
+    assert client.post("/v1/sims", json=imported, headers=headers).status_code == 200
+    r = client.get(line, headers=headers)
+    assert r.status_code == 200 and r.json()["status"] == "provisioned"
+
+    MongoLineStateRepository(database).put(_line())
+    r = client.get(line, headers=headers)
+    assert r.json()["status"] == "active" and r.json()["apns"] == ["internet", "ims"]
+    assert HEX_KI not in r.text and HEX_OPC not in r.text
+
+    allocator, _ = _allocator(database)
+    address = allocator.allocate(SYNTHETIC_IMSI)
+    r = client.get("/v1/assignments", headers=headers)
+    assert r.json() == {"assignments": [{"ue_ip": address, "imsi": SYNTHETIC_IMSI}]}
+
+    assert client.get(line).status_code == 401
+    assert client.get("/v1/assignments").status_code == 401
 
 
 # --- POST /v1/sims end to end (real app, real MongoDB) -------------------------------------------
