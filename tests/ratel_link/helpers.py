@@ -6,7 +6,14 @@ from typing import Any
 
 from ratel_link.services.api_key_admin import KeyPolicy, create_system
 from ratel_link.services.authentication import authenticate
-from tests.ratel_link.fakes import FakeClock, InMemoryApiKeyRepository
+from tests.ratel_link.fakes import (
+    FakeClock,
+    InMemoryApiKeyRepository,
+    InMemoryAuditLogRepository,
+    InMemoryIpAllocationRepository,
+    InMemoryLineStateRepository,
+    InMemorySimKeyRepository,
+)
 
 POLICY = KeyPolicy()  # 90 days, 7 days overlap, 14 days warning
 
@@ -24,3 +31,17 @@ def register_system(
 
 def authenticate_with(token: str, repo: InMemoryApiKeyRepository, clock: FakeClock) -> Any:
     return authenticate(f"Bearer {token}", repo, clock())
+
+
+def all_fakes() -> dict[str, Any]:
+    """One in-memory fake per repository, as keyword arguments for `create_app`.
+
+    Supplying every repository means the app never opens a MongoDB client in a unit test.
+    """
+    return {
+        "api_keys": InMemoryApiKeyRepository(),
+        "sim_keys": InMemorySimKeyRepository(),
+        "audit": InMemoryAuditLogRepository(),
+        "line_states": InMemoryLineStateRepository(),
+        "ip_allocations": InMemoryIpAllocationRepository(),
+    }

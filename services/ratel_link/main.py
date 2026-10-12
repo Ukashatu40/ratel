@@ -20,6 +20,8 @@ from ratel_link.config import Settings
 from ratel_link.repositories.mongo import (
     MongoApiKeyRepository,
     MongoAuditLogRepository,
+    MongoIpAllocationRepository,
+    MongoLineStateRepository,
     MongoSimKeyRepository,
     missing_indexes,
     open_database,
@@ -27,11 +29,15 @@ from ratel_link.repositories.mongo import (
 from ratel_link.repositories.ports import (
     ApiKeyRepository,
     AuditLogRepository,
+    IpAllocationRepository,
+    LineStateRepository,
     SimKeyRepository,
 )
 from ratel_link.security.key_provider import KeyProvider, KeyUnavailableError, build_key_provider
 from ratel_link.services.api_key_admin import KeyPolicy, log_expiring
+from ratel_link.services.assignments import AssignmentService
 from ratel_link.services.audit_log import AuditLog
+from ratel_link.services.line_status import LineStatusService
 from ratel_link.services.sim_import import SimImportService
 from ratel_link.services.sim_keys import SimKeyStore
 
@@ -63,6 +69,8 @@ def create_app(
     api_keys: ApiKeyRepository | None = None,
     sim_keys: SimKeyRepository | None = None,
     audit: AuditLogRepository | None = None,
+    line_states: LineStateRepository | None = None,
+    ip_allocations: IpAllocationRepository | None = None,
     key_provider: KeyProvider | None = None,
     clock: Callable[[], datetime] = utc_now,
 ) -> FastAPI:
@@ -72,13 +80,24 @@ def create_app(
     configure_logging(settings.log_level)
     # Fail closed: outside local/test, no usable key file means the service does not start.
     key_provider = key_provider or build_key_provider(settings)
-    # The MongoDB client connects lazily, so building the app does not need a database.
-    database: Database[Any] | None = None
-    if api_keys is None or sim_keys is None or audit is None:
-        database = open_database(settings)
-        api_keys = api_keys or MongoApiKeyRepository(database)
-        sim_keys = sim_keys or MongoSimKeyRepository(database)
-        audit = audit or MongoAuditLogRepository(database)
+
+    # The MongoDB client connects lazily, so building the app does not need a database. It is
+    # opened only if at least one repository was not supplied.
+    opened: list[Database[Any]] = []
+
+    def mongo() -> Database[Any]:
+        if not opened:
+            opened.append(open_database(settings))
+        return opened[0]
+
+    api_keys = api_keys if api_keys is not None else MongoApiKeyRepository(mongo())
+    sim_keys = sim_keys if sim_keys is not None else MongoSimKeyRepository(mongo())
+    audit = audit if audit is not None else MongoAuditLogRepository(mongo())
+    line_states = line_states if line_states is not None else MongoLineStateRepository(mongo())
+    ip_allocations = (
+        ip_allocations if ip_allocations is not None else MongoIpAllocationRepository(mongo())
+    )
+    database = opened[0] if opened else None
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -102,6 +121,8 @@ def create_app(
     app.state.sim_import = SimImportService(
         SimKeyStore(sim_keys, key_provider, clock), AuditLog(audit, clock)
     )
+    app.state.line_status = LineStatusService(line_states, sim_keys)
+    app.state.assignments = AssignmentService(ip_allocations, clock)
     install_error_handlers(app)
     install_request_context(app)
 
