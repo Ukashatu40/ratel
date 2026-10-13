@@ -94,7 +94,7 @@ keep their numbers below; this queue is ordered by urgency.
 ### Raised by the encryption and API-key work (2026-10-07)
 
 12. **SIM re-import with different keys (W2-01). Decided 2026-10-10 and built:** the same keys again return 200 and change nothing; different keys return 409 `conflict` and never replace the stored ones. Replacing a SIM's keys will be a deliberate admin action, if it is ever needed.
-13. **Append-only `audit_log` in MongoDB itself.** The code offers insert only, but a database user that may only insert into `audit_log` is not set up. Decide with the network team.
+13. **Append-only `audit_log` in MongoDB itself. Built 2026-10-13, applied when the network team creates the user:** `deploy/core-cp/mongo/ratel-link-roles.json` gives RatelLink insert only on `audit_log`, tested on a real MongoDB. The same file also stops RatelLink changing or deleting a stored SIM key.
 14. **Ki and OPc format.** The code accepts exactly 32 hexadecimal characters (128 bits) for each, in one place (`domain/sim_keys.py`). This is an assumption: the contract still says `TODO(contract)`. The project lead and the network team confirm it, then the contract is updated in the same commit as any change. Also confirm the case to store (the code keeps the case it was given).
 15. **`amf` handling. Resolved 2026-10-12:** the network team's Integration Guide fixes it at `"8000"`. It is a constant RatelLink writes at activation, not a request field. Nothing to store.
 16. **Overlap and warning defaults.** API key rotation overlap 7 days (allowed 1 to 30) and expiry warning 14 days (allowed 1 to 90) are proposals. The 90-day lifetime is the Build Plan's.
@@ -140,6 +140,14 @@ keep their numbers below; this queue is ordered by urgency.
 44. **`503` when voice is requested and no voice template is configured.** It is a deployment gap, not the caller's mistake. The contract has no 503 for these operations, only the `default` error.
 45. **The subscriber collection needs a unique index on `imsi`, and RatelLink will not create it.** Two simultaneous first activations of one line could otherwise create two documents. RatelLink checks (read only) and logs `startup.subscribers.index.missing`. Ask the network team to confirm the index exists (add to N3).
 46. **Writing the subscriber document and recording the line are separate steps** (as with item 32): if the second fails, a retry repairs it, because every step is repeated safely.
+
+### Raised while preparing the core-cp deployment (2026-10-13)
+
+47. **systemd, not Docker Compose, on core-cp.** The Build Plan allows either. systemd needs nothing new on the core host and keeps a bad deploy away from RatelCore. Say if you prefer Compose.
+48. **A TLS reverse proxy (nginx template) on core-cp** carries callers from bss-app and core-up until the VPN exists, per decision 2. It allows only their addresses and records no request paths. The network team may use another proxy with the same properties.
+49. **Releases are installed from a tarball built from a reviewed commit and copied to core-cp**, not by cloning the repository there. Each release has its own virtualenv, so rollback is a link change. Needs the Python package index reachable from core-cp, or a wheel folder built elsewhere.
+50. **RatelLink's database user is least-privilege and the code was changed to fit it.** The SIM key store now inserts instead of upserting, so the user needs no right to change a stored key. No delete anywhere, nothing in the core's database beyond reading, inserting and updating `subscribers`. If activation later needs to delete a subscriber (decision after the barring spike), the role gets `remove` on `subscribers` deliberately.
+51. **MongoDB authentication and the unique `imsi` index are the network team's.** The Build Plan says so. The deployment cannot start safely until both exist.
 
 ## Information I did not have (TODOs in the files)
 

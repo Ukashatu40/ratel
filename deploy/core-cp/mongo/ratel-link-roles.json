@@ -1,0 +1,41 @@
+{
+  "_comment": "The privileges RatelLink needs in MongoDB, and nothing more. {{RATEL_DB}} is RatelLink's own database (default ratel_link), {{CORE_DB}} is the core's subscriber database (default open5gs), {{SUFFIX}} is empty in a real deployment. Applied by create-ratel-link-user.js and checked by tests/ratel_link/repositories/test_mongo_roles_integration.py.",
+  "roles": [
+    {
+      "role": "ratelLinkData{{SUFFIX}}",
+      "privileges": [
+        {
+          "resource": { "db": "{{RATEL_DB}}", "collection": "sim_key" },
+          "actions": ["find", "insert", "createIndex", "listIndexes"]
+        },
+        {
+          "resource": { "db": "{{RATEL_DB}}", "collection": "api_key" },
+          "actions": ["find", "insert", "update", "createIndex", "listIndexes"]
+        },
+        {
+          "resource": { "db": "{{RATEL_DB}}", "collection": "ip_allocation" },
+          "actions": ["find", "insert", "update", "createIndex", "listIndexes"]
+        },
+        {
+          "resource": { "db": "{{RATEL_DB}}", "collection": "line_state" },
+          "actions": ["find", "insert", "update", "createIndex", "listIndexes"]
+        },
+        {
+          "resource": { "db": "{{RATEL_DB}}", "collection": "audit_log" },
+          "actions": ["insert"]
+        }
+      ],
+      "roles": []
+    },
+    {
+      "role": "ratelLinkSubscribers{{SUFFIX}}",
+      "privileges": [
+        {
+          "resource": { "db": "{{CORE_DB}}", "collection": "subscribers" },
+          "actions": ["find", "insert", "update", "listIndexes"]
+        }
+      ],
+      "roles": []
+    }
+  ]
+}

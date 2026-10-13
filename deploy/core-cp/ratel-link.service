@@ -1,0 +1,55 @@
+# RatelLink on core-cp. Install as /etc/systemd/system/ratel-link.service (deploy/core-cp/README.md).
+#
+# RatelLink listens on 127.0.0.1 only. Other hosts reach it through the TLS proxy
+# (deploy/core-cp/nginx/), never directly.
+[Unit]
+Description=RatelLink provisioning API
+After=network-online.target mongod.service
+Wants=network-online.target
+# A start that fails four times in two minutes is left stopped, not retried forever.
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+User=ratellink
+Group=ratellink
+WorkingDirectory=/opt/ratel-link/current
+# Owner-only file holding the settings and the MongoDB password. Never in Git.
+EnvironmentFile=/etc/ratel-link/ratel-link.env
+Environment=PYTHONPATH=/opt/ratel-link/current/services
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+# --no-access-log: uvicorn's access log prints raw paths, and the paths contain IMSIs.
+ExecStart=/opt/ratel-link/current/venv/bin/python -m uvicorn --factory ratel_link.main:create_app --host 127.0.0.1 --port 8081 --no-access-log
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+# Hardening. RatelLink needs the network (MongoDB, its own port), its code, and nothing else.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# The code and the settings can be read but not written by the service.
+ReadOnlyPaths=/opt/ratel-link /etc/ratel-link
+
+[Install]
+WantedBy=multi-user.target
