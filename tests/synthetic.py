@@ -26,6 +26,26 @@ SYNTHETIC_OPC_HEX = "ffeeddccbbaa99887766554433221100"
 SYNTHETIC_IMSI = "621000000000001"
 SYNTHETIC_IMSI_2 = "621000000000002"
 SYNTHETIC_MSISDN = "2340000000001"
+SYNTHETIC_MSISDN_2 = "2340000000002"
+
+# A stand-in for the lab's voice session. NOT the real one: the real voice rules come from a
+# template exported from the lab (docs/RATELCORE_INTEGRATION_FACTS.md, N1) and are never copied
+# here. It has the shape the code relies on: a name, QCI 5, pcc_rule entries, and a `ue` entry that
+# must be removed because the ims session never gets a fixed address.
+SYNTHETIC_IMS_SESSION = {
+    "name": "ims",
+    "type": 1,
+    "qos": {
+        "index": 5,
+        "arp": {"priority_level": 1, "pre_emption_capability": 1, "pre_emption_vulnerability": 1},
+    },
+    "ambr": {"downlink": {"value": 3850, "unit": 1}, "uplink": {"value": 1530, "unit": 1}},
+    "ue": {"ipv4": "10.46.0.9"},
+    "pcc_rule": [
+        {"qos": {"index": 1, "gbr": {"downlink": {"value": 128, "unit": 1}}}},
+        {"qos": {"index": 2, "gbr": {"downlink": {"value": 128, "unit": 1}}}},
+    ],
+}
 
 
 def find_sentinels(text: str) -> list[str]:

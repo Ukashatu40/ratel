@@ -13,6 +13,8 @@ from tests.ratel_link.fakes import (
     InMemoryIpAllocationRepository,
     InMemoryLineStateRepository,
     InMemorySimKeyRepository,
+    InMemorySubscriberRepository,
+    InMemoryVoiceTemplate,
 )
 
 POLICY = KeyPolicy()  # 90 days, 7 days overlap, 14 days warning
@@ -44,4 +46,6 @@ def all_fakes() -> dict[str, Any]:
         "audit": InMemoryAuditLogRepository(),
         "line_states": InMemoryLineStateRepository(),
         "ip_allocations": InMemoryIpAllocationRepository(),
+        "subscribers": InMemorySubscriberRepository(),
+        "voice_template": InMemoryVoiceTemplate(),
     }

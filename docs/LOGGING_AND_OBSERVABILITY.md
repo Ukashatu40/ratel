@@ -35,6 +35,11 @@ log_event(log, logging.INFO, "line.activate.succeeded", status="active", speed_d
 | `api_key.created`, `.rotated`, `.revoked`, `.disabled` | INFO | `api_key_id`, `api_key_generation` | Administration with the admin CLI. |
 | `sim.import.created`, `.unchanged`, `.conflict` | INFO, INFO, WARNING | `api_key_id` | `POST /v1/sims` outcomes. Never the IMSI or a key. A conflict means a caller sent different keys for a known IMSI. |
 | `ip.allocated`, `.reclaimed`, `.released` | INFO | none | Address allocation. Never the IMSI. |
+| `line.activate.created`, `.updated`, `.unchanged` | INFO | `api_key_id`, `voice` | A line was activated. `unchanged` means the same settings were sent again and nothing was written. Never the IMSI, number or a key. |
+| `line.data.changed`, `.unchanged` | INFO | `api_key_id`, `mode` | A line's data was changed (`full`, `slow`, `off`). |
+| `voice.template.unavailable` | ERROR | none | A line asked for voice and there is no usable voice template. Callers got 503. |
+| `startup.voice.template.not_configured`, `.invalid` | WARNING, ERROR | none | At startup: no voice template file is configured, or the file is unusable. Lines cannot be activated with voice until fixed. |
+| `startup.subscribers.index.missing` | ERROR | none | The core's `subscribers` collection has no unique index on `imsi`. Two activations at the same moment could create two documents. Tell the network team. |
 | `key.unavailable` | ERROR | none | A request needed the encryption key and there was none (the caller got 503). |
 | `key.provider.none` | WARNING | `reason` | RatelLink started without an encryption key. Allowed only in `local` and `test`. If it appears anywhere else, treat it as an incident. |
 | `startup.indexes.missing` | ERROR | `indexes` | Run `admin_cli init-db`. |

@@ -78,6 +78,8 @@ paths:
         Writes the subscriber document: keys, MSISDN, the internet APN at the given speeds, and the
         ims APN when `voice` is true. Activating an active line with the same settings succeeds and
         changes nothing. Takes effect at the line's next attach.
+        404 when no keys are stored for the IMSI (import the SIM first). 503 when voice is requested
+        and the voice template is not configured, or when no address is free.
         A fixed IPv4 address from the 10.45.0.0/16 pool is assigned at activation (RatelLink spec).
       parameters:
         - $ref: "#/components/parameters/Imsi"
@@ -107,8 +109,7 @@ paths:
       description: |
         `full` or `slow` change the internet APN's speed. `off` removes the internet APN.
         The ims APN is never touched, so calls keep working. Takes effect at the next attach.
-        TODO(contract): whether speeds are required for `off` (the Build Plan lists them as body
-        fields without saying).
+        Repeating a request changes nothing. 404 when the line was never activated or is not active.
       parameters:
         - $ref: "#/components/parameters/Imsi"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -405,18 +406,27 @@ components:
       properties:
         msisdn:
           type: string
-          minLength: 1
-          x-todo: Number format (for example E.164 or national) is not specified.
+          pattern: "^234[0-9]{10}$"
+          description: |
+            The number as the core stores it: 234 and ten digits, no plus sign. The voice layer
+            looks lines up in this form, so a number in any other form cannot be called.
+          x-todo: Confirm with the project lead that the API takes the stored form (N6 in docs/RATELCORE_INTEGRATION_FACTS.md).
         speed_ul_mbps:
-          type: number
-          minimum: 0
-          x-todo: Integer or decimal Mbps is not specified.
+          $ref: "#/components/schemas/SpeedMbps"
         speed_dl_mbps:
-          type: number
-          minimum: 0
+          $ref: "#/components/schemas/SpeedMbps"
         voice:
           type: boolean
           description: When true, the ims APN is written so the line can make calls.
+    SpeedMbps:
+      type: number
+      exclusiveMinimum: 0
+      maximum: 10000
+      multipleOf: 0.001
+      description: |
+        Megabits per second. The core stores whole numbers, so the value must be a whole number of
+        bits per second (1.5 is stored as 1500 Kbps). Zero is refused.
+      x-todo: The maximum (10 Gbit/s) is a sanity limit chosen here. The Build Plan gives none.
     DataRequest:
       type: object
       required: [mode]
@@ -426,11 +436,17 @@ components:
           type: string
           enum: [full, slow, "off"]
         speed_ul_mbps:
-          type: number
-          minimum: 0
+          $ref: "#/components/schemas/SpeedMbps"
         speed_dl_mbps:
-          type: number
-          minimum: 0
+          $ref: "#/components/schemas/SpeedMbps"
+      if:
+        properties:
+          mode:
+            enum: [full, slow]
+      then:
+        required: [speed_ul_mbps, speed_dl_mbps]
+      description: "`full` and `slow` need both speeds. `off` ignores them."
+      x-todo: The Build Plan lists the speeds as body fields without saying when they are required.
     DeactivateRequest:
       type: object
       required: [reason]
