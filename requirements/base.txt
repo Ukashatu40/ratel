@@ -1,2 +1,2 @@
 # Shared by every Python deployable.
-pydantic>=2.8,<3
+pydantic>=2.14.1,<3
