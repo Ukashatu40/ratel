@@ -8,6 +8,9 @@ Labels: type:investigation, area:ratel-link, priority:p1, risk:high
 ## Re-planned 2026-10-08
 Not on the path to the first real-SIM attach: "delete and rewrite" works without it. Moved to Mon 2026-10-12 so the network lead can first unblock W2-02 (the Open5GS template) and W2-08.
 
+## Update 2026-10-14
+`/deactivate` is built as **delete** (Build Plan), so the spike no longer blocks it. Two things to measure, for DECISIONS_PENDING item 52: (a) does barring work, and (b) **does a SIM attach again after its document was deleted and re-created** (the HSS's `security.sqn` is lost with the document).
+
 ## Objective
 Know whether the MME rejects a barred subscriber, so RatelLink can choose between "delete and rewrite" and the cleaner `subscriber_status` barring field.
 

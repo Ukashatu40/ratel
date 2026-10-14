@@ -1,7 +1,8 @@
-"""Operations on one line (Contract 1): status, activate and data. Never returns keys.
+"""Operations on one line (Contract 1): status, activate, data and deactivate. Never returns keys.
 
-`GET /v1/lines/{imsi}` (link_get_line), `POST /v1/lines/{imsi}/activate` (link_activate_line) and
-`POST /v1/lines/{imsi}/data` (link_set_data_mode). The routes validate the request, call a service
+`GET /v1/lines/{imsi}` (link_get_line), `POST /v1/lines/{imsi}/activate` (link_activate_line),
+`POST /v1/lines/{imsi}/data` (link_set_data_mode) and `POST /v1/lines/{imsi}/deactivate`
+(link_deactivate_line). The routes validate the request, call a service
 and turn its errors into the standard error shape. The rules live in the services.
 """
 
@@ -13,7 +14,7 @@ from fastapi import APIRouter, Depends, Header, Path, Request
 
 from common.errors import ApiError
 from ratel_link.api.dependencies import require_api_key
-from ratel_link.api.schemas import ActivateBody, DataBody, LineStatusResponse
+from ratel_link.api.schemas import ActivateBody, DataBody, DeactivateBody, LineStatusResponse
 from ratel_link.domain.identifiers import IMSI_PATTERN
 from ratel_link.domain.ip_pool import PoolExhaustedError
 from ratel_link.domain.subscriber import SpeedError
@@ -25,6 +26,7 @@ from ratel_link.services.line_activation import (
     UnknownSimError,
     VoiceUnavailableError,
 )
+from ratel_link.services.line_deactivation import LineDeactivationService
 from ratel_link.services.line_status import LineStatusService
 
 SPEED_MESSAGE = "Speeds must be greater than 0 and a whole number of bits per second."
@@ -42,6 +44,11 @@ def get_line_activation_service(request: Request) -> LineActivationService:
 
 def get_data_mode_service(request: Request) -> DataModeService:
     service: DataModeService = request.app.state.data_mode
+    return service
+
+
+def get_line_deactivation_service(request: Request) -> LineDeactivationService:
+    service: LineDeactivationService = request.app.state.line_deactivation
     return service
 
 
@@ -120,6 +127,22 @@ def set_data_mode(
     return {}
 
 
+def deactivate_line(
+    imsi: Annotated[str, Path(pattern=IMSI_PATTERN)],
+    body: DeactivateBody,
+    principal: Annotated[ApiPrincipal, Depends(require_api_key)],
+    service: Annotated[LineDeactivationService, Depends(get_line_deactivation_service)],
+    idempotency_key: Annotated[str | None, Header(min_length=1)] = None,
+) -> dict[str, Any]:
+    """Remove the line's subscriber document: no internet and no calls. Repeating it changes
+    nothing."""
+    try:
+        service.deactivate(imsi, body.reason, principal.api_key_id)
+    except UnknownSimError:
+        raise ApiError(404, "not_found", "Unknown line.") from None
+    return {}
+
+
 def add_routes(router: APIRouter) -> None:
     router.add_api_route(
         "/lines/{imsi}",
@@ -140,5 +163,12 @@ def add_routes(router: APIRouter) -> None:
         set_data_mode,
         methods=["POST"],
         operation_id="link_set_data_mode",
+        status_code=200,
+    )
+    router.add_api_route(
+        "/lines/{imsi}/deactivate",
+        deactivate_line,
+        methods=["POST"],
+        operation_id="link_deactivate_line",
         status_code=200,
     )

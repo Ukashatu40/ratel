@@ -11,6 +11,8 @@ A real SIM, imported and activated **through RatelLink's API**, attaches through
 The software team owns: importing keys via `POST /v1/sims`, activating with `voice` true, checking with `GET /v1/lines/{imsi}`, and not breaking secrecy while doing it. The network team owns the radio, MongoDB authentication, the ims APN, RatelVoice and the attach itself.
 
 ## Scope
+The procedure is written: [ratel-link-lab-acceptance.md](../runbooks/ratel-link-lab-acceptance.md). Running it on the lab is what remains.
+
 - A short written procedure (in `docs/runbooks/`, extending [ratel-link.md](../runbooks/ratel-link.md)) for creating a real line through the API, with no key ever in a ticket, chat, shell history that leaves the host, or log.
 - Before any real SIM key is imported: the RatelLink encryption key file exists on core-cp (owner-only, created with `admin_cli key generate`), **its offline backup exists, kept apart from database backups, with a named owner** (still TODO for the project lead, risk R-14), and an API key was created for the caller with `admin_cli api-key create`.
 - Run it on the lab with the network team when SIM keys and the radio are ready.

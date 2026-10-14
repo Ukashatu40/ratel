@@ -15,12 +15,23 @@ SENTINEL_API_KEY_ID = "bss-app"
 SENTINEL_API_SECRET = "SENTINEL-API-SECRET-DO-NOT-LOG-0123456789AB"  # 43 characters
 SENTINEL_API_KEY = "rlk_" + SENTINEL_API_KEY_ID + "." + SENTINEL_API_SECRET
 
-SENTINELS = (SENTINEL_KI, SENTINEL_OPC, SENTINEL_API_KEY, SENTINEL_API_SECRET)
-
 # Valid-format (32 hex characters) but obviously invented keys, for tests that need a key the
 # store will accept. Sequential patterns, not real Ki or OPc.
 SYNTHETIC_KI_HEX = "00112233445566778899aabbccddeeff"
 SYNTHETIC_OPC_HEX = "ffeeddccbbaa99887766554433221100"
+
+# The keys the tests actually import and activate with must never reach a log either, in either
+# case (the core's document holds them in upper case).
+SENTINELS = (
+    SENTINEL_KI,
+    SENTINEL_OPC,
+    SENTINEL_API_KEY,
+    SENTINEL_API_SECRET,
+    SYNTHETIC_KI_HEX,
+    SYNTHETIC_KI_HEX.upper(),
+    SYNTHETIC_OPC_HEX,
+    SYNTHETIC_OPC_HEX.upper(),
+)
 
 # Invented values. IMSI example shape comes from the Build Plan's usage example.
 SYNTHETIC_IMSI = "621000000000001"

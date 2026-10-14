@@ -14,9 +14,10 @@
 // ratel_link), OPEN5GS_DB_NAME (default open5gs), RATEL_LINK_ROLE_SUFFIX (default empty).
 //
 // What the user may do is in ratel-link-roles.json. In short: RatelLink may read and write its own
-// collections (never delete, and never change a stored key or an audit entry), and may read, insert
-// and update the core's `subscribers` collection. It cannot remove anything, create indexes in the
-// core's database, or touch any other collection or database.
+// collections (never delete, and never change a stored key or an audit entry), and may read, insert,
+// update and delete in the core's `subscribers` collection (deactivating a line deletes its
+// document). It cannot create indexes in the core's database, or touch any other collection or
+// database.
 
 const fs = require("fs");
 
