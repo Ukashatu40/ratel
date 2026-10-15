@@ -1,4 +1,4 @@
-"""POST /v1/lines/{imsi}/activate and /data through the real app, with in-memory storage."""
+"""Activate, data and deactivate through the real app, with in-memory storage."""
 
 from __future__ import annotations
 
@@ -36,6 +36,8 @@ REGISTERED = object()  # sentinel: send the environment's own valid key
 UNAUTHORIZED = {"error": {"code": "unauthorized", "message": "Invalid or missing API key."}}
 ACTIVATE = f"/v1/lines/{SYNTHETIC_IMSI}/activate"
 DATA = f"/v1/lines/{SYNTHETIC_IMSI}/data"
+DEACTIVATE = f"/v1/lines/{SYNTHETIC_IMSI}/deactivate"
+REASON = {"reason": "customer asked to cancel"}
 
 
 def good(**changes: Any) -> dict[str, Any]:
@@ -323,10 +325,90 @@ def test_a_missing_core_record_is_409_and_nothing_is_recorded(env: Env) -> None:
     assert len(env.audit.entries) == entries
 
 
+# --- deactivate -------------------------------------------------------------------------------
+
+
+def test_deactivating_is_200_with_an_empty_object_and_the_document_is_gone(env: Env) -> None:
+    env.post(ACTIVATE, good())
+    r = env.post(DEACTIVATE, REASON)
+    assert r.status_code == 200 and r.json() == {}
+    assert SYNTHETIC_IMSI not in env.subscribers.documents
+
+
+def test_the_line_then_reports_as_provisioned_and_keeps_its_address_on_hold(env: Env) -> None:
+    env.post(ACTIVATE, good())
+    env.post(DEACTIVATE, REASON)
+    assert env.line().json() == {
+        "status": "provisioned",
+        "msisdn": None,
+        "apns": [],
+        "ue_ip": None,
+        "speed_ul_mbps": None,
+        "speed_dl_mbps": None,
+    }
+    # The released address stays listed for 24 hours: usage seen on it still belongs to this line.
+    r = env.client.get("/v1/assignments", headers=env._headers(REGISTERED))
+    assert r.json() == {"assignments": [{"ue_ip": "10.45.0.2", "imsi": SYNTHETIC_IMSI}]}
+
+
+def test_a_deactivated_line_can_be_activated_again_with_the_same_address(env: Env) -> None:
+    env.post(ACTIVATE, good())
+    env.post(DEACTIVATE, REASON)
+    assert env.post(ACTIVATE, good()).status_code == 200
+    assert env.line().json()["ue_ip"] == "10.45.0.2" and env.line().json()["status"] == "active"
+
+
+def test_deactivating_twice_is_200_and_records_nothing_more(env: Env) -> None:
+    env.post(ACTIVATE, good())
+    env.post(DEACTIVATE, REASON)
+    entries = len(env.audit.entries)
+    assert env.post(DEACTIVATE, REASON).status_code == 200
+    assert len(env.audit.entries) == entries
+
+
+def test_deactivating_a_sim_that_was_never_activated_is_200(env: Env) -> None:
+    assert env.post(DEACTIVATE, REASON).status_code == 200
+    assert env.line().json()["status"] == "provisioned"
+
+
+def test_deactivating_an_unknown_sim_is_404(env: Env) -> None:
+    r = env.post(f"/v1/lines/{SYNTHETIC_IMSI_2}/deactivate", REASON)
+    assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"
+
+
+def test_data_on_a_deactivated_line_is_404(env: Env) -> None:
+    env.post(ACTIVATE, good())
+    env.post(DEACTIVATE, REASON)
+    assert env.post(DATA, {"mode": "off"}).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {},
+        {"reason": ""},
+        {"reason": 5},
+        {"reason": None},
+        {"reason": "x" * 201},
+        {"why": "x"},
+    ],
+)
+def test_a_malformed_deactivate_body_is_422_and_changes_nothing(env: Env, payload: Any) -> None:
+    env.post(ACTIVATE, good())
+    assert env.post(DEACTIVATE, payload).status_code == 422
+    assert SYNTHETIC_IMSI in env.subscribers.documents
+
+
+def test_the_longest_allowed_reason_is_accepted(env: Env) -> None:
+    env.post(ACTIVATE, good())
+    assert env.post(DEACTIVATE, {"reason": "x" * 200}).status_code == 200
+
+
 # --- authentication ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", [ACTIVATE, DATA])
+@pytest.mark.parametrize("path", [ACTIVATE, DATA, DEACTIVATE])
 @pytest.mark.parametrize("token", [None, "", "rlk_nope.nope", "garbage"])
 def test_a_missing_or_wrong_key_is_the_same_generic_401(env: Env, path: str, token: Any) -> None:
     r = env.post(path, good(), token=token)
@@ -334,7 +416,7 @@ def test_a_missing_or_wrong_key_is_the_same_generic_401(env: Env, path: str, tok
     assert r.headers["www-authenticate"] == "Bearer"
 
 
-@pytest.mark.parametrize("path", [ACTIVATE, DATA, "/v1/lines/not-an-imsi/activate"])
+@pytest.mark.parametrize("path", [ACTIVATE, DATA, DEACTIVATE, "/v1/lines/not-an-imsi/activate"])
 def test_authentication_comes_before_body_and_path_validation(env: Env, path: str) -> None:
     r = env.client.post(path, content=b"{not json", headers={"Content-Type": "application/json"})
     assert r.status_code == 401 and r.json() == UNAUTHORIZED

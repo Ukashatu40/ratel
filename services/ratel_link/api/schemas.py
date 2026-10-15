@@ -20,6 +20,8 @@ from ratel_link.domain.subscriber import MAX_SPEED_MBPS, SpeedError, speed_from_
 
 KeyHex = Annotated[SecretStr, AfterValidator(check_key_hex)]
 
+MAX_REASON_LENGTH = 200
+
 
 class SimImport(BaseModel):
     """Body of POST /v1/sims (contract: SimImport)."""
@@ -81,6 +83,15 @@ class ActivateBody(BaseModel):
     speed_ul_mbps: Speed
     speed_dl_mbps: Speed
     voice: StrictBool
+
+
+class DeactivateBody(BaseModel):
+    """Body of POST /v1/lines/{imsi}/deactivate (contract: DeactivateRequest)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Written to the audit log. The bound keeps an unbounded string out of it.
+    reason: str = Field(min_length=1, max_length=MAX_REASON_LENGTH)
 
 
 class DataBody(BaseModel):

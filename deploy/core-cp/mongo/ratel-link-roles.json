@@ -32,7 +32,7 @@
       "privileges": [
         {
           "resource": { "db": "{{CORE_DB}}", "collection": "subscribers" },
-          "actions": ["find", "insert", "update", "listIndexes"]
+          "actions": ["find", "insert", "update", "remove", "listIndexes"]
         }
       ],
       "roles": []

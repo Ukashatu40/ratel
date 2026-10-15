@@ -37,6 +37,8 @@ log_event(log, logging.INFO, "line.activate.succeeded", status="active", speed_d
 | `ip.allocated`, `.reclaimed`, `.released` | INFO | none | Address allocation. Never the IMSI. |
 | `line.activate.created`, `.updated`, `.unchanged` | INFO | `api_key_id`, `voice` | A line was activated. `unchanged` means the same settings were sent again and nothing was written. Never the IMSI, number or a key. |
 | `line.data.changed`, `.unchanged` | INFO | `api_key_id`, `mode` | A line's data was changed (`full`, `slow`, `off`). |
+| `line.deactivate.done`, `.unchanged` | INFO | `api_key_id` | A line was deactivated (`done`), or it already was (`unchanged`). The reason is in the audit entry, never in the log. |
+| `line.deactivate.orphan_removed` | WARNING | | A subscriber document the line state did not account for was deleted. Someone or something wrote it outside RatelLink. |
 | `voice.template.unavailable` | ERROR | none | A line asked for voice and there is no usable voice template. Callers got 503. |
 | `startup.voice.template.not_configured`, `.invalid` | WARNING, ERROR | none | At startup: no voice template file is configured, or the file is unusable. Lines cannot be activated with voice until fixed. |
 | `startup.subscribers.index.missing` | ERROR | none | The core's `subscribers` collection has no unique index on `imsi`. Two activations at the same moment could create two documents. Tell the network team. |

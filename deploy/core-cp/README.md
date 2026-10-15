@@ -56,8 +56,9 @@ These are not developer tasks and nothing goes near real SIMs until they are don
 
    What the user can do: read and write RatelLink's own collections, but **never change or delete a
    stored SIM key, never read, change or delete an audit entry** (insert only), and never delete
-   anything. In the core's database it can read, insert and update `subscribers` and nothing else:
-   no delete, no index, no other collection. `tests/ratel_link/repositories/test_mongo_roles_integration.py`
+   anything of its own. In the core's database it can read, insert, update and **delete**
+   `subscribers` (deactivating a line deletes its document) and nothing else: no index, no other
+   collection. `tests/ratel_link/repositories/test_mongo_roles_integration.py`
    proves both halves against a real MongoDB: RatelLink does all its work with exactly these
    privileges, and every operation outside them is refused.
 4. **Agree with RatelLink's owner** the address range for lines (`RATEL_LINK_UE_POOL`, outside the
