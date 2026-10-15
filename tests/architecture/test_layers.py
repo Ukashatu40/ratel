@@ -40,16 +40,22 @@ RATEL_LINK = Layering(
         "security": frozenset({"domain"}),
         "repositories.ports": frozenset({"domain"}),
         "repositories.mongo": frozenset({"domain", "repositories.ports"}),
+        "repositories.voice_template": frozenset({"domain"}),
         "services": frozenset({"domain", "security", "repositories.ports"}),
         "api": frozenset({"services", "domain"}),
     },
     banned_external={
-        "domain": frozenset({"fastapi", "starlette", "pymongo", "cryptography", "sqlalchemy"}),
-        "security": frozenset({"fastapi", "starlette", "pymongo"}),
-        "repositories.ports": frozenset({"fastapi", "starlette", "pymongo", "cryptography"}),
+        "domain": frozenset(
+            {"fastapi", "starlette", "pymongo", "bson", "cryptography", "sqlalchemy"}
+        ),
+        "security": frozenset({"fastapi", "starlette", "pymongo", "bson"}),
+        "repositories.ports": frozenset(
+            {"fastapi", "starlette", "pymongo", "bson", "cryptography"}
+        ),
         "repositories.mongo": frozenset({"fastapi", "starlette", "cryptography"}),
-        "services": frozenset({"fastapi", "starlette", "pymongo"}),
-        "api": frozenset({"pymongo"}),
+        "repositories.voice_template": frozenset({"fastapi", "starlette", "cryptography"}),
+        "services": frozenset({"fastapi", "starlette", "pymongo", "bson"}),
+        "api": frozenset({"pymongo", "bson"}),
     },
     config_users=frozenset({"security", "repositories.mongo", "services"}),
 )
@@ -65,13 +71,14 @@ def _module_name(path: Path, root: Path) -> str:
 def _layer_of(module: str) -> str:
     """The layer a module belongs to: 'ratel_link.services.sim_keys' is 'services'.
 
-    Modules at the package root are 'root' (entry points) or 'config'. In `repositories`, the ports
-    and the MongoDB code are separate layers, because services may use only the ports.
+    Modules at the package root are 'root' (entry points) or 'config'. In `repositories`, the ports,
+    the MongoDB code and the voice template reader are separate layers, because services may use
+    only the ports.
     """
     parts = module.split(".")[1:]  # drop the package name
     if len(parts) <= 1:
         return "config" if parts == ["config"] else "root"
-    if parts[0] == "repositories" and parts[1] in ("ports", "mongo"):
+    if parts[0] == "repositories" and parts[1] in ("ports", "mongo", "voice_template"):
         return f"repositories.{parts[1]}"
     return parts[0]
 

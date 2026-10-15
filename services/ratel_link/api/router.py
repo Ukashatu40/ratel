@@ -22,5 +22,5 @@ def build_v1_router() -> APIRouter:
     sims.add_routes(router)
     lines.add_routes(router)
     assignments.add_routes(router)
-    # TODO: activate, data and deactivate (W2-02).
+    # TODO: deactivate (W2-02), after the barring spike (W2-05) decides bar or delete.
     return router

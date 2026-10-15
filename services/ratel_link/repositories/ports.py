@@ -5,8 +5,9 @@ The MongoDB implementations are in mongo.py; tests use in-memory fakes (tests/ra
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.domain.audit import AuditEntry
@@ -92,4 +93,38 @@ class LineStateRepository(Protocol):
 
     def put(self, state: LineState) -> None:
         """Insert or replace the line's record."""
+        ...
+
+
+class SubscriberRepository(Protocol):
+    """RatelCore's `subscribers` collection (Open5GS). RatelLink is its only writer.
+
+    Every method changes named fields only. None replaces a document, because the HSS writes
+    fields of its own into it (`sqn`, `imeisv`, `mme_host`, `mm_realm`, `mme_timestamp`,
+    `purge_flag`).
+    """
+
+    def upsert_line(
+        self, imsi: str, owned: Mapping[str, Any], created_only: Mapping[str, Any]
+    ) -> bool:
+        """Create the document if absent, otherwise set only `owned`. True if it was created."""
+        ...
+
+    def set_internet_speeds(
+        self, imsi: str, ambr: Mapping[str, Any], session_if_absent: Mapping[str, Any]
+    ) -> bool:
+        """Set the speed of the internet session, or insert it at position 0 if it is not there.
+
+        False if the line has no subscriber document.
+        """
+        ...
+
+    def remove_internet(self, imsi: str) -> bool:
+        """Remove the internet session and leave the ims session. False if there is no document."""
+        ...
+
+
+class VoiceTemplateSource(Protocol):
+    def ims_session(self) -> dict[str, Any] | None:
+        """A copy of the lab's ims session, or None if no template is configured."""
         ...

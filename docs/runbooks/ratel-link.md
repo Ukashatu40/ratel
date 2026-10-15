@@ -45,6 +45,9 @@ JSON on stdout (`journalctl -u <unit>`). Events that matter:
 | `key.provider.none` | Started with no encryption key. Never acceptable on core-cp. |
 | `startup.indexes.missing` | Run `init-db`. |
 | `sim.import.created`, `.unchanged`, `.conflict` | A SIM import. `conflict` means a caller sent different keys for a known IMSI: nothing was changed, ask the caller why. Never contains the IMSI or a key. |
+| `line.activate.*`, `line.data.*` | A line was activated or its data changed. `unchanged` is a repeated request. Never contains the IMSI, number or a key. |
+| `voice.template.unavailable`, `startup.voice.template.*` | No usable voice template. Set `RATEL_LINK_VOICE_TEMPLATE_FILE` to the lab's exported subscriber document (outside the repository) and restart. Lines without voice still work. |
+| `startup.subscribers.index.missing` | The core's `subscribers` collection has no unique index on `imsi`. RatelLink never creates one. Ask the network team. |
 | `key.unavailable` | A request needed the encryption key and there was none. Callers got 503. Check the key file. |
 | `startup.checks.failed` | MongoDB was unreachable at startup. |
 

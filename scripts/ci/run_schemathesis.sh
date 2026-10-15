@@ -5,7 +5,9 @@
 #
 # RatelLink rejects every /v1 call without a valid API key (ADR 0007) and keeps its data in
 # MongoDB, so for RatelLink this script prepares, throwaway and on its own:
-#   - a database with a random name (dropped at the end) in the MongoDB at RATEL_TEST_MONGO_URI,
+#   - two databases with random names (dropped at the end) in the MongoDB at RATEL_TEST_MONGO_URI:
+#     RatelLink's own, and a stand-in for the core's `open5gs` database. The real name is never used,
+#     so fuzzing activation cannot write subscribers into a database called open5gs,
 #   - an encryption key file in a temporary folder (deleted at the end),
 #   - a test API key created with the admin CLI. It is never printed, and on GitHub Actions it is
 #     also masked in the log.
@@ -37,6 +39,7 @@ status=0
 pids=()
 workdir=""
 test_db=""
+core_db=""
 
 # shellcheck disable=SC2317,SC2329  # runs from the trap; older and newer shellcheck name this differently
 cleanup() {
@@ -47,10 +50,12 @@ cleanup() {
     fi
   done
   if [ -n "$test_db" ]; then
-    DROP_DB="$test_db" "$PY" - <<'PY' 2>/dev/null || true
+    DROP_DBS="$test_db $core_db" "$PY" - <<'PY' 2>/dev/null || true
 import os
 from pymongo import MongoClient
-MongoClient(os.environ["RATEL_TEST_MONGO_URI"], serverSelectionTimeoutMS=3000).drop_database(os.environ["DROP_DB"])
+client = MongoClient(os.environ["RATEL_TEST_MONGO_URI"], serverSelectionTimeoutMS=3000)
+for name in os.environ["DROP_DBS"].split():
+    client.drop_database(name)
 PY
   fi
   if [ -n "$workdir" ]; then
@@ -71,7 +76,20 @@ prepare_ratellink() {
   fi
   workdir="$(mktemp -d)"
   test_db="ratel_link_schemathesis_$$"
+  core_db="open5gs_schemathesis_$$"
   export MONGO_URI="$RATEL_TEST_MONGO_URI" RATEL_LINK_DB_NAME="$test_db" RATEL_ENV=test
+  export OPEN5GS_DB_NAME="$core_db"
+  # A synthetic voice template, as a deployment would have the lab's: activation with voice needs one.
+  PYTHONPATH=services:. "$PY" - "$workdir/ims_template.json" <<'PY'
+import json
+import sys
+
+from tests.synthetic import SYNTHETIC_IMS_SESSION
+
+with open(sys.argv[1], "w", encoding="utf-8") as out:
+    json.dump({"slice": [{"session": [SYNTHETIC_IMS_SESSION]}]}, out)
+PY
+  export RATEL_LINK_VOICE_TEMPLATE_FILE="$workdir/ims_template.json"
   export RATEL_LINK_KEY_FILE="$workdir/ratel_link.key"
 
   local up=""
