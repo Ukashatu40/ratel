@@ -360,7 +360,7 @@ def test_transition_refuses_no_calls() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Purity: the domain module imports nothing it must not.
+# Purity:  the domain module imports nothing it must not.
 # ---------------------------------------------------------------------------
 
 
