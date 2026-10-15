@@ -1,4 +1,4 @@
-#services/common/timeutil.py
+# services/common/timeutil.py
 
 """Time rules: store and send UTC, epoch seconds on the wire, 300-second aligned intervals."""
 

@@ -26,15 +26,24 @@ from ratel_link.config import Settings
 from ratel_link.domain.api_keys import ApiKeyRecord
 from ratel_link.domain.ip_pool import Assignment, IpPool, hold_cutoff
 from ratel_link.domain.line_state import LineState
+from ratel_link.domain.subscriber import (
+    activation_fields,
+    ambr_document,
+    ims_session_from_template,
+    internet_session,
+    speed_from_mbps,
+)
 from ratel_link.repositories.mongo import (
     MongoApiKeyRepository,
     MongoAuditLogRepository,
     MongoIpAllocationRepository,
     MongoLineStateRepository,
     MongoSimKeyRepository,
+    MongoSubscriberRepository,
     ensure_indexes,
     missing_indexes,
     open_database,
+    subscriber_index_missing,
 )
 from ratel_link.security.crypto import DecryptionError
 from ratel_link.services.api_key_admin import KeyPolicy, create_system, revoke, rotate
@@ -45,9 +54,11 @@ from ratel_link.services.ip_allocation import IpAllocator
 from ratel_link.services.sim_keys import SimKeyStore
 from tests.ratel_link.fakes import StaticKeyProvider
 from tests.synthetic import (
+    SYNTHETIC_IMS_SESSION,
     SYNTHETIC_IMSI,
     SYNTHETIC_IMSI_2,
     SYNTHETIC_KI_HEX,
+    SYNTHETIC_MSISDN,
     SYNTHETIC_OPC_HEX,
 )
 
@@ -71,6 +82,23 @@ def database() -> Iterator[Database[Any]]:
         pytest.skip("RATEL_TEST_MONGO_URI is not set")
     name = f"ratel_link_it_{secrets.token_hex(4)}"
     db = open_database(Settings(mongo_uri=SecretStr(uri), ratel_link_db_name=name))
+    try:
+        yield db
+    finally:
+        db.client.drop_database(name)
+        db.client.close()
+
+
+@pytest.fixture
+def core() -> Iterator[Database[Any]]:
+    """A throwaway stand-in for the core's `open5gs` database, with the unique index on `imsi`
+    that Open5GS's own tooling creates. Never the real `open5gs` database."""
+    uri = os.environ.get("RATEL_TEST_MONGO_URI")
+    if not uri:
+        pytest.skip("RATEL_TEST_MONGO_URI is not set")
+    name = f"open5gs_it_{secrets.token_hex(4)}"
+    db = open_database(Settings(mongo_uri=SecretStr(uri), ratel_link_db_name=name))
+    db["subscribers"].create_index("imsi", unique=True)
     try:
         yield db
     finally:
@@ -512,3 +540,293 @@ def test_sim_import_over_http_against_mongodb(database: Database[Any]) -> None:
     entries = list(database["audit_log"].find({}))
     assert len(entries) == 1 and entries[0]["api_key_id"] == "bss-app"
     assert HEX_KI not in json.dumps(entries, default=str)
+
+
+# --- the core's subscriber collection ---------------------------------------------------------
+
+
+def _fields(voice: bool = True, upload: float = 5, download: float = 10) -> Any:
+    ims = ims_session_from_template({"slice": [{"session": [SYNTHETIC_IMS_SESSION]}]})
+    return activation_fields(
+        msisdn=SYNTHETIC_MSISDN,
+        ki=SecretStr(HEX_KI),
+        opc=SecretStr(HEX_OPC),
+        upload=speed_from_mbps(upload),
+        download=speed_from_mbps(download),
+        voice=voice,
+        ue_ip="10.45.0.2",
+        ims_session=ims if voice else None,
+    )
+
+
+def _activate(repo: MongoSubscriberRepository, imsi: str = SYNTHETIC_IMSI, **kw: Any) -> bool:
+    fields = _fields(**kw)
+    return repo.upsert_line(imsi, fields.owned, fields.created_only)
+
+
+def _count(core: Database[Any], query: dict[str, Any]) -> int:
+    return core["subscribers"].count_documents(query)
+
+
+def test_the_unique_imsi_index_check_is_read_only_and_correct(core: Database[Any]) -> None:
+    assert subscriber_index_missing(core) is False
+    core["subscribers"].drop_index("imsi_1")
+    assert subscriber_index_missing(core) is True
+    core["subscribers"].create_index("imsi")  # present but not unique
+    assert subscriber_index_missing(core) is True
+    assert "subscribers" in core.list_collection_names()  # the check created nothing
+
+
+def test_activation_creates_the_document_with_the_types_the_core_reads(core: Database[Any]) -> None:
+    repo = MongoSubscriberRepository(core)
+    assert _activate(repo) is True
+    doc = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert doc is not None
+    assert doc["msisdn"] == [SYNTHETIC_MSISDN]
+    assert doc["security"] == {
+        "k": HEX_KI.upper(),
+        "opc": HEX_OPC.upper(),
+        "op": None,
+        "amf": "8000",
+    }
+    assert "sqn" not in doc["security"]
+    assert [s["name"] for s in doc["slice"][0]["session"]] == ["internet", "ims"]
+    # BSON types, not Python types: the core wants int32 where the guide says so.
+    for path in (
+        "schema_version",
+        "network_access_mode",
+        "subscriber_status",
+        "access_restriction_data",
+        "subscribed_rau_tau_timer",
+        "ambr.downlink.value",
+        "ambr.downlink.unit",
+        "slice.0.session.0.type",
+        "slice.0.session.0.qos.index",
+        "slice.0.session.0.qos.arp.priority_level",
+        "slice.0.session.1.pcc_rule.0.qos.index",
+    ):
+        assert _count(core, {"imsi": SYNTHETIC_IMSI, path: {"$type": "int"}}) == 1, path
+    assert _count(core, {"imsi": SYNTHETIC_IMSI, "msisdn.0": {"$type": "string"}}) == 1
+    assert _count(core, {"imsi": SYNTHETIC_IMSI, "slice.0.session.1.ue": {"$exists": True}}) == 0
+
+
+def test_reactivating_never_touches_what_the_hss_wrote(core: Database[Any]) -> None:
+    from bson import Int64
+
+    repo = MongoSubscriberRepository(core)
+    _activate(repo)
+    core["subscribers"].update_one(
+        {"imsi": SYNTHETIC_IMSI},
+        {
+            "$set": {
+                "security.sqn": Int64(123456789012345),
+                "imeisv": ["3540000000000001"],
+                "mme_host": ["mme.example"],
+                "mm_realm": ["realm.example"],
+                "mme_timestamp": Int64(1760000000),
+                "purge_flag": [{"purged": True}],
+            }
+        },
+    )
+    assert _activate(repo, download=25, voice=False) is False  # an update, not a create
+    doc = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert doc is not None
+    assert doc["security"]["sqn"] == 123456789012345
+    assert _count(core, {"imsi": SYNTHETIC_IMSI, "security.sqn": {"$type": "long"}}) == 1
+    assert doc["imeisv"] == ["3540000000000001"] and doc["mme_host"] == ["mme.example"]
+    assert doc["mm_realm"] == ["realm.example"] and doc["purge_flag"] == [{"purged": True}]
+    assert _count(core, {"imsi": SYNTHETIC_IMSI, "mme_timestamp": {"$type": "long"}}) == 1
+    # ... while the fields RatelLink owns did change
+    assert doc["ambr"]["downlink"] == {"value": 25, "unit": 2}
+    assert [s["name"] for s in doc["slice"][0]["session"]] == ["internet"]
+
+
+def test_fields_nobody_asked_about_are_left_alone(core: Database[Any]) -> None:
+    repo = MongoSubscriberRepository(core)
+    core["subscribers"].insert_one({"imsi": SYNTHETIC_IMSI, "custom": {"note": "keep"}, "__v": 7})
+    assert _activate(repo) is False
+    doc = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert doc is not None and doc["custom"] == {"note": "keep"} and doc["__v"] == 7
+
+
+def test_one_activation_leaves_exactly_one_document_even_when_repeated(core: Database[Any]) -> None:
+    repo = MongoSubscriberRepository(core)
+    assert [_activate(repo) for _ in range(3)] == [True, False, False]
+    assert _count(core, {}) == 1
+
+
+def test_simultaneous_first_activations_of_one_line_make_one_document(core: Database[Any]) -> None:
+    repo = MongoSubscriberRepository(core)
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(lambda _: _activate(repo), range(48)))
+    assert _count(core, {"imsi": SYNTHETIC_IMSI}) == 1
+    assert results.count(True) == 1
+
+
+def test_two_lines_do_not_affect_each_other(core: Database[Any]) -> None:
+    repo = MongoSubscriberRepository(core)
+    _activate(repo, SYNTHETIC_IMSI)
+    _activate(repo, SYNTHETIC_IMSI_2, voice=False)
+    repo.remove_internet(SYNTHETIC_IMSI)
+    other = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI_2})
+    assert other is not None and [s["name"] for s in other["slice"][0]["session"]] == ["internet"]
+
+
+def _names(core: Database[Any], imsi: str = SYNTHETIC_IMSI) -> list[str]:
+    doc = core["subscribers"].find_one({"imsi": imsi})
+    assert doc is not None
+    return [s["name"] for s in doc["slice"][0]["session"]]
+
+
+def test_data_off_removes_only_internet_and_on_puts_it_back_first(core: Database[Any]) -> None:
+    repo = MongoSubscriberRepository(core)
+    _activate(repo)
+    voice_before = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI})["slice"][0]["session"][1]
+    assert repo.remove_internet(SYNTHETIC_IMSI) is True
+    assert _names(core) == ["ims"]
+    assert repo.remove_internet(SYNTHETIC_IMSI) is True  # again: harmless
+    assert _names(core) == ["ims"]
+
+    ambr = ambr_document(speed_from_mbps(2), speed_from_mbps(4))
+    assert repo.set_internet_speeds(SYNTHETIC_IMSI, ambr, internet_session(ambr, "10.45.0.2"))
+    assert _names(core) == ["internet", "ims"]
+    doc = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert doc is not None
+    assert doc["slice"][0]["session"][1] == voice_before  # calling untouched throughout
+    assert doc["slice"][0]["session"][0]["ue"] == {"ipv4": "10.45.0.2"}
+
+
+def test_changing_the_speed_changes_only_the_internet_session_and_the_top_level(
+    core: Database[Any],
+) -> None:
+    repo = MongoSubscriberRepository(core)
+    _activate(repo)
+    before = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert before is not None
+    ambr = ambr_document(speed_from_mbps(0.128), speed_from_mbps(0.256))
+    assert repo.set_internet_speeds(SYNTHETIC_IMSI, ambr, internet_session(ambr, "10.45.0.2"))
+    after = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert after is not None
+    assert after["slice"][0]["session"][0]["ambr"] == ambr and after["ambr"] == ambr
+    assert after["slice"][0]["session"][1] == before["slice"][0]["session"][1]
+    assert _names(core) == ["internet", "ims"]  # no second internet session was added
+    assert _count(core, {"imsi": SYNTHETIC_IMSI, "slice.0.session.0.ambr.downlink.unit": 1}) == 1
+
+
+def test_data_changes_on_a_missing_document_report_false_and_create_nothing(
+    core: Database[Any],
+) -> None:
+    repo = MongoSubscriberRepository(core)
+    ambr = ambr_document(speed_from_mbps(1), speed_from_mbps(1))
+    assert (
+        repo.set_internet_speeds(SYNTHETIC_IMSI, ambr, internet_session(ambr, "10.45.0.2")) is False
+    )
+    assert repo.remove_internet(SYNTHETIC_IMSI) is False
+    assert _count(core, {}) == 0
+
+
+def test_simultaneous_speed_changes_never_duplicate_the_internet_session(
+    core: Database[Any],
+) -> None:
+    repo = MongoSubscriberRepository(core)
+    _activate(repo)
+    repo.remove_internet(SYNTHETIC_IMSI)
+
+    def change(n: int) -> bool:
+        ambr = ambr_document(speed_from_mbps(1 + n % 5), speed_from_mbps(2))
+        return repo.set_internet_speeds(SYNTHETIC_IMSI, ambr, internet_session(ambr, "10.45.0.2"))
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        assert all(pool.map(change, range(48)))
+    assert _names(core).count("internet") == 1
+    assert _names(core)[0] == "internet"
+
+
+# --- activate and data over HTTP against real MongoDB -----------------------------------------
+
+
+def test_activate_and_data_over_http_against_mongodb(
+    database: Database[Any], core: Database[Any], tmp_path: Any
+) -> None:
+    import json as _json
+
+    from fastapi.testclient import TestClient
+
+    from ratel_link.main import create_app
+
+    ensure_indexes(database)
+    template = tmp_path / "ims.json"
+    template.write_text(_json.dumps({"slice": [{"session": [SYNTHETIC_IMS_SESSION]}]}))
+    settings = Settings(
+        mongo_uri=SecretStr(os.environ["RATEL_TEST_MONGO_URI"]),
+        ratel_link_db_name=database.name,
+        open5gs_db_name=core.name,
+        ratel_link_voice_template_file=template,
+    )
+    token = create_system(
+        MongoApiKeyRepository(database), "bss-app", "RatelBSS", utc_now(), KeyPolicy()
+    )
+    client = TestClient(create_app(settings, key_provider=StaticKeyProvider()))
+    headers = {"Authorization": f"Bearer {token}"}
+    activate = f"/v1/lines/{SYNTHETIC_IMSI}/activate"
+    body = {"msisdn": SYNTHETIC_MSISDN, "speed_ul_mbps": 5, "speed_dl_mbps": 10, "voice": True}
+
+    assert client.post(activate, json=body, headers=headers).status_code == 404  # no SIM yet
+    imported = {"imsi": SYNTHETIC_IMSI, "ki": HEX_KI, "opc": HEX_OPC}
+    assert client.post("/v1/sims", json=imported, headers=headers).status_code == 200
+    assert client.post(activate, json=body, headers=headers).status_code == 200
+    assert client.post(activate, json=body, headers=headers).status_code == 200  # repeat
+    assert _count(core, {}) == 1 and _names(core) == ["internet", "ims"]
+
+    line = client.get(f"/v1/lines/{SYNTHETIC_IMSI}", headers=headers).json()
+    assert (
+        line["status"] == "active"
+        and line["ue_ip"] == "10.45.0.2"
+        and line["apns"]
+        == [
+            "internet",
+            "ims",
+        ]
+    )
+    data = f"/v1/lines/{SYNTHETIC_IMSI}/data"
+    assert client.post(data, json={"mode": "off"}, headers=headers).status_code == 200
+    assert _names(core) == ["ims"]
+    on = {"mode": "full", "speed_ul_mbps": 5, "speed_dl_mbps": 10}
+    assert client.post(data, json=on, headers=headers).status_code == 200
+    assert _names(core) == ["internet", "ims"]
+    assigned = client.get("/v1/assignments", headers=headers).json()["assignments"]
+    assert assigned == [{"ue_ip": "10.45.0.2", "imsi": SYNTHETIC_IMSI}]
+
+    # the audit log has the changes, with the calling system and no key
+    actions = [e["action"] for e in database["audit_log"].find({}).sort("at", 1)]
+    assert actions == ["sim.import", "line.activate", "line.data", "line.data"]
+    assert HEX_KI not in _json.dumps(list(database["audit_log"].find({})), default=str)
+    assert HEX_KI not in _json.dumps(list(database["line_state"].find({})), default=str)
+    assert client.post(activate, json=body).status_code == 401
+    assert _count(core, {}) == 1
+
+
+def test_startup_reports_a_missing_subscriber_index_and_voice_template(
+    database: Database[Any], caplog: pytest.LogCaptureFixture
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from ratel_link.main import create_app
+
+    ensure_indexes(database)
+    absent = f"open5gs_absent_{secrets.token_hex(3)}"
+    settings = Settings(
+        mongo_uri=SecretStr(os.environ["RATEL_TEST_MONGO_URI"]),
+        ratel_link_db_name=database.name,
+        open5gs_db_name=absent,
+    )
+    caplog.set_level(logging.INFO)
+    try:
+        with TestClient(create_app(settings, key_provider=StaticKeyProvider())):
+            pass
+        events = {r.__dict__.get("event") for r in caplog.records}
+        assert "startup.subscribers.index.missing" in events
+        assert "startup.voice.template.not_configured" in events
+        assert absent not in database.client.list_database_names()  # looking created nothing
+    finally:
+        database.client.drop_database(absent)

@@ -2,7 +2,19 @@
 
 ## Local setup
 
-Requirements: Python 3.12, git, make. Optional: Docker (local databases), Node 20+ (mock server).
+Requirements: Python 3.12, git, make. Node 20+ is needed for `make mock`. Optional: Docker (local databases).
+
+**On Windows,** use WSL2 with Ubuntu 24.04 and run every command in this guide inside Ubuntu, not in PowerShell.
+Clone into your Ubuntu home folder (`~`), not under `/mnt/c/`: a repository cloned with Windows Git shows
+most files as modified when used from Ubuntu.
+
+1. In PowerShell: `wsl --install -d Ubuntu-24.04`. Virtualization must be enabled in the laptop's firmware
+   (BIOS) settings. Task Manager, Performance tab, CPU shows "Virtualization: Enabled" when it is.
+2. In Ubuntu, install what a fresh Ubuntu lacks: `sudo apt update`, then `sudo apt install make python3.12-venv`.
+3. Only for `make mock`: Ubuntu's own `nodejs` package is older than 20, so install Node with
+   [nvm](https://github.com/nvm-sh/nvm) (follow its README), run `nvm install --lts`, then open a new terminal.
+
+Then, in Ubuntu:
 
 ```
 git clone <repo> && cd <repo>

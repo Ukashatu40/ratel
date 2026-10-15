@@ -94,7 +94,7 @@ keep their numbers below; this queue is ordered by urgency.
 ### Raised by the encryption and API-key work (2026-10-07)
 
 12. **SIM re-import with different keys (W2-01). Decided 2026-10-10 and built:** the same keys again return 200 and change nothing; different keys return 409 `conflict` and never replace the stored ones. Replacing a SIM's keys will be a deliberate admin action, if it is ever needed.
-13. **Append-only `audit_log` in MongoDB itself.** The code offers insert only, but a database user that may only insert into `audit_log` is not set up. Decide with the network team.
+13. **Append-only `audit_log` in MongoDB itself. Built 2026-10-13, applied when the network team creates the user:** `deploy/core-cp/mongo/ratel-link-roles.json` gives RatelLink insert only on `audit_log`, tested on a real MongoDB. The same file also stops RatelLink changing or deleting a stored SIM key.
 14. **Ki and OPc format.** The code accepts exactly 32 hexadecimal characters (128 bits) for each, in one place (`domain/sim_keys.py`). This is an assumption: the contract still says `TODO(contract)`. The project lead and the network team confirm it, then the contract is updated in the same commit as any change. Also confirm the case to store (the code keeps the case it was given).
 15. **`amf` handling. Resolved 2026-10-12:** the network team's Integration Guide fixes it at `"8000"`. It is a constant RatelLink writes at activation, not a request field. Nothing to store.
 16. **Overlap and warning defaults.** API key rotation overlap 7 days (allowed 1 to 30) and expiry warning 14 days (allowed 1 to 90) are proposals. The 90-day lifetime is the Build Plan's.
@@ -130,6 +130,16 @@ keep their numbers below; this queue is ordered by urgency.
 37. **A line that was never imported answers 404; one with stored keys and no service answers `provisioned`.** The contract lists 404 for `GET /v1/lines/{imsi}` but does not say what a never-activated SIM looks like. I report `provisioned`, because that is the status the Build Plan gives a SIM whose keys are stored. Say if BSS should see 404 until activation.
 38. **`GET /v1/assignments` is not paginated.** The pool is a /16 (about 65,000 addresses), and a full list is a large response. The prototype has tens of lines, so the contract's single list is fine. Revisit with the Week 6 scale test; the contract would need a cursor.
 39. **`apns` is a list of strings** (contract placeholder `internet`, `ims`). Confirm the shape when W2-02 has the Open5GS template.
+
+### Raised while building W2-02 (2026-10-13)
+
+40. **Activating an active line with different settings updates it.** The contract only says the same settings are a no-op. The network team's guide says an existing document gets `$set` on RatelLink's fields only, so I allow it (new number, new speeds, voice on or off) and audit it. The alternative is a 409. Say if you want that.
+41. **A data change on a line that is not active answers 404** ("no active line"), because the contract lists no 409 for this operation. A provisioned, barred or never-activated line all give the same answer.
+42. **Zero is refused as a speed, and there is a 10 Gbit/s maximum.** I do not know what the core does with an `ambr` of 0 (it might mean unlimited), so it is refused. The maximum is a sanity limit I chose; the Build Plan gives none. Both are in the contract with a TODO.
+43. **`full` and `slow` need both speeds; `off` ignores them.** The Build Plan lists the speeds as body fields without saying when they are required. Because the caller sends the speeds, RatelLink does not need to remember the "plan speed".
+44. **`503` when voice is requested and no voice template is configured.** It is a deployment gap, not the caller's mistake. The contract has no 503 for these operations, only the `default` error.
+45. **The subscriber collection needs a unique index on `imsi`, and RatelLink will not create it.** Two simultaneous first activations of one line could otherwise create two documents. RatelLink checks (read only) and logs `startup.subscribers.index.missing`. Ask the network team to confirm the index exists (add to N3).
+46. **Writing the subscriber document and recording the line are separate steps** (as with item 32): if the second fails, a retry repairs it, because every step is repeated safely.
 
 ## Information I did not have (TODOs in the files)
 

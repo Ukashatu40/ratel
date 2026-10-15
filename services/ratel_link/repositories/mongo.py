@@ -7,6 +7,7 @@ the ports, so tests use in-memory fakes and these classes are covered by integra
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -78,15 +79,17 @@ class MongoSimKeyRepository:
         self._collection = database[SIM_KEY]
 
     def insert_if_absent(self, document: SimKeyDocument) -> bool:
-        # One atomic upsert, so a repeat import never creates a second document even if the
-        # unique index has not been created yet. With the index, a concurrent race raises below.
+        # Insert only, never an update: the database user RatelLink runs as may add a stored key
+        # but not change or delete one (deploy/core-cp/mongo/ratel-link-roles.json). The look-up
+        # makes a repeat import a no-op even before the unique index exists. When two imports of
+        # one IMSI race, the unique index lets exactly one insert succeed.
+        if self._collection.find_one({"imsi": document["imsi"]}, {"_id": 1}) is not None:
+            return False
         try:
-            result = self._collection.update_one(
-                {"imsi": document["imsi"]}, {"$setOnInsert": dict(document)}, upsert=True
-            )
+            self._collection.insert_one(dict(document))
         except DuplicateKeyError:
             return False
-        return result.upserted_id is not None
+        return True
 
     def exists(self, imsi: str) -> bool:
         return self._collection.find_one({"imsi": imsi}, {"_id": 1}) is not None
@@ -191,3 +194,76 @@ class MongoLineStateRepository:
 
     def put(self, state: LineState) -> None:
         self._collection.replace_one({"imsi": state.imsi}, state.to_document(), upsert=True)
+
+
+SUBSCRIBERS = "subscribers"
+_SESSIONS = "slice.0.session"
+
+
+class MongoSubscriberRepository:
+    """Writes to the Open5GS `subscribers` collection, one atomic operation per change.
+
+    Nothing here replaces a document. Updates name the paths they change (`$set`, `$pull`,
+    `$push`), so the fields the HSS writes survive.
+    """
+
+    def __init__(self, open5gs_database: Database[Any]) -> None:
+        self._collection = open5gs_database[SUBSCRIBERS]
+
+    def upsert_line(
+        self, imsi: str, owned: Mapping[str, Any], created_only: Mapping[str, Any]
+    ) -> bool:
+        # One operation: create with every field if absent, otherwise set only the owned fields.
+        # `imsi` comes from the filter. The two field sets share no path.
+        result = self._collection.update_one(
+            {"imsi": imsi},
+            {"$set": dict(owned), "$setOnInsert": dict(created_only)},
+            upsert=True,
+        )
+        return result.upserted_id is not None
+
+    def set_internet_speeds(
+        self, imsi: str, ambr: Mapping[str, Any], session_if_absent: Mapping[str, Any]
+    ) -> bool:
+        has_internet = {"imsi": imsi, f"{_SESSIONS}.name": "internet"}
+        no_internet = {"imsi": imsi, f"{_SESSIONS}.name": {"$ne": "internet"}}
+        for _ in range(3):  # a second caller may add or remove the session between the two steps
+            changed = self._collection.update_one(
+                has_internet,
+                {"$set": {"ambr": dict(ambr), f"{_SESSIONS}.$[s].ambr": dict(ambr)}},
+                array_filters=[{"s.name": "internet"}],
+            )
+            if changed.matched_count:
+                return True
+            added = self._collection.update_one(
+                no_internet,
+                {
+                    "$set": {"ambr": dict(ambr)},
+                    "$push": {_SESSIONS: {"$each": [dict(session_if_absent)], "$position": 0}},
+                },
+            )
+            if added.matched_count:
+                return True
+            if self._collection.count_documents({"imsi": imsi}, limit=1) == 0:
+                return False
+        return False
+
+    def remove_internet(self, imsi: str) -> bool:
+        result = self._collection.update_one(
+            {"imsi": imsi}, {"$pull": {_SESSIONS: {"name": "internet"}}}
+        )
+        return result.matched_count == 1
+
+
+def subscriber_index_missing(open5gs_database: Database[Any]) -> bool:
+    """True if `subscribers` has no unique index on `imsi`. Read only: RatelLink never creates one.
+
+    Without it, two activations at the same moment could create two documents for one IMSI.
+    """
+    try:
+        info = open5gs_database[SUBSCRIBERS].index_information()
+    except Exception:  # a missing collection is reported as missing too
+        return True
+    return not any(
+        spec.get("unique") and [key for key, _ in spec["key"]] == ["imsi"] for spec in info.values()
+    )
