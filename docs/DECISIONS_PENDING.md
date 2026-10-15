@@ -141,14 +141,6 @@ keep their numbers below; this queue is ordered by urgency.
 45. **The subscriber collection needs a unique index on `imsi`, and RatelLink will not create it.** Two simultaneous first activations of one line could otherwise create two documents. RatelLink checks (read only) and logs `startup.subscribers.index.missing`. Ask the network team to confirm the index exists (add to N3).
 46. **Writing the subscriber document and recording the line are separate steps** (as with item 32): if the second fails, a retry repairs it, because every step is repeated safely.
 
-### Raised while preparing the core-cp deployment (2026-10-13)
-
-47. **systemd, not Docker Compose, on core-cp.** The Build Plan allows either. systemd needs nothing new on the core host and keeps a bad deploy away from RatelCore. Say if you prefer Compose.
-48. **A TLS reverse proxy (nginx template) on core-cp** carries callers from bss-app and core-up until the VPN exists, per decision 2. It allows only their addresses and records no request paths. The network team may use another proxy with the same properties.
-49. **Releases are installed from a tarball built from a reviewed commit and copied to core-cp**, not by cloning the repository there. Each release has its own virtualenv, so rollback is a link change. Needs the Python package index reachable from core-cp, or a wheel folder built elsewhere.
-50. **RatelLink's database user is least-privilege and the code was changed to fit it.** The SIM key store now inserts instead of upserting, so the user needs no right to change a stored key. No delete anywhere, nothing in the core's database beyond reading, inserting and updating `subscribers`. If activation later needs to delete a subscriber (decision after the barring spike), the role gets `remove` on `subscribers` deliberately.
-51. **MongoDB authentication and the unique `imsi` index are the network team's.** The Build Plan says so. The deployment cannot start safely until both exist.
-
 ## Information I did not have (TODOs in the files)
 
 - GitHub usernames: project lead, independent reviewer, workstream owners, frontend lead, network lead (`CODEOWNERS`, `critical-reviewers.txt`, ownership and team docs).
