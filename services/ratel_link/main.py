@@ -17,14 +17,18 @@ from common.logging import configure_logging, log_event
 from common.timeutil import utc_now
 from ratel_link.api.router import build_v1_router
 from ratel_link.config import Settings
+from ratel_link.domain.ip_pool import IpPool
+from ratel_link.domain.subscriber import VoiceTemplateError
 from ratel_link.repositories.mongo import (
     MongoApiKeyRepository,
     MongoAuditLogRepository,
     MongoIpAllocationRepository,
     MongoLineStateRepository,
     MongoSimKeyRepository,
+    MongoSubscriberRepository,
     missing_indexes,
     open_database,
+    subscriber_index_missing,
 )
 from ratel_link.repositories.ports import (
     ApiKeyRepository,
@@ -32,11 +36,17 @@ from ratel_link.repositories.ports import (
     IpAllocationRepository,
     LineStateRepository,
     SimKeyRepository,
+    SubscriberRepository,
+    VoiceTemplateSource,
 )
+from ratel_link.repositories.voice_template import FileVoiceTemplate
 from ratel_link.security.key_provider import KeyProvider, KeyUnavailableError, build_key_provider
 from ratel_link.services.api_key_admin import KeyPolicy, log_expiring
 from ratel_link.services.assignments import AssignmentService
 from ratel_link.services.audit_log import AuditLog
+from ratel_link.services.data_mode import DataModeService
+from ratel_link.services.ip_allocation import IpAllocator
+from ratel_link.services.line_activation import LineActivationService
 from ratel_link.services.line_status import LineStatusService
 from ratel_link.services.sim_import import SimImportService
 from ratel_link.services.sim_keys import SimKeyStore
@@ -49,6 +59,8 @@ def _startup_checks(
     api_keys: ApiKeyRepository,
     clock: Callable[[], datetime],
     policy: KeyPolicy,
+    settings: Settings,
+    voice_template: VoiceTemplateSource,
 ) -> None:
     """Verify and report. Never changes anything and never stops the service."""
     try:
@@ -57,6 +69,14 @@ def _startup_checks(
             if missing:
                 # Creating them is a deliberate step: `python -m ratel_link.admin_cli init-db`.
                 log_event(log, logging.ERROR, "startup.indexes.missing", indexes=missing)
+            if subscriber_index_missing(database.client[settings.open5gs_db_name]):
+                # RatelLink never creates indexes in the core's database. Ask the network team.
+                log_event(log, logging.ERROR, "startup.subscribers.index.missing")
+        try:
+            if voice_template.ims_session() is None:
+                log_event(log, logging.WARNING, "startup.voice.template.not_configured")
+        except VoiceTemplateError:
+            log_event(log, logging.ERROR, "startup.voice.template.invalid")
         log_expiring(api_keys, clock(), policy)
     except Exception as exc:
         # MongoDB may not be up yet. The service still starts. Type only: messages can carry hosts.
@@ -71,6 +91,8 @@ def create_app(
     audit: AuditLogRepository | None = None,
     line_states: LineStateRepository | None = None,
     ip_allocations: IpAllocationRepository | None = None,
+    subscribers: SubscriberRepository | None = None,
+    voice_template: VoiceTemplateSource | None = None,
     key_provider: KeyProvider | None = None,
     clock: Callable[[], datetime] = utc_now,
 ) -> FastAPI:
@@ -97,12 +119,20 @@ def create_app(
     ip_allocations = (
         ip_allocations if ip_allocations is not None else MongoIpAllocationRepository(mongo())
     )
+    subscribers = (
+        subscribers
+        if subscribers is not None
+        else MongoSubscriberRepository(mongo().client[settings.open5gs_db_name])
+    )
+    voice_template = voice_template or FileVoiceTemplate(settings.ratel_link_voice_template_file)
     database = opened[0] if opened else None
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         policy = KeyPolicy.from_settings(settings)
-        await run_in_threadpool(_startup_checks, database, api_keys, clock, policy)
+        await run_in_threadpool(
+            _startup_checks, database, api_keys, clock, policy, settings, voice_template
+        )
         yield
         if database is not None:
             database.client.close()
@@ -123,6 +153,17 @@ def create_app(
     )
     app.state.line_status = LineStatusService(line_states, sim_keys)
     app.state.assignments = AssignmentService(ip_allocations, clock)
+    audit_log = AuditLog(audit, clock)
+    app.state.line_activation = LineActivationService(
+        SimKeyStore(sim_keys, key_provider, clock),
+        subscribers,
+        line_states,
+        IpAllocator(ip_allocations, IpPool.from_cidr(settings.ratel_link_ue_pool), clock),
+        voice_template,
+        audit_log,
+        clock,
+    )
+    app.state.data_mode = DataModeService(subscribers, line_states, audit_log, clock)
     install_error_handlers(app)
     install_request_context(app)
 

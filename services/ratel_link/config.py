@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     ratel_link_key_id: str = Field(default="1", pattern=r"^[a-z0-9][a-z0-9._-]{0,31}$")
     # The pool of fixed addresses given to lines (Build Plan: 10.45.0.0/16 in the lab).
     ratel_link_ue_pool: str = "10.45.0.0/16"
+    # A subscriber document exported from the lab that has the ims session. Only that session is
+    # used, for lines activated with voice; keep the file outside the repository. Without it,
+    # activating a line with voice is refused (docs/RATELCORE_INTEGRATION_FACTS.md, N1).
+    ratel_link_voice_template_file: Path | None = None
     # API key lifetime rules. See ADR 0007.
     ratel_link_api_key_max_age_days: int = Field(default=90, ge=1, le=MAX_API_KEY_AGE_DAYS)
     ratel_link_api_key_rotation_overlap_days: int = Field(default=7, ge=1, le=30)

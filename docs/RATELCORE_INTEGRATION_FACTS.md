@@ -89,9 +89,9 @@ that depends on a change (data off, slow down) around an airplane-mode toggle or
 | Reserved first host | The allocator never gives out the first host (`.1`) | The first host of the pool is the UPF's own gateway address | **Confirmed correct.** Decision 33 is resolved |
 | Ki and OPc case | Stored exactly as sent (either case) and compared without regard to case | `security.k` and `security.opc` are written in **upper case** | Activation converts to upper case when it writes. The contract's pattern already accepts both |
 | `amf` | Not stored; open item 15 in [DECISIONS_PENDING.md](DECISIONS_PENDING.md) | Always `"8000"` | **Resolved:** a constant RatelLink writes, not a request field. Item 15 can be closed |
-| MSISDN | The contract allows any non-empty string | Must be `234` + 10 digits | Add a pattern `^234[0-9]{10}$` to `ActivateRequest` and the validator with W2-02, and decide the API form (N6) |
+| MSISDN | Was: any non-empty string | Must be `234` + 10 digits | **Done in W2-02:** the API takes the stored form and the contract has the pattern `^234[0-9]{10}$` (N6 decided 2026-10-13) |
 | Deactivate | W2-02 says "deletes the document" | Bar or delete is open, and delete makes the core reject the SIM with cause #8 | Stays open until the W2-05 spike |
-| Activation vs template | "Matches the template field for field" | Existing documents are never replaced, only `$set` | Test both paths: create from template, update in place without touching HSS-owned fields |
+| Activation vs template | "Matches the template field for field" | Existing documents are never replaced, only `$set` | **Done in W2-02:** one atomic MongoDB update (`$set` for RatelLink's fields, `$setOnInsert` for the rest). Tested on a real MongoDB, including that `sqn` (int64) and the other HSS fields survive |
 
 ## Still missing, and who can supply it
 
@@ -102,7 +102,7 @@ that depends on a change (data off, slow down) around an airplane-mode toggle or
 | N3 | **Where RatelLink runs and how it reaches the subscriber database**, and the database user it should use. The documents say developers do not log in to the core hosts and that a `ratel_link` database user is still to be created | W2-02's lab run and the Week 2 gate (a line created through the API attaches) | Network team and project lead |
 | N4 | **Bar or delete** on deactivate. Whether the MME acts on `subscriber_status` 1 is untested | `/deactivate` and its acceptance test | W2-05 spike |
 | N5 | **Live changes.** They need a MongoDB replica set (change streams), which is not running | The demo's "runs out of data, then slowed or cut" happens only at next attach until this lands | W2-06 spike, then network team |
-| N6 | **API form of the number**: the guide fixes the stored form (`234` + 10 digits) and the dialled form (`0` + 10 digits). The contract does not say which the API takes | W2-02 validation | Project lead (suggestion: the API takes the stored form, so RatelLink never converts) |
+| N6 | ~~API form of the number~~ **Decided 2026-10-13:** the API takes the stored form (`234` + 10 digits), so RatelLink never converts | | Done |
 | N7 | **Where usage and call records come from.** The guide says they are not defined and the core produces counters and records in different places | RatelMeter (W2-08, W2-10) | Network team |
 | N8 | The separate document the runbook mentions, *RatelLink Build Guide: Open5GS Subscriber Schema* (the Integration Guide may replace it) | Possibly more schema detail | Network team |
 

@@ -56,11 +56,13 @@ services/ratel_link/
   config.py            settings
   api/                 dependencies.py (require_api_key, AuthFirstRoute), router.py (new_v1_router,
                        build_v1_router), schemas.py (request bodies), sims.py (POST /v1/sims),
-                       lines.py (GET /v1/lines/{imsi}), assignments.py (GET /v1/assignments)
+                       lines.py (status, activate, data), assignments.py (GET /v1/assignments)
   services/            authentication.py, api_key_admin.py, audit_log.py, sim_keys.py,
-                       sim_import.py, ip_allocation.py, line_status.py, assignments.py
-  domain/              identifiers.py, sim_keys.py, api_keys.py, audit.py, ip_pool.py, line_state.py
-  repositories/        ports.py (interfaces), mongo.py (MongoDB)
+                       sim_import.py, ip_allocation.py, line_status.py, assignments.py,
+                       line_activation.py, data_mode.py, line_audit.py
+  domain/              identifiers.py, sim_keys.py, api_keys.py, audit.py, ip_pool.py, line_state.py,
+                       subscriber.py
+  repositories/        ports.py (interfaces), mongo.py (MongoDB), voice_template.py (file)
   security/            crypto.py, key_provider.py, api_key_tokens.py
 ```
 

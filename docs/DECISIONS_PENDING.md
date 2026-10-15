@@ -131,6 +131,16 @@ keep their numbers below; this queue is ordered by urgency.
 38. **`GET /v1/assignments` is not paginated.** The pool is a /16 (about 65,000 addresses), and a full list is a large response. The prototype has tens of lines, so the contract's single list is fine. Revisit with the Week 6 scale test; the contract would need a cursor.
 39. **`apns` is a list of strings** (contract placeholder `internet`, `ims`). Confirm the shape when W2-02 has the Open5GS template.
 
+### Raised while building W2-02 (2026-10-13)
+
+40. **Activating an active line with different settings updates it.** The contract only says the same settings are a no-op. The network team's guide says an existing document gets `$set` on RatelLink's fields only, so I allow it (new number, new speeds, voice on or off) and audit it. The alternative is a 409. Say if you want that.
+41. **A data change on a line that is not active answers 404** ("no active line"), because the contract lists no 409 for this operation. A provisioned, barred or never-activated line all give the same answer.
+42. **Zero is refused as a speed, and there is a 10 Gbit/s maximum.** I do not know what the core does with an `ambr` of 0 (it might mean unlimited), so it is refused. The maximum is a sanity limit I chose; the Build Plan gives none. Both are in the contract with a TODO.
+43. **`full` and `slow` need both speeds; `off` ignores them.** The Build Plan lists the speeds as body fields without saying when they are required. Because the caller sends the speeds, RatelLink does not need to remember the "plan speed".
+44. **`503` when voice is requested and no voice template is configured.** It is a deployment gap, not the caller's mistake. The contract has no 503 for these operations, only the `default` error.
+45. **The subscriber collection needs a unique index on `imsi`, and RatelLink will not create it.** Two simultaneous first activations of one line could otherwise create two documents. RatelLink checks (read only) and logs `startup.subscribers.index.missing`. Ask the network team to confirm the index exists (add to N3).
+46. **Writing the subscriber document and recording the line are separate steps** (as with item 32): if the second fails, a retry repairs it, because every step is repeated safely.
+
 ## Information I did not have (TODOs in the files)
 
 - GitHub usernames: project lead, independent reviewer, workstream owners, frontend lead, network lead (`CODEOWNERS`, `critical-reviewers.txt`, ownership and team docs).

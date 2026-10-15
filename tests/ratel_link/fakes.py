@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import os
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -166,3 +167,68 @@ class InMemoryLineStateRepository:
 
     def put(self, state: LineState) -> None:
         self.states[state.imsi] = state
+
+
+def _set_path(document: dict[str, Any], dotted: str, value: Any) -> None:
+    """Set `a.b.c` inside nested dicts the way MongoDB's $set does, creating parents."""
+    *parents, last = dotted.split(".")
+    node = document
+    for part in parents:
+        node = node.setdefault(part, {})
+    node[last] = value
+
+
+class InMemorySubscriberRepository:
+    """The core's `subscribers` collection, with the same effect as the targeted MongoDB updates.
+
+    `documents` is keyed by IMSI. Tests put fields the HSS owns into it to prove they survive.
+    """
+
+    def __init__(self) -> None:
+        self.documents: dict[str, dict[str, Any]] = {}
+
+    def upsert_line(
+        self, imsi: str, owned: Mapping[str, Any], created_only: Mapping[str, Any]
+    ) -> bool:
+        created = imsi not in self.documents
+        document = self.documents.setdefault(imsi, {"imsi": imsi})
+        if created:
+            document.update(copy.deepcopy(dict(created_only)))
+        for dotted, value in owned.items():
+            _set_path(document, dotted, copy.deepcopy(value))
+        return created
+
+    def _sessions(self, imsi: str) -> list[dict[str, Any]] | None:
+        document = self.documents.get(imsi)
+        return None if document is None else document["slice"][0]["session"]  # type: ignore[no-any-return]
+
+    def set_internet_speeds(
+        self, imsi: str, ambr: Mapping[str, Any], session_if_absent: Mapping[str, Any]
+    ) -> bool:
+        sessions = self._sessions(imsi)
+        if sessions is None:
+            return False
+        self.documents[imsi]["ambr"] = copy.deepcopy(dict(ambr))
+        for session in sessions:
+            if session["name"] == "internet":
+                session["ambr"] = copy.deepcopy(dict(ambr))
+                return True
+        sessions.insert(0, copy.deepcopy(dict(session_if_absent)))
+        return True
+
+    def remove_internet(self, imsi: str) -> bool:
+        sessions = self._sessions(imsi)
+        if sessions is None:
+            return False
+        sessions[:] = [s for s in sessions if s["name"] != "internet"]
+        return True
+
+
+class InMemoryVoiceTemplate:
+    """A voice template. `session=None` means none is configured."""
+
+    def __init__(self, session: dict[str, Any] | None = None) -> None:
+        self.session = session
+
+    def ims_session(self) -> dict[str, Any] | None:
+        return None if self.session is None else copy.deepcopy(self.session)
