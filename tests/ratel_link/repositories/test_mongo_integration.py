@@ -672,6 +672,34 @@ def test_two_lines_do_not_affect_each_other(core: Database[Any]) -> None:
     assert other is not None and [s["name"] for s in other["slice"][0]["session"]] == ["internet"]
 
 
+def test_removing_a_line_deletes_its_document_and_only_its_document(core: Database[Any]) -> None:
+    repo = MongoSubscriberRepository(core)
+    _activate(repo, SYNTHETIC_IMSI)
+    _activate(repo, SYNTHETIC_IMSI_2)
+    assert repo.remove_line(SYNTHETIC_IMSI) is True
+    assert _count(core, {"imsi": SYNTHETIC_IMSI}) == 0
+    assert _count(core, {"imsi": SYNTHETIC_IMSI_2}) == 1
+    assert repo.remove_line(SYNTHETIC_IMSI) is False  # again: nothing to delete, no error
+    assert subscriber_index_missing(core) is False  # the unique index is not touched
+
+
+def test_a_line_activated_again_after_removal_gets_a_fresh_document(core: Database[Any]) -> None:
+    from bson import Int64
+
+    repo = MongoSubscriberRepository(core)
+    _activate(repo)
+    core["subscribers"].update_one(
+        {"imsi": SYNTHETIC_IMSI}, {"$set": {"security.sqn": Int64(99), "imeisv": ["35"]}}
+    )
+    repo.remove_line(SYNTHETIC_IMSI)
+    assert _activate(repo) is True  # created, not updated
+    doc = core["subscribers"].find_one({"imsi": SYNTHETIC_IMSI})
+    assert doc is not None
+    # What the HSS had written is gone with the old document (see line_deactivation.py).
+    assert "sqn" not in doc["security"] and doc["imeisv"] == []
+    assert _names(core) == ["internet", "ims"]
+
+
 def _names(core: Database[Any], imsi: str = SYNTHETIC_IMSI) -> list[str]:
     doc = core["subscribers"].find_one({"imsi": imsi})
     assert doc is not None

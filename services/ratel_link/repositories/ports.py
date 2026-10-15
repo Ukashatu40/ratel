@@ -123,6 +123,14 @@ class SubscriberRepository(Protocol):
         """Remove the internet session and leave the ims session. False if there is no document."""
         ...
 
+    def remove_line(self, imsi: str) -> bool:
+        """Delete the line's whole subscriber document. False if there was none.
+
+        The only delete. The document goes with the fields the HSS keeps in it, `security.sqn`
+        among them: a later activation creates a fresh document.
+        """
+        ...
+
 
 class VoiceTemplateSource(Protocol):
     def ims_session(self) -> dict[str, Any] | None:

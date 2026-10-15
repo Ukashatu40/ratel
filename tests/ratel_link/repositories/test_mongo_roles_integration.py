@@ -157,10 +157,28 @@ def test_ratellink_does_all_its_work_with_only_these_privileges(
         assigned = client.get("/v1/assignments", headers=headers).json()["assignments"]
         assert [a["imsi"] for a in assigned] == [SYNTHETIC_IMSI]
 
+        # Deactivating deletes the core's document: the one delete the user may do.
+        subscribers = restricted.admin[restricted.core_db]["subscribers"]
+        assert subscribers.count_documents({}) == 1
+        stop = client.post(path + "/deactivate", json={"reason": "test"}, headers=headers)
+        assert stop.status_code == 200
+        assert subscribers.count_documents({}) == 0
+        assert client.get(path, headers=headers).json()["status"] == "provisioned"
+        assert client.post(path + "/activate", json=body, headers=headers).status_code == 200
+
     admin_view = restricted.admin
     assert admin_view[restricted.core_db]["subscribers"].count_documents({}) == 1
     actions = [e["action"] for e in admin_view[restricted.ratel_db]["audit_log"].find({})]
-    assert sorted(actions) == sorted(["sim.import", "line.activate", "line.data", "line.data"])
+    assert sorted(actions) == sorted(
+        [
+            "sim.import",
+            "line.activate",
+            "line.data",
+            "line.data",
+            "line.deactivate",
+            "line.activate",
+        ]
+    )
 
 
 NEW_USER = {"pwd": "z" * 20, "roles": []}
@@ -177,7 +195,6 @@ FORBIDDEN: list[tuple[str, str, str | None, str, tuple[Any, ...], dict[str, Any]
     ("delete an address record", "ratel", "ip_allocation", "delete_many", ({},), {}),
     ("drop a collection", "ratel", None, "drop_collection", ("sim_key",), {}),
     ("create a collection of its own", "ratel", None, "create_collection", ("extra",), {}),
-    ("delete a subscriber", "core", "subscribers", "delete_many", ({},), {}),
     ("create an index in the core", "core", "subscribers", "create_index", ("msisdn",), {}),
     ("drop the core's subscribers", "core", None, "drop_collection", ("subscribers",), {}),
     ("read another core collection", "core", "other", "find_one", (), {}),
@@ -231,11 +248,14 @@ def test_the_roles_file_names_nothing_but_the_collections_ratellink_uses() -> No
     }
     for role in spec["roles"]:
         for privilege in role["privileges"]:
-            assert "remove" not in privilege["actions"]
+            # Deleting is allowed in one place only: a deactivated line's subscriber document.
+            may_delete = privilege["resource"]["collection"] == "subscribers"
+            assert ("remove" in privilege["actions"]) == may_delete
             assert set(privilege["actions"]) <= {
                 "find",
                 "insert",
                 "update",
+                "remove",
                 "createIndex",
                 "listIndexes",
             }

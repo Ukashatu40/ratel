@@ -47,6 +47,7 @@ from ratel_link.services.audit_log import AuditLog
 from ratel_link.services.data_mode import DataModeService
 from ratel_link.services.ip_allocation import IpAllocator
 from ratel_link.services.line_activation import LineActivationService
+from ratel_link.services.line_deactivation import LineDeactivationService
 from ratel_link.services.line_status import LineStatusService
 from ratel_link.services.sim_import import SimImportService
 from ratel_link.services.sim_keys import SimKeyStore
@@ -154,14 +155,18 @@ def create_app(
     app.state.line_status = LineStatusService(line_states, sim_keys)
     app.state.assignments = AssignmentService(ip_allocations, clock)
     audit_log = AuditLog(audit, clock)
+    allocator = IpAllocator(ip_allocations, IpPool.from_cidr(settings.ratel_link_ue_pool), clock)
     app.state.line_activation = LineActivationService(
         SimKeyStore(sim_keys, key_provider, clock),
         subscribers,
         line_states,
-        IpAllocator(ip_allocations, IpPool.from_cidr(settings.ratel_link_ue_pool), clock),
+        allocator,
         voice_template,
         audit_log,
         clock,
+    )
+    app.state.line_deactivation = LineDeactivationService(
+        sim_keys, subscribers, line_states, allocator, audit_log, clock
     )
     app.state.data_mode = DataModeService(subscribers, line_states, audit_log, clock)
     install_error_handlers(app)

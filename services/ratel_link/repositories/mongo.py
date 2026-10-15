@@ -254,6 +254,9 @@ class MongoSubscriberRepository:
         )
         return result.matched_count == 1
 
+    def remove_line(self, imsi: str) -> bool:
+        return self._collection.delete_one({"imsi": imsi}).deleted_count == 1
+
 
 def subscriber_index_missing(open5gs_database: Database[Any]) -> bool:
     """True if `subscribers` has no unique index on `imsi`. Read only: RatelLink never creates one.
