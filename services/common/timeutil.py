@@ -1,3 +1,5 @@
+#services/common/timeutil.py
+
 """Time rules: store and send UTC, epoch seconds on the wire, 300-second aligned intervals."""
 
 from __future__ import annotations
