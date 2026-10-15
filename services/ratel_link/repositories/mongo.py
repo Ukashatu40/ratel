@@ -79,15 +79,17 @@ class MongoSimKeyRepository:
         self._collection = database[SIM_KEY]
 
     def insert_if_absent(self, document: SimKeyDocument) -> bool:
-        # One atomic upsert, so a repeat import never creates a second document even if the
-        # unique index has not been created yet. With the index, a concurrent race raises below.
+        # Insert only, never an update: the database user RatelLink runs as may add a stored key
+        # but not change or delete one (deploy/core-cp/mongo/ratel-link-roles.json). The look-up
+        # makes a repeat import a no-op even before the unique index exists. When two imports of
+        # one IMSI race, the unique index lets exactly one insert succeed.
+        if self._collection.find_one({"imsi": document["imsi"]}, {"_id": 1}) is not None:
+            return False
         try:
-            result = self._collection.update_one(
-                {"imsi": document["imsi"]}, {"$setOnInsert": dict(document)}, upsert=True
-            )
+            self._collection.insert_one(dict(document))
         except DuplicateKeyError:
             return False
-        return result.upserted_id is not None
+        return True
 
     def exists(self, imsi: str) -> bool:
         return self._collection.find_one({"imsi": imsi}, {"_id": 1}) is not None

@@ -4,9 +4,9 @@ Keep it short. The person reading it is tired and the service is down. Never put
 real customer data in a ticket, a chat message or this file. If you see one in a log, stop and tell
 the project lead (see "If a key is exposed").
 
-- **Last verified:** never, TODO (nobody has followed these steps on core-cp yet)
+- **Last verified:** in a clean Linux container only (2026-10-13). TODO: nobody has followed these steps on core-cp yet
 - **Owner:** @Ukashatu40 (RatelLink owner)
-- **Runs on:** core-cp. TODO: systemd unit name and unit file (`deploy/core-cp/`)
+- **Runs on:** core-cp, as the systemd unit `ratel-link.service` (files and install steps in `deploy/core-cp/`)
 
 Decisions behind this page: [ADR 0006](../adr/0006-ki-opc-encryption-at-rest.md) (encryption of Ki
 and OPc) and [ADR 0007](../adr/0007-api-key-verification-and-rotation.md) (API keys).
@@ -28,7 +28,7 @@ Every `/v1` call needs `Authorization: Bearer <key>`.
 
 ## Dependencies
 
-- MongoDB on `127.0.0.1` (authentication on). If it is down, authenticated routes fail with 500.
+- MongoDB on `127.0.0.1`, reached as the `ratel_link` user (privileges in `deploy/core-cp/mongo/`). If it is down, authenticated routes fail with 500.
   They never fall open.
 - The encryption key file (below). Without it RatelLink does not start outside `local`/`test`.
 - A correct clock (NTP). Key expiry is checked against the host's UTC time.
@@ -53,11 +53,11 @@ JSON on stdout (`journalctl -u <unit>`). Events that matter:
 
 Logs must not contain keys, tokens or Ki/OPc. If you find one, it is a security issue: see below.
 Run the service with the HTTP server's own access log off, because it prints raw paths that contain
-IMSIs. TODO: confirm the flag in the unit file.
+IMSIs. The unit file starts it with `--no-access-log`, and RatelLink's own request log records the route template (`/v1/lines/{imsi}`), never the real path.
 
 ## The encryption key file
 
-- **Location:** the path in `RATEL_LINK_KEY_FILE`. TODO: agree the path on core-cp (outside any
+- **Location:** the path in `RATEL_LINK_KEY_FILE`: `/etc/ratel-link/ratel_link.key` (outside any
   Git checkout and outside backups that leave the host). Id of the key: `RATEL_LINK_KEY_ID`.
 - **Permissions:** a regular file (not a symlink), owned by the user that runs RatelLink, mode 0600
   or 0400. RatelLink refuses to start otherwise, and the error names the path and the problem.
@@ -118,7 +118,7 @@ Calling systems today: `bss-app` (RatelBSS) and `meter-agent` (the RatelMeter ag
 | `startup.indexes.missing` | `init-db` never ran | Run it. It also creates the `ip_allocation` indexes. |
 | Callers get 503 `unavailable` on `POST /v1/sims` | No usable encryption key (the key file is missing or was never configured) | Fix the key file as above. Nothing was stored. |
 | Caller gets 409 `conflict` on `POST /v1/sims` | That IMSI already has different keys | Nothing was changed. Find out which keys are right with the SIM supplier before anyone tries again. |
-| `/v1` returns 500 | MongoDB down or the `ratel_link` user cannot authenticate | Check MongoDB. TODO: readiness check. |
+| `/v1` returns 500 | MongoDB down, the `ratel_link` user cannot authenticate, or the user lacks a privilege | Check MongoDB and the `unhandled_error` line's `exc_type` (`OperationFailure` with code 13 means a missing privilege: compare the user's roles with `deploy/core-cp/mongo/ratel-link-roles.json`). TODO: readiness check. |
 | `http.unhandled_error` with `exc_type` `DecryptionError` | The key file is not the one that encrypted the record, or a record was altered | Stop. Do not retry in a loop. Tell the project lead. |
 | `a calling system with api_key_id ... already exists` | The system exists | Use `rotate`. |
 
@@ -151,8 +151,9 @@ Do not paste the exposed value anywhere to "check" it. Say which kind it was and
 
 ## Rollback
 
-TODO: deployment procedure (`deploy/core-cp/`). A code rollback does not change stored data. Note
-that stored records are encrypted: an older version without the encryption code cannot read them.
+Point `/opt/ratel-link/current` at the previous release and restart (exact commands in
+`deploy/core-cp/README.md`). A code rollback does not change stored data. Note that stored records
+are encrypted: an older version without the encryption code cannot read them.
 
 ## Escalation
 

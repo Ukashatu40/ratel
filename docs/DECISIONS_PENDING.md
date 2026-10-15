@@ -94,7 +94,7 @@ keep their numbers below; this queue is ordered by urgency.
 ### Raised by the encryption and API-key work (2026-10-07)
 
 12. **SIM re-import with different keys (W2-01). Decided 2026-10-10 and built:** the same keys again return 200 and change nothing; different keys return 409 `conflict` and never replace the stored ones. Replacing a SIM's keys will be a deliberate admin action, if it is ever needed.
-13. **Append-only `audit_log` in MongoDB itself.** The code offers insert only, but a database user that may only insert into `audit_log` is not set up. Decide with the network team.
+13. **Append-only `audit_log` in MongoDB itself. Built 2026-10-13, applied when the network team creates the user:** `deploy/core-cp/mongo/ratel-link-roles.json` gives RatelLink insert only on `audit_log`, tested on a real MongoDB. The same file also stops RatelLink changing or deleting a stored SIM key.
 14. **Ki and OPc format.** The code accepts exactly 32 hexadecimal characters (128 bits) for each, in one place (`domain/sim_keys.py`). This is an assumption: the contract still says `TODO(contract)`. The project lead and the network team confirm it, then the contract is updated in the same commit as any change. Also confirm the case to store (the code keeps the case it was given).
 15. **`amf` handling. Resolved 2026-10-12:** the network team's Integration Guide fixes it at `"8000"`. It is a constant RatelLink writes at activation, not a request field. Nothing to store.
 16. **Overlap and warning defaults.** API key rotation overlap 7 days (allowed 1 to 30) and expiry warning 14 days (allowed 1 to 90) are proposals. The 90-day lifetime is the Build Plan's.

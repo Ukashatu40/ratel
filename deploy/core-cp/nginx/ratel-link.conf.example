@@ -1,0 +1,45 @@
+# A TLS reverse proxy in front of RatelLink, for callers on other hosts (RatelBSS on bss-app, the
+# RatelMeter agent on core-up). Management's decision of 2026-10-10: until the VPN exists, the
+# proxy allows only the callers' addresses, terminates TLS and limits request rates.
+# Install as /etc/nginx/conf.d/ratel-link.conf after replacing every <placeholder>.
+# This is a template: the network team may use another proxy, with the same four properties.
+
+limit_req_zone $binary_remote_addr zone=ratel_link:1m rate=20r/s;
+
+# The access log records who called and the result, never the path: paths contain IMSIs.
+log_format ratel_link_privacy '$time_iso8601 $remote_addr "$request_method" $status $request_length $request_time';
+
+server {
+    listen 443 ssl;
+    server_name <name-of-this-host>;
+
+    ssl_certificate     /etc/ssl/ratel-link/fullchain.pem;
+    ssl_certificate_key /etc/ssl/ratel-link/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    access_log /var/log/nginx/ratel-link.access.log ratel_link_privacy;
+
+    # Only the callers. Everything else gets 403 before RatelLink sees the request.
+    allow <address-of-bss-app>;
+    allow <address-of-core-up>;
+    deny  all;
+
+    # Requests are small JSON documents.
+    client_max_body_size 16k;
+    limit_req zone=ratel_link burst=40 nodelay;
+    limit_req_status 429;
+
+    # Only the API, and the liveness check for the local monitor.
+    location /v1/ {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 30s;
+    }
+    location = /healthz {
+        proxy_pass http://127.0.0.1:8081;
+    }
+    location / {
+        return 404;
+    }
+}

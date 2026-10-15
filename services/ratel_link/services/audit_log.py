@@ -6,9 +6,9 @@ and the line state before and after. The content guard (domain/audit.py) refuses
 Failed authentication is not written here. This log records changes. Failures go to the
 operational log as `auth.rejected`.
 
-TODO(project lead): enforce append-only in MongoDB itself (a user that may only insert into
-`audit_log`). This class and its repository offer insert only, but a database permission would
-hold even if the code were changed.
+Append-only is also enforced by MongoDB itself: the database user RatelLink runs as may only insert
+into `audit_log` (deploy/core-cp/mongo/ratel-link-roles.json), so the log holds even if the code
+were changed. That applies once the user is created on core-cp (deploy/core-cp/README.md).
 """
 
 from __future__ import annotations
