@@ -41,7 +41,7 @@ These are not developer tasks and nothing goes near real SIMs until they are don
    configurations are updated to match.
 2. The core's `subscribers` collection has a **unique index on `imsi`**. RatelLink never creates
    indexes in the core's database. It checks, and logs `startup.subscribers.index.missing` if the
-   index is not there.
+   index is not there. *Checked 2026-10-15: the index exists (`imsi_1`, unique).*
 3. **Create RatelLink's database user.** From this folder, with an administrator account:
 
    ```
@@ -78,15 +78,25 @@ Copy the tarball and `install-release.sh` to core-cp (by the usual secure copy, 
 email). Then, on core-cp:
 
 ```
-sudo ./install-release.sh ratel-link-<commit>.tar.gz python3.12   # Python 3.12 or newer
+sudo ./install-release.sh ratel-link-<commit>.tar.gz python3.12   # Python 3.12 or newer, see below
 sudo cp ratel-link.env.example /etc/ratel-link/ratel-link.env      # then edit it, see below
 sudo chown ratellink:ratellink /etc/ratel-link/ratel-link.env && sudo chmod 600 /etc/ratel-link/ratel-link.env
 sudo cp ratel-link.service /etc/systemd/system/ && sudo systemctl daemon-reload
 ```
 
-The install needs the Python package index (PyPI) reachable from core-cp. If it is not, build the
-release's packages on another machine (`pip download -r requirements/link.txt -c requirements/constraints.txt -d wheels`)
-and install with `pip install --no-index --find-links wheels`. TODO(network team): say which it is.
+**Python.** Checked 2026-10-15: core-cp runs Ubuntu 22.04.5 and its `python3` is **3.10.12**, which the
+install script refuses. RatelLink uses `datetime.UTC` and `StrEnum` (Python 3.11 and later) and its
+pinned dependencies were verified on 3.12 only, so lowering the requirement is not an option.
+Install Python 3.12 **next to** the system one (Ubuntu's own tools need 3.10, so never replace it),
+with its `venv` module, and pass that executable as the script's second argument. How to get it is
+the network team's decision, because it adds software to a core host: a third-party apt repository
+(deadsnakes: `python3.12`, `python3.12-venv`) or a standalone build (for example `uv python install 3.12`,
+which needs the host to reach GitHub). TODO(network team): choose, and install.
+
+**Package index.** Checked 2026-10-15: PyPI is reachable from core-cp (HTTP 200 on the `pip` index
+page), so a plain install works. If that ever changes, build the release's packages on another
+machine (`pip download -r requirements/link.txt -c requirements/constraints.txt -d wheels`) and
+install with `pip install --no-index --find-links wheels`.
 
 Edit `/etc/ratel-link/ratel-link.env`: put the generated MongoDB password into `MONGO_URI`, and set
 `RATEL_LINK_UE_POOL` once the range is agreed. Then, as the service user (the settings are loaded
