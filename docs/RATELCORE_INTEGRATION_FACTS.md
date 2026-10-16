@@ -72,7 +72,7 @@ for that line, and it never gets `ue.ipv4`.
 | Activate | Create from the template if absent. If present, `$set` only the fields RatelLink owns |
 | Data `full` or `slow` | `$set` the internet session `ambr` (and the top-level `ambr`) |
 | Data `off` | `$pull` the internet session. `ims` stays, so calls keep working. Turning data back on re-inserts `internet` with `$push` and `$position: 0` |
-| Deactivate | **Not decided**: bar (`subscriber_status` 1) or delete the document (N4) |
+| Deactivate | **Not decided by the network team**: bar (`subscriber_status` 1) or delete the document (N4). Built as **delete** (Build Plan), swappable after the spike |
 | Read line | `msisdn`, sessions, speeds, fixed address. **Never** the `security` object |
 
 Changing one session without touching the other:
@@ -90,7 +90,7 @@ that depends on a change (data off, slow down) around an airplane-mode toggle or
 | Ki and OPc case | Stored exactly as sent (either case) and compared without regard to case | `security.k` and `security.opc` are written in **upper case** | Activation converts to upper case when it writes. The contract's pattern already accepts both |
 | `amf` | Not stored; open item 15 in [DECISIONS_PENDING.md](DECISIONS_PENDING.md) | Always `"8000"` | **Resolved:** a constant RatelLink writes, not a request field. Item 15 can be closed |
 | MSISDN | Was: any non-empty string | Must be `234` + 10 digits | **Done in W2-02:** the API takes the stored form and the contract has the pattern `^234[0-9]{10}$` (N6 decided 2026-10-13) |
-| Deactivate | W2-02 says "deletes the document" | Bar or delete is open, and delete makes the core reject the SIM with cause #8 | Stays open until the W2-05 spike |
+| Deactivate | W2-02 says "deletes the document" | Bar or delete is open, and delete makes the core reject the SIM with cause #8 | **Built as delete (2026-10-14).** Delete also loses the HSS-owned `security.sqn`, which rule 4 above warns about: the lab must show a re-activated SIM attaches again. Stays open until the W2-05 spike |
 | Activation vs template | "Matches the template field for field" | Existing documents are never replaced, only `$set` | **Done in W2-02:** one atomic MongoDB update (`$set` for RatelLink's fields, `$setOnInsert` for the rest). Tested on a real MongoDB, including that `sqn` (int64) and the other HSS fields survive |
 
 ## Still missing, and who can supply it
@@ -100,7 +100,7 @@ that depends on a change (data off, slow down) around an airplane-mode toggle or
 | N1 | **A key-free export of one working subscriber that has the `ims` session** (for example `findOne` with the `security` field excluded, saved outside the repository) | The voice `pcc_rule` entries cannot be written from the guide's abbreviated example | Network team |
 | N2 | **The static address range** for fixed IPs, outside the SMF's dynamic range | Without it, activation can hand out an address the core also hands out dynamically | Network team |
 | N3 | **Who installs RatelLink on core-cp and with which MongoDB access.** Ready for them: `deploy/core-cp/` (install steps, systemd unit, and the least-privilege MongoDB user, tested). They must first enable MongoDB authentication (updating the HSS and PCRF settings), confirm the unique `imsi` index on `subscribers`, and run the user script. The documents say developers do not log in to the core hosts | W2-02's lab run and the Week 2 gate (a line created through the API attaches) | Network team and project lead |
-| N4 | **Bar or delete** on deactivate. Whether the MME acts on `subscriber_status` 1 is untested | `/deactivate` and its acceptance test | W2-05 spike |
+| N4 | **Bar or delete** on deactivate. Whether the MME acts on `subscriber_status` 1 is untested. **Also: does a SIM attach again after delete and re-activate**, given the `sqn` is lost? | The choice only. `/deactivate` is built as delete | W2-05 spike |
 | N5 | **Live changes.** They need a MongoDB replica set (change streams), which is not running | The demo's "runs out of data, then slowed or cut" happens only at next attach until this lands | W2-06 spike, then network team |
 | N6 | ~~API form of the number~~ **Decided 2026-10-13:** the API takes the stored form (`234` + 10 digits), so RatelLink never converts | | Done |
 | N7 | **Where usage and call records come from.** The guide says they are not defined and the core produces counters and records in different places | RatelMeter (W2-08, W2-10) | Network team |

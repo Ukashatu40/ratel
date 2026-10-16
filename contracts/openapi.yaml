@@ -48,8 +48,8 @@ paths:
         keys go to RatelLink and RatelBSS receives only IMSI and ICCID.
         Idempotent: sending the same keys again for an IMSI succeeds and changes nothing. An IMSI
         that already has DIFFERENT keys is refused with 409 and the stored keys are never replaced.
-        TODO(contract): the Build Plan's sim_key store also lists `amf`; the request body here
-        lists only imsi, ki, opc as in Contract 1.
+        `amf` is not a request field: the core's document always holds the constant "8000", which
+        RatelLink writes at activation (Integration Guide, section 4). Settled 2026-10-14.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -67,6 +67,8 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/lines/{imsi}/activate:
@@ -99,6 +101,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/lines/{imsi}/data:
@@ -109,7 +113,9 @@ paths:
       description: |
         `full` or `slow` change the internet APN's speed. `off` removes the internet APN.
         The ims APN is never touched, so calls keep working. Takes effect at the next attach.
-        Repeating a request changes nothing. 404 when the line was never activated or is not active.
+        Repeating a request changes nothing. 404 when the line was never activated or is not active
+        (a deactivated line included). 409 when RatelLink records the line as active but the
+        network has no record for it: activate it again.
       parameters:
         - $ref: "#/components/parameters/Imsi"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -126,6 +132,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
         default:
@@ -138,7 +146,11 @@ paths:
       description: |
         Only this endpoint stops calls. RatelLink keeps keys in its own store, deletes the Open5GS
         subscriber document, and rewrites it on activate. Takes effect at the next attach.
-        TODO(contract): `reason` values. The Build Plan lists the field without an enumeration.
+        Repeating it changes nothing. A SIM that was never activated also answers 200. An IMSI
+        RatelLink has never heard of answers 404. The line's fixed address is released and stays
+        held for 24 hours, so a later activation gives the same line the same address.
+        `reason` is free text for the audit log (1 to 200 characters). TODO(contract): whether
+        RatelBSS wants fixed reason codes instead. Owner: RatelBSS lines.
       parameters:
         - $ref: "#/components/parameters/Imsi"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -167,8 +179,9 @@ paths:
       description: |
         Lets RatelBSS check its view against the network's.
         Fields follow the line_state collection in the RatelLink spec.
-        TODO(contract): confirm the exact response fields (the Build Plan says "Status, APNs, IP
-        address, speeds and MSISDN") and the shape of `apns`.
+        Built as the Build Plan lists them: status, MSISDN, APNs (the names of the sessions), IP
+        address and speeds. TODO(contract): RatelBSS lines to confirm these are the fields it
+        needs, and the shape of `apns`.
       parameters:
         - $ref: "#/components/parameters/Imsi"
       responses:
@@ -178,6 +191,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LineStatus"
+              example:
+                status: active
+                msisdn: "2340000000001"
+                apns: [internet, ims]
+                ue_ip: "10.45.0.2"
+                speed_ul_mbps: 5
+                speed_dl_mbps: 10
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -191,8 +211,10 @@ paths:
       summary: Every current IP address with its IMSI, for RatelMeter.
       description: |
         RatelMeter's agent caches this list and refreshes it every interval.
-        TODO(contract): response wrapper and field names are not specified in the Build Plan.
-        `assignments`, `ue_ip` and `imsi` are placeholders taken from the line_state field names.
+        Built as `{"assignments": [{"ue_ip", "imsi"}]}`. An address released in the last 24 hours
+        is still listed with its line, because usage seen on it still belongs to that line.
+        TODO(contract): the RatelMeter agent's owner to confirm the wrapper and field names, which
+        the Build Plan does not give.
       responses:
         "200":
           description: Current assignments.
@@ -283,8 +305,11 @@ components:
       in: header
       required: false
       description: |
-        Repeating a call with the same key returns the first result.
-        TODO(contract): key format, length and retention window.
+        RatelLink's operations are idempotent by construction: repeating a call with the same
+        body changes nothing, with or without this header. The header is accepted and must not be
+        empty. It is not stored, so it has no retention window.
+        TODO(contract): key format and length, and whether RatelBSS needs the first result
+        returned verbatim. Owner: RatelBSS lines.
       schema:
         type: string
         minLength: 1
@@ -324,7 +349,8 @@ components:
   responses:
     OkEmpty:
       description: |
-        Success. TODO(contract): response body is not specified in the Build Plan.
+        Success. RatelLink returns an empty JSON object. TODO(contract): RatelBSS lines to
+        confirm it needs nothing more in the body (the Build Plan does not specify one).
       content:
         application/json:
           schema:
@@ -335,31 +361,55 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+          example:
+            error: {code: unauthorized, message: "Invalid or missing API key."}
     Conflict:
-      description: The IMSI already has different keys stored. Nothing was changed.
+      description: |
+        Nothing was changed. Either the IMSI already has different keys stored (`POST /v1/sims`),
+        or the network has no record for the line (`POST /v1/lines/{imsi}/data`): activate it again.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+          example:
+            error: {code: conflict, message: "The network has no record for this line. Activate it again."}
     NotFound:
       description: Unknown line.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+          example:
+            error: {code: not_found, message: "Unknown line."}
     ValidationError:
       description: |
-        Invalid request. TODO(contract): confirm 422 versus 400 for validation failures.
+        Invalid request. RatelLink answers 422 for every validation failure (a bad IMSI in the
+        path included). TODO(contract): RatelBSS lines to confirm they handle 422 and not 400.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+          example:
+            error: {code: validation_error, message: "Invalid request. Fields: body.msisdn"}
+    Unavailable:
+      description: |
+        RatelLink cannot do this right now and nothing was changed. Try again later, and tell the
+        RatelLink owner if it persists. Voice was requested with no voice template configured, no
+        address was free, or the service cannot handle SIM keys.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: unavailable, message: "Voice cannot be switched on right now."}
     UnexpectedError:
       description: Any other failure, in the standard error shape.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+          example:
+            error: {code: internal_error, message: "Internal error"}
   schemas:
     Error:
       type: object
@@ -392,13 +442,13 @@ components:
           pattern: "^[0-9a-fA-F]{32}$"
           writeOnly: true
           description: Secret. Write-only. Never returned, logged or sent to RatelBSS.
-          x-todo: Not in the Build Plan. 128 bits as 32 hex characters is an assumption to confirm with the SIM supplier.
+          x-todo: The core stores 32 hex characters (Integration Guide, section 4). Whether the SIM supplier delivers keys in that form is risk R-01.
         opc:
           type: string
           pattern: "^[0-9a-fA-F]{32}$"
           writeOnly: true
           description: Secret. Write-only. Never returned, logged or sent to RatelBSS.
-          x-todo: Not in the Build Plan. 128 bits as 32 hex characters is an assumption to confirm with the SIM supplier.
+          x-todo: The core stores 32 hex characters (Integration Guide, section 4). Whether the SIM supplier delivers keys in that form is risk R-01.
     ActivateRequest:
       type: object
       required: [msisdn, speed_ul_mbps, speed_dl_mbps, voice]
@@ -410,7 +460,8 @@ components:
           description: |
             The number as the core stores it: 234 and ten digits, no plus sign. The voice layer
             looks lines up in this form, so a number in any other form cannot be called.
-          x-todo: Confirm with the project lead that the API takes the stored form (N6 in docs/RATELCORE_INTEGRATION_FACTS.md).
+            Decided 2026-10-13 (N6 in docs/RATELCORE_INTEGRATION_FACTS.md): the API takes this
+            stored form, so RatelLink never converts.
         speed_ul_mbps:
           $ref: "#/components/schemas/SpeedMbps"
         speed_dl_mbps:
@@ -455,6 +506,8 @@ components:
         reason:
           type: string
           minLength: 1
+          maxLength: 200
+          description: Free text for the audit log. At most 200 characters.
           x-todo: Allowed values not specified in the Build Plan.
     LineStatus:
       type: object
@@ -465,20 +518,26 @@ components:
         status:
           type: string
           enum: [provisioned, active, barred]
+          examples: [active]
         msisdn:
           type: [string, "null"]
+          examples: ["2340000000001"]
         apns:
           type: array
           items:
             type: string
+          examples: [[internet, ims]]
           x-todo: Item shape is not specified. Strings (`internet`, `ims`) are a placeholder.
         ue_ip:
           type: [string, "null"]
           description: Fixed IPv4 address from the 10.45.0.0/16 pool.
+          examples: ["10.45.0.2"]
         speed_ul_mbps:
           type: [number, "null"]
+          examples: [5]
         speed_dl_mbps:
           type: [number, "null"]
+          examples: [10]
     Assignment:
       type: object
       required: [ue_ip, imsi]
@@ -486,6 +545,7 @@ components:
       properties:
         ue_ip:
           type: string
+          examples: ["10.45.0.2"]
         imsi:
           $ref: "#/components/schemas/Imsi"
     AssignmentList:

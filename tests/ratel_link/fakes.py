@@ -223,6 +223,9 @@ class InMemorySubscriberRepository:
         sessions[:] = [s for s in sessions if s["name"] != "internet"]
         return True
 
+    def remove_line(self, imsi: str) -> bool:
+        return self.documents.pop(imsi, None) is not None
+
 
 class InMemoryVoiceTemplate:
     """A voice template. `session=None` means none is configured."""

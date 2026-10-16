@@ -7,6 +7,8 @@ the software (this repository).
 
 **Active phase: Week 2. Re-planned on 2026-10-08: the Week 2 gate carries into the week of Oct 12 (see [issues-week2/README.md](issues-week2/README.md)). The Nov 26 demo date is unchanged.**
 
+The demo itself, act by act, with a cut list if the plan slips: [DEMO_SCRIPT.md](DEMO_SCRIPT.md) (draft).
+
 | Week | Dates | Software work | Gate |
 | ---- | ----- | ------------- | ---- |
 | 1 | Sep 28 to Oct 2 | Contracts merged on day one, then the week one tasks | The eNB registers with our MME, and `openapi.yaml` is merged |

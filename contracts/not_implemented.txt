@@ -5,6 +5,5 @@
 #     or if an unlisted operation is NOT implemented (add the line, or implement it).
 #   - scripts/ci/run_schemathesis.sh runs Schemathesis only against operations NOT listed here.
 # Remove a line in the same PR that implements the operation.
-link_deactivate_line
 meter_get_usage
 meter_get_calls
