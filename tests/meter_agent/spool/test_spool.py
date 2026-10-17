@@ -1,9 +1,15 @@
 """Tests for W2-15: atomic write, ordered replay, ack-then-delete,
 quarantine, and duplicate keys. No network, no lab.
 """
+
 from __future__ import annotations
 
+import os
+import stat
+import sys
 from pathlib import Path
+
+import pytest
 
 from services.meter_agent.spool.spool import Spool
 
@@ -133,3 +139,42 @@ def test_spool_creates_its_directory(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "spool"
     Spool(target)
     assert target.is_dir()
+
+
+def _mode(path: Path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+class TestOwnerOnly:
+    """Batches hold IMSIs: nobody but the owner may read the spool."""
+
+    def test_new_directories_and_files_are_owner_only_whatever_the_umask(
+        self, tmp_path: Path
+    ) -> None:
+        old = os.umask(0)  # the most permissive umask: only explicit modes can protect us
+        try:
+            spool = Spool(tmp_path / "spool")
+            written = spool.spool("0000000001.json", _batch(1))
+        finally:
+            os.umask(old)
+        assert _mode(tmp_path / "spool") == 0o700
+        assert _mode(tmp_path / "spool" / "quarantine") == 0o700
+        assert _mode(written) == 0o600
+
+    def test_an_existing_loose_directory_is_tightened(self, tmp_path: Path) -> None:
+        loose = tmp_path / "spool"
+        (loose / "quarantine").mkdir(parents=True)
+        loose.chmod(0o755)
+        (loose / "quarantine").chmod(0o755)
+        Spool(loose)
+        assert _mode(loose) == 0o700
+        assert _mode(loose / "quarantine") == 0o700
+
+    def test_a_quarantined_file_stays_owner_only(self, tmp_path: Path) -> None:
+        spool = Spool(tmp_path)
+        bad = spool.spool("0000000001.json", _batch(1))
+        bad.write_text("not json")
+        spool.replay(FakeSender())
+        moved = tmp_path / "quarantine" / "0000000001.json"
+        assert moved.exists() and _mode(moved) == 0o600

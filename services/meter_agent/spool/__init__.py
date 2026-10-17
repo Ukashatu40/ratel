@@ -2,6 +2,7 @@
 
 No network access. The sender is passed in.
 """
-from .spool import Spool, SpoolResult, Sender
+
+from .spool import Sender, Spool, SpoolResult
 
 __all__ = ["Sender", "Spool", "SpoolResult"]
