@@ -58,7 +58,8 @@ Thumbs.db
 # See docs/source/README.md.
 docs/source/*.pdf
 
-# Agent spool files (written on core-up and voice, never committed). Anchored to the
-# repository root: an unanchored 'spool/' also hid the source package
-# services/meter_agent/spool and its tests from ruff and from 'git add'.
-/spool/
+# Working notes for the network lead: not project documentation, never committed.
+docs/source/needs-from-captraven.md
+
+# Agent spool files (written on core-up and voice, never committed)
+spool/
