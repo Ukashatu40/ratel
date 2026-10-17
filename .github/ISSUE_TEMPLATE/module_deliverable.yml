@@ -1,0 +1,99 @@
+name: Module deliverable
+description: A deliverable-sized piece of work inside one module, with acceptance criteria that pass or fail. See docs/DEFINITION_OF_READY.md.
+title: "[Module] "
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One module, one deliverable, finishable and reviewable in a few days. If it needs two modules,
+        split it, or make the contract change its own issue first.
+        Do not paste secrets, Ki/OPc, NINs, full IMSIs or real customer data.
+        The project lead sets the labels (`area:*`, `priority:*`, `risk:*`) and assigns the owner.
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      description: One only. This matches the `area:*` label and the rows of docs/OWNERSHIP_MATRIX.md.
+      options:
+        - Contracts (openapi.yaml, mock)
+        - RatelLink (services/ratel_link)
+        - RatelMeter agent (services/meter_agent)
+        - RatelMeter API (services/app/meter_api)
+        - RatelBSS lines (services/app/bss_lines)
+        - RatelBSS money (services/app/bss_money)
+        - RatelDesk (web/desk)
+        - RatelPay (web/pay)
+        - Network team (RatelCore, RatelVoice, RatelOps)
+        - Repository, CI and docs
+    validations: {required: true}
+  - type: textarea
+    id: objective
+    attributes: {label: Objective, description: "One or two sentences. What is true when this is done?"}
+    validations: {required: true}
+  - type: textarea
+    id: source
+    attributes: {label: Source, description: "Build Plan section, weekly gate, PRD requirement id (or TODO(PRD)), decision number, related issues."}
+    validations: {required: true}
+  - type: textarea
+    id: scope
+    attributes: {label: Scope and out of scope, description: "What is in, what is out. Check the Build Plan's 'What not to build yet' list."}
+    validations: {required: true}
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on, and who unblocks it
+      description: "Other issues, contract fields still marked TODO, network-team input (N-numbers in docs/RATELCORE_INTEGRATION_FACTS.md), PRD, lab session. Write 'nothing' if nothing."
+    validations: {required: true}
+  - type: dropdown
+    id: contract
+    attributes:
+      label: Contract impact
+      options:
+        - None
+        - Changes contracts/openapi.yaml and contracts/not_implemented.txt in the same commit
+        - Needs a contract change first (separate issue, linked above)
+    validations: {required: true}
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: "Checkable statements. Each one names the test, the command or the observation that proves it."
+      value: "- [ ] \n- [ ] `make check` is green"
+    validations: {required: true}
+  - type: textarea
+    id: data
+    attributes: {label: Data, security and privacy, description: "Idempotency, replay, UTC, kobo, secrets, personal data, logging. Write 'none' if none."}
+    validations: {required: true}
+  - type: dropdown
+    id: lab
+    attributes:
+      label: Needs the lab to be complete?
+      description: "Unit tests are not enough for anything that touches the network."
+      options:
+        - "No"
+        - "Yes, part of lab session 1"
+        - "Yes, a separate lab run"
+    validations: {required: true}
+  - type: dropdown
+    id: ready
+    attributes:
+      label: Ready to start? (docs/DEFINITION_OF_READY.md)
+      options:
+        - "Yes"
+        - "No, waiting on something listed above"
+    validations: {required: true}
+  - type: input
+    id: owner
+    attributes: {label: Owner, description: "GitHub username. Leave TODO until the project lead assigns it.", value: "TODO"}
+  - type: input
+    id: reviewer
+    attributes: {label: Reviewer, description: "Two for RatelLink and RatelBSS: money.", value: "TODO"}
+  - type: input
+    id: target
+    attributes: {label: Target date, description: "YYYY-MM-DD, set by the project lead.", value: "TODO"}
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done
+      value: "- [ ] Acceptance criteria pass\n- [ ] Tests pass and CI is green\n- [ ] Required reviewers approved\n- [ ] openapi.yaml and not_implemented.txt updated if API behaviour changed\n- [ ] Shown working on the lab if it touches the network\n- [ ] Runbook or docs updated if needed"
