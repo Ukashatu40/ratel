@@ -1,6 +1,7 @@
 # Team structure
 
-**Assignments below were made by the project lead on 2026-10-08**, from the lead's own knowledge of
+**Assignments below were made by the project lead on 2026-10-08 and revised on 2026-10-18**
+(decision 58 in [DECISIONS_PENDING.md](DECISIONS_PENDING.md)), from the lead's own knowledge of
 each person. The skill matrix is still the lead's to fill in (`?` means not assessed). Job titles
 are not a proxy for ability: if an assessment changes an assignment, change
 [OWNERSHIP_MATRIX.md](OWNERSHIP_MATRIX.md), `.github/CODEOWNERS` and the issue owners together.
@@ -13,9 +14,9 @@ How work flows and how new people are taught: [WORKFLOW.md](WORKFLOW.md) and [TE
 | ------ | ---- | ----------------------------------------- | -------- |
 | @Ukashatu40 | **Project lead.** Mid-senior backend-focused full-stack developer | All the relevant skills | RatelLink, RatelBSS: money, contracts, governance (CI, GitHub, ADRs) |
 | @CaptRaven | **Independent reviewer.** Software and network engineer | Software and network | Required approver on RatelLink and money; contracts; the Linux counter spike and meter agent design; network-facing reviews |
-| @capitanaserdel | Mid-senior frontend and mobile developer. **Frontend lead.** Standing second approver on critical changes | Frontend, mobile | RatelDesk; reviews frontend, RatelPay, BSS lines, the RatelMeter API |
-| @Abbalolo | Junior to mid frontend-focused full-stack developer | Uses Supabase for backends; learned Express once, never built a project with it | RatelBSS: lines and its screens |
-| @ml-lawarn | Junior frontend and mobile developer | Some small Flask experience | RatelMeter API (`/v1/usage`, `/v1/calls`) |
+| @capitanaserdel | Mid-senior frontend and mobile developer. **Frontend lead.** Standing second approver on critical changes | Frontend, mobile | RatelMeter, agent and API (backend); reviews RatelDesk, RatelPay and BSS lines; backup for RatelLink and BSS money |
+| @Abbalolo | Junior to mid frontend-focused full-stack developer | Uses Supabase for backends; learned Express once, never built a project with it | RatelBSS: lines (backend) |
+| @ml-lawarn | Junior frontend and mobile developer | Some small Flask experience | RatelDesk. Frontend only: no backend work (project lead's decision 58) |
 | @Arfaaah | Intern | HTML, CSS and JavaScript | RatelPay page (plain HTML, CSS and JS suits the 3G rule), supervised |
 
 The software team is the lead, the independent reviewer and four developers. The network team
@@ -49,7 +50,7 @@ Respect that boundary. See [ARCHITECTURE.md](ARCHITECTURE.md).
 - **Workstream owner:** accountable for a workstream's delivery. See the ownership matrix.
 - **Backup:** can take over a workstream. Mostly none yet.
 - **Network lead:** Network team counterpart for RatelLink, RatelMeter and RatelVoice touchpoints. TODO: confirm who.
-- **Frontend lead:** @capitanaserdel. Owns RatelDesk and RatelPay review routing.
+- **Frontend lead:** @capitanaserdel. Reviews RatelDesk and RatelPay and owns their review routing.
 
 ## Proposed workstream categories
 
@@ -85,8 +86,9 @@ See [OWNERSHIP_MATRIX.md](OWNERSHIP_MATRIX.md).
 | RatelLink (`services/ratel_link/`) | **2** | @Ukashatu40 and @CaptRaven. If the lead is the author: @CaptRaven plus one more, normally @capitanaserdel |
 | RatelBSS: money (`services/app/bss_money/`) | **2** | Same as RatelLink |
 | Contracts (`contracts/`) | 1, controlled | @Ukashatu40 or @CaptRaven (the network lead is consulted) |
-| RatelBSS: lines, RatelMeter API | 1 | @Ukashatu40 or @capitanaserdel |
-| RatelMeter agent | 1 | @Ukashatu40 or @CaptRaven |
+| RatelBSS: lines | 1 | @Ukashatu40 or @capitanaserdel |
+| RatelMeter API | 1 | @Ukashatu40 or @capitanaserdel. The owner is @capitanaserdel, so in practice @Ukashatu40 |
+| RatelMeter agent | 1 | @Ukashatu40 or @CaptRaven (@CaptRaven for the counters) |
 | RatelDesk, RatelPay | 1 | @capitanaserdel or @Ukashatu40 |
 | RatelVoice and RatelOps configuration | 1 | @CaptRaven or @Ukashatu40. TODO: the network lead |
 | CI, GitHub governance | 1, controlled | @Ukashatu40 or @capitanaserdel. The review-gate files also need @CaptRaven |

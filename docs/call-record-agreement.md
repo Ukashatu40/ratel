@@ -1,8 +1,8 @@
 # Call record agreement: RatelVoice → RatelMeter
 
 **Status:** DRAFT — awaiting sign-off
-**Drafted by:** @ml-lawarn (RatelMeter owner)
-**To be signed off by:** @CaptRaven (network lead) and @ml-lawarn (RatelMeter owner)
+**Drafted by:** @ml-lawarn
+**To be signed off by:** @CaptRaven (network lead) and @capitanaserdel (RatelMeter owner since 2026-10-18)
 **Reviewers:** @Ukashatu40, @CaptRaven
 **Source:** Build Plan, RatelMeter spec "How calls work"; week two RatelVoice
 column ("call record fields agreed with RatelMeter"); ticket "Agree the call
@@ -196,7 +196,7 @@ Please answer inline. These block sign-off.
 ## 11. Sign-off
 
 - [ ] @CaptRaven (network lead) — Kamailio side confirmed; questions answered.
-- [ ] @ml-lawarn (RatelMeter owner) — agent side confirmed; contract updated.
+- [ ] @capitanaserdel (RatelMeter owner) — agent side confirmed; contract updated.
 - [ ] `contracts/openapi.yaml` `end_reason` TODO resolved in the same commit.
 
 Signed: ______________________ (network lead)   Date: __________
