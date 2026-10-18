@@ -30,3 +30,6 @@ Implementing barring.
 
 ## Suggested skill level
 Comfortable with Open5GS and MongoDB on the lab. Reviewer: one.
+
+## Source reading 2026-10-16
+In Open5GS v2.8.0 the MME's `mme_s6a_handle_ula` and `mme_s6a_handle_idr` do not read `subscriber_status` or the barring data (see [spike-live-changes.md](../spike-live-changes.md)). So a barred line is probably still let in. This is not measured: the lab test (steps 4.7 and 4.8 of the lab runbook) is still needed, together with the question whether a re-activated SIM attaches after the sequence number is lost.

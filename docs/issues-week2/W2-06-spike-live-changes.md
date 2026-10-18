@@ -30,3 +30,6 @@ Any live-change implementation. The Build Plan says guessing means writing it tw
 ## Suggested skill level
 Strong Linux and telecom core debugging (Diameter, Gx, Open5GS internals). The network team should be consulted.
 Reviewer: one, plus the project lead reads the recommendation.
+
+## Status 2026-10-16
+Draft write-up from the Open5GS source: [spike-live-changes.md](../spike-live-changes.md). Q1 to Q3 are answered from the source only. What remains is the lab test sequence in that file, which needs the network team (replica set, HSS setting) and one phone.

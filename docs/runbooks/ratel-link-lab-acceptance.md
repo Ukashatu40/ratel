@@ -19,7 +19,8 @@ the record below, a SIM is identified by its **last four digits** only.
 | ----- | --- | ---- |
 | RatelLink is installed and running on core-cp, from `deploy/core-cp/README.md` | Network team | |
 | MongoDB authentication is on, the HSS and PCRF were updated, and one test call was made after | Network team | |
-| The unique `imsi` index exists on `subscribers` and RatelLink's start-up log does not say `startup.subscribers.index.missing` | Network team | |
+| The unique `imsi` index exists on `subscribers` and RatelLink's start-up log does not say `startup.subscribers.index.missing` | Network team | Index seen 2026-10-15 (project lead); start-up log not yet checked |
+| Python 3.12 is installed on core-cp next to the system Python 3.10 (N9) | Network team | |
 | The encryption key file exists and **its offline backup exists with a named owner** (risk R-14) | Project lead | |
 | A caller key was made with `admin_cli api-key create` and handed over without being written down | Project lead | |
 | The static address range for lines is agreed and `RATEL_LINK_UE_POOL` is set to it (N2) | Network team | |
