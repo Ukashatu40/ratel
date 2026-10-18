@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Create GitHub issues from docs/issues-week2/*.md.
+# Create GitHub issues from docs/issues-week2/W2-*.md, or from the files named in ISSUE_FILES
+# (for example ISSUE_FILES="docs/issues-modules/M-*.md" scripts/github/create_issues.sh).
 # Each file: first line "# Title", second non-empty line "Labels: a, b, c", the rest is the body.
 # The assignee is the login in "**Owner:** @login" (none while the owner is TODO). Run once.
 # Re-running creates duplicates.
@@ -7,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 REPO="${1:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 
-for f in docs/issues-week2/W2-*.md; do
+for f in ${ISSUE_FILES:-docs/issues-week2/W2-*.md}; do
   title="$(sed -n '1s/^# //p' "$f")"
   labels="$(grep -m1 '^Labels:' "$f" | sed 's/^Labels: *//; s/ *, */,/g')"
   assignee="$(grep -m1 -o '\*\*Owner:\*\* @[A-Za-z0-9-]*' "$f" | sed 's/.*@//' || true)"
