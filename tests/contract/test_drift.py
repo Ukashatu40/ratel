@@ -18,7 +18,13 @@ from ratel_link.main import create_app as create_link_app
 from tests.contract.helpers import not_implemented, operations
 from tests.route_walk import effective_routes
 
-OPERATIONAL = {("GET", "/healthz")}
+# Routes that exist on our services but are intentionally not in the
+# cross-system contract. The contract covers only RatelLink and RatelMeter;
+# RatelBSS's own API is not in scope (see contracts/openapi.yaml, info.description).
+OPERATIONAL = {
+    ("GET", "/healthz"),
+    ("POST", "/v1/lines/activate"),  # RatelBSS-internal; not part of the contract
+}
 TAG_FOR_SERVICE = {"ratel_link": "RatelLink", "app": "RatelMeter"}
 
 
