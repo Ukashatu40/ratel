@@ -259,3 +259,50 @@ def test_the_roles_file_names_nothing_but_the_collections_ratellink_uses() -> No
                 "createIndex",
                 "listIndexes",
             }
+
+
+def test_readiness_needs_no_privilege_beyond_these(restricted: Setup) -> None:
+    """/readyz reads one id from each database RatelLink uses, as the `ratel_link` user."""
+    app = create_app(_settings(restricted), key_provider=StaticKeyProvider())
+    with TestClient(app, raise_server_exceptions=False) as client:
+        r = client.get("/readyz")
+    assert (r.status_code, r.json()) == (200, {"status": "ready"})
+
+
+def test_readiness_fails_with_a_wrong_password_and_says_nothing_about_it(
+    restricted: Setup,
+) -> None:
+    """The driver checks the password when it connects, so a wrong one is never ready."""
+    wrong = _settings(restricted).model_copy(
+        update={
+            "mongo_uri": SecretStr(restricted.user_uri().replace(restricted.password, "x" * 24))
+        }
+    )
+    app = create_app(wrong, key_provider=StaticKeyProvider())
+    with TestClient(app, raise_server_exceptions=False) as client:
+        r = client.get("/readyz")
+    assert (r.status_code, r.json()) == (503, {"status": "unavailable"})
+    assert restricted.user not in r.text and restricted.password not in r.text
+
+
+def test_readiness_fails_for_a_user_who_logs_in_but_may_read_nothing(restricted: Setup) -> None:
+    """`ping` needs no privilege, so only the reads notice a user whose roles were lost."""
+    name, password = f"rl_noroles_{secrets.token_hex(4)}", secrets.token_urlsafe(24)
+    restricted.admin["admin"].command("createUser", name, pwd=password, roles=[])
+    try:
+        parts = urlsplit(restricted.admin_uri)
+        host = parts.netloc.rsplit("@", 1)[-1]
+        uri = urlunsplit(
+            (parts.scheme, f"{quote(name)}:{quote(password)}@{host}", "", parts.query, "")
+        )
+        settings = _settings(restricted).model_copy(update={"mongo_uri": SecretStr(uri)})
+        with MongoClient(uri, serverSelectionTimeoutMS=5000) as client:
+            client["admin"].command("ping")  # the login works and ping is allowed
+            with pytest.raises(OperationFailure):  # but nothing can be read
+                client[restricted.core_db]["subscribers"].find_one({}, {"_id": 1})
+        app = create_app(settings, key_provider=StaticKeyProvider())
+        with TestClient(app, raise_server_exceptions=False) as http:
+            r = http.get("/readyz")
+        assert (r.status_code, r.json()) == (503, {"status": "unavailable"})
+    finally:
+        restricted.admin["admin"].command("dropUser", name)
