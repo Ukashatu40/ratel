@@ -9,9 +9,10 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from app.bss_money.check_cli import main
-from app.bss_money.domain import new_posting
-from app.bss_money.models import Wallet
-from app.bss_money.services import post_entry
+from app.bss_money.domain.entries import new_posting
+from app.bss_money.models.ledger import Wallet
+from app.bss_money.repositories.sql import SqlLedgerRepository
+from app.bss_money.services.ledger import post_entry
 from app.db import Base
 
 
@@ -20,7 +21,7 @@ def _database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     engine = create_engine(url)
     Base.metadata.create_all(engine)
     with Session(engine) as s, s.begin():
-        post_entry(s, new_posting(1, 1_000, "top_up", "pay-1"))
+        post_entry(SqlLedgerRepository(s), new_posting(1, 1_000, "top_up", "pay-1"))
     engine.dispose()
     monkeypatch.setenv("DATABASE_URL", url)
     return url

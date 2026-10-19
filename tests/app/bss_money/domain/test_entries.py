@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from app.bss_money.domain import (
+from app.bss_money.domain.entries import (
     BIGINT_MAX,
     REFERENCE_MAX_LENGTH,
     EntryKind,

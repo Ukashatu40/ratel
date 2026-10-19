@@ -79,15 +79,6 @@ def apply_to_balance(balance_kobo: int, amount_kobo: int) -> int:
     return result
 
 
-@dataclass(frozen=True)
-class WalletMismatch:
-    """A wallet whose stored balance is not the sum of its ledger entries."""
-
-    line_id: int
-    wallet_kobo: int
-    ledger_kobo: int
-
-
 def _is_int(value: object) -> bool:
     # bool is an int in Python; True as a number of kobo is a bug, not a payment.
     return isinstance(value, int) and not isinstance(value, bool)

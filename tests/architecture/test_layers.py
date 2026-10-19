@@ -18,6 +18,7 @@ SERVICES = Path(__file__).resolve().parents[2] / "services"
 
 @dataclass(frozen=True)
 class Layering:
+    # The dotted package name: "ratel_link", or "app.bss_money" for a module inside the app.
     package: str
     # Modules at the package root: entry points and settings. Nothing else may live there.
     root_modules: frozenset[str]
@@ -29,6 +30,12 @@ class Layering:
     # layer -> third-party/top-level modules it must not import.
     banned_external: dict[str, frozenset[str]] = field(default_factory=dict)
     config_users: frozenset[str] = frozenset()
+    # Files in `repositories/` that are separate layers: services may use the ports only.
+    repository_modules: frozenset[str] = frozenset({"ports", "mongo", "voice_template"})
+
+    @property
+    def path(self) -> str:
+        return self.package.replace(".", "/")
 
 
 RATEL_LINK = Layering(
@@ -60,25 +67,47 @@ RATEL_LINK = Layering(
     config_users=frozenset({"security", "repositories.mongo", "services"}),
 )
 
-# Add a Layering here when another component gets layers (app modules, meter_agent).
-LAYERINGS = [RATEL_LINK]
+# RatelBSS: money (docs/adr/0008, 0009). `api` joins the rules when the module gets routes.
+BSS_MONEY = Layering(
+    package="app.bss_money",
+    root_modules=frozenset({"__init__", "check_cli"}),
+    entry_points=frozenset({"check_cli"}),
+    allowed={
+        "domain": frozenset(),
+        "models": frozenset(),
+        "repositories.ports": frozenset({"domain"}),
+        "repositories.sql": frozenset({"domain", "repositories.ports", "models"}),
+        "services": frozenset({"domain", "repositories.ports"}),
+    },
+    banned_external={
+        "domain": frozenset({"fastapi", "starlette", "sqlalchemy", "psycopg", "pymongo"}),
+        "models": frozenset({"fastapi", "starlette", "pymongo"}),
+        "repositories.ports": frozenset({"fastapi", "starlette", "sqlalchemy", "psycopg"}),
+        "repositories.sql": frozenset({"fastapi", "starlette", "pymongo"}),
+        "services": frozenset({"fastapi", "starlette", "sqlalchemy", "psycopg", "pymongo"}),
+    },
+    repository_modules=frozenset({"ports", "sql"}),
+)
+
+# Add a Layering here when another component gets layers (the other app modules, meter_agent).
+LAYERINGS = [RATEL_LINK, BSS_MONEY]
 
 
 def _module_name(path: Path, root: Path) -> str:
     return ".".join(path.relative_to(root).with_suffix("").parts)
 
 
-def _layer_of(module: str) -> str:
+def _layer_of(module: str, rules: Layering) -> str:
     """The layer a module belongs to: 'ratel_link.services.sim_keys' is 'services'.
 
-    Modules at the package root are 'root' (entry points) or 'config'. In `repositories`, the ports,
-    the MongoDB code and the voice template reader are separate layers, because services may use
-    only the ports.
+    Modules at the package root are 'root' (entry points) or 'config'. In `repositories`, the ports
+    and each implementation are separate layers, because services may use only the ports.
     """
-    parts = module.split(".")[1:]  # drop the package name
+    inside = module.removeprefix(rules.package).lstrip(".")
+    parts = inside.split(".") if inside else []
     if len(parts) <= 1:
         return "config" if parts == ["config"] else "root"
-    if parts[0] == "repositories" and parts[1] in ("ports", "mongo", "voice_template"):
+    if parts[0] == "repositories" and parts[1] in rules.repository_modules:
         return f"repositories.{parts[1]}"
     return parts[0]
 
@@ -96,22 +125,22 @@ def _imports(path: Path) -> list[str]:
 
 def layer_violations(root: Path, rules: Layering) -> list[str]:
     problems: list[str] = []
-    for py in sorted((root / rules.package).rglob("*.py")):
+    for py in sorted((root / rules.path).rglob("*.py")):
         module = _module_name(py, root)
-        layer = _layer_of(module)
+        layer = _layer_of(module, rules)
         if layer in ("root", "config"):
             continue  # entry points and settings may import any layer
         for imported in _imports(py):
             top = imported.split(".")[0]
             if top in rules.banned_external.get(layer, frozenset()):
                 problems.append(f"{module} ({layer}) must not import {top}")
-            if top != rules.package:
+            if imported != rules.package and not imported.startswith(rules.package + "."):
                 continue
-            target = _layer_of(imported)
+            target = _layer_of(imported, rules)
             if target == layer:
                 continue
             if target == "root":
-                entry = imported.split(".")[1] if "." in imported else ""
+                entry = imported.removeprefix(rules.package).lstrip(".").split(".")[0]
                 if entry in rules.entry_points:
                     problems.append(f"{module} ({layer}) must not import the entry point {entry}")
             elif target == "config":
@@ -124,16 +153,16 @@ def layer_violations(root: Path, rules: Layering) -> list[str]:
 
 def root_violations(root: Path, rules: Layering) -> list[str]:
     """Only entry points and settings may sit at the package root."""
-    names = {p.stem for p in (root / rules.package).glob("*.py")}
+    names = {p.stem for p in (root / rules.path).glob("*.py")}
     return sorted(
-        f"{rules.package}/{n}.py does not belong at the package root"
+        f"{rules.path}/{n}.py does not belong at the package root"
         for n in names - rules.root_modules
     )
 
 
 def undocumented_packages(root: Path, rules: Layering) -> list[str]:
     problems = []
-    for directory in sorted((root / rules.package).rglob("*")):
+    for directory in sorted((root / rules.path).rglob("*")):
         if (
             not directory.is_dir()
             or directory.name == "__pycache__"
@@ -150,7 +179,7 @@ def undocumented_packages(root: Path, rules: Layering) -> list[str]:
 
 
 def import_cycles(root: Path, package: str) -> list[list[str]]:
-    modules = {_module_name(p, root): p for p in (root / package).rglob("*.py")}
+    modules = {_module_name(p, root): p for p in (root / package.replace(".", "/")).rglob("*.py")}
     graph: dict[str, set[str]] = {m: set() for m in modules}
     for module, path in modules.items():
         for imported in _imports(path):
@@ -272,3 +301,96 @@ def test_the_checker_flags_an_import_cycle(tmp_path: Path) -> None:
         },
     )
     assert import_cycles(root, "ratel_link")
+
+
+# --- the same rules for an app module (RatelBSS: money) can fail too ---------------------------
+
+
+def _fake_money_tree(tmp_path: Path, files: dict[str, str]) -> Path:
+    for rel, text in files.items():
+        p = tmp_path / "app" / "bss_money" / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    return tmp_path
+
+
+def test_money_flags_a_service_importing_sqlalchemy(tmp_path: Path) -> None:
+    root = _fake_money_tree(
+        tmp_path, {"services/ledger.py": "from sqlalchemy.orm import Session\n"}
+    )
+    assert any("must not import sqlalchemy" in p for p in layer_violations(root, BSS_MONEY))
+
+
+def test_money_flags_a_service_using_the_sql_repository_directly(tmp_path: Path) -> None:
+    root = _fake_money_tree(
+        tmp_path,
+        {
+            "services/ledger.py": (
+                "from app.bss_money.repositories.sql import SqlLedgerRepository\n"
+            ),
+            "repositories/sql.py": "",
+        },
+    )
+    assert any(
+        "services" in p and "repositories.sql" in p for p in layer_violations(root, BSS_MONEY)
+    )
+
+
+def test_money_flags_a_service_importing_the_tables(tmp_path: Path) -> None:
+    root = _fake_money_tree(
+        tmp_path,
+        {
+            "services/ledger.py": "from app.bss_money.models.ledger import Wallet\n",
+            "models/ledger.py": "",
+        },
+    )
+    assert any("services" in p and "models" in p for p in layer_violations(root, BSS_MONEY))
+
+
+def test_money_flags_the_domain_importing_outward(tmp_path: Path) -> None:
+    root = _fake_money_tree(
+        tmp_path,
+        {
+            "domain/entries.py": "from app.bss_money.repositories import ports\n",
+            "repositories/ports.py": "",
+        },
+    )
+    assert any(
+        "domain" in p and "repositories.ports" in p for p in layer_violations(root, BSS_MONEY)
+    )
+
+
+def test_money_flags_a_layer_importing_the_entry_point(tmp_path: Path) -> None:
+    root = _fake_money_tree(
+        tmp_path,
+        {"services/ledger.py": "from app.bss_money.check_cli import main\n", "check_cli.py": ""},
+    )
+    assert any("entry point" in p for p in layer_violations(root, BSS_MONEY))
+
+
+def test_money_flags_a_file_dumped_at_the_root(tmp_path: Path) -> None:
+    root = _fake_money_tree(tmp_path, {"__init__.py": "", "check_cli.py": "", "helpers.py": ""})
+    assert root_violations(root, BSS_MONEY) == [
+        "app/bss_money/helpers.py does not belong at the package root"
+    ]
+
+
+def test_money_flags_a_layer_with_no_explanation(tmp_path: Path) -> None:
+    root = _fake_money_tree(tmp_path, {"services/ledger.py": "", "services/__init__.py": ""})
+    assert any("services" in p and "docstring" in p for p in undocumented_packages(root, BSS_MONEY))
+
+
+def test_money_allows_what_the_rules_permit(tmp_path: Path) -> None:
+    root = _fake_money_tree(
+        tmp_path,
+        {
+            "services/ledger.py": "from app.bss_money.repositories.ports import LedgerRepository\n"
+            "from app.bss_money.domain.entries import Posting\n",
+            "repositories/ports.py": "from app.bss_money.domain.entries import Posting\n",
+            "repositories/sql.py": "from app.bss_money.models.ledger import Wallet\n"
+            "from sqlalchemy import select\n",
+            "domain/entries.py": "",
+            "models/ledger.py": "",
+        },
+    )
+    assert layer_violations(root, BSS_MONEY) == []

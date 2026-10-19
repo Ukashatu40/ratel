@@ -64,7 +64,7 @@ by the nightly check; that residual risk is accepted for the demo and recorded h
 
 ## Consequences
 
-- The guarantees are proved on a real PostgreSQL (`tests/app/bss_money/test_ledger_postgres_integration.py`),
+- The guarantees are proved on a real PostgreSQL (`tests/app/bss_money/repositories/test_sql_postgres_integration.py` and `tests/app/bss_money/test_check_cli_postgres_integration.py`),
   not only in SQLite. They run when `RATEL_TEST_POSTGRES_URI` is set. **CI's integration job has no
   PostgreSQL service yet, so those tests are skipped there** until the project lead approves adding
   one (a CI change).
