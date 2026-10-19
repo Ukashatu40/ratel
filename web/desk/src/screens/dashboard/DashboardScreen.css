@@ -1,0 +1,31 @@
+.dash{display:flex;flex-direction:column;gap:18px}
+.dash__title{display:flex;align-items:center;justify-content:space-between}
+.dash__title p{margin-top:4px}
+.dash__kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.dash__charts{display:grid;grid-template-columns:2fr 1fr;gap:18px}
+.dash__cardhead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.dash__cardhead h3{flex:1}
+.dash__donut{display:flex;align-items:center;gap:22px;margin-top:10px}
+.dash__legend{flex:1;list-style:none}
+.dash__legend li{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f0f3f8}
+.dash__legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:10px}
+.dash__error{display:flex;align-items:center;justify-content:space-between}
+.kpi__top{display:flex;align-items:center;gap:12px}
+.kpi__icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none}
+.kpi__label{flex:1;color:var(--muted)}
+.kpi__bottom{display:flex;align-items:flex-end;justify-content:space-between;margin-top:16px}
+.kpi__value{font-size:34px;font-weight:700;letter-spacing:-.02em}
+.kpi__delta{margin-top:4px;font-size:13px;color:var(--muted)}
+.kpi--green .kpi__icon{background:#e3f4ea;color:#008751}
+.kpi--red .kpi__icon{background:#fde6ea;color:#e4002b}
+.kpi--amber .kpi__icon{background:#fff2c2;color:#7a5c00}
+.kpi--navy{background:linear-gradient(135deg,#00338d,#0a4bb8);border:0;color:#fff}
+.kpi--navy .kpi__icon{background:rgba(255,255,255,.16);color:#fff}
+.kpi--navy .kpi__label,.kpi--navy .kpi__delta{color:#cfdcf5}
+.attention{padding:0}
+.attention__head{display:flex;align-items:center;gap:6px;padding:16px 20px 6px}
+.attention__head h3{flex:1}
+.attention__name{display:flex;align-items:center}
+.attention__actions{display:flex;gap:6px}
+.skeleton{height:130px;background:linear-gradient(90deg,#fff 25%,#eef2f9 50%,#fff 75%);background-size:200% 100%;animation:shimmer 1.2s infinite}
+@keyframes shimmer{to{background-position:-200% 0}}
