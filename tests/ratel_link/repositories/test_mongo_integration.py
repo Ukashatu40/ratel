@@ -622,6 +622,7 @@ def test_reactivating_never_touches_what_the_hss_wrote(core: Database[Any]) -> N
                 "security.sqn": Int64(123456789012345),
                 "imeisv": ["3540000000000001"],
                 "mme_host": ["mme.example"],
+                "mme_realm": ["realm.example"],
                 "mm_realm": ["realm.example"],
                 "mme_timestamp": Int64(1760000000),
                 "purge_flag": [{"purged": True}],
@@ -634,7 +635,8 @@ def test_reactivating_never_touches_what_the_hss_wrote(core: Database[Any]) -> N
     assert doc["security"]["sqn"] == 123456789012345
     assert _count(core, {"imsi": SYNTHETIC_IMSI, "security.sqn": {"$type": "long"}}) == 1
     assert doc["imeisv"] == ["3540000000000001"] and doc["mme_host"] == ["mme.example"]
-    assert doc["mm_realm"] == ["realm.example"] and doc["purge_flag"] == [{"purged": True}]
+    assert doc["mme_realm"] == ["realm.example"] and doc["mm_realm"] == ["realm.example"]
+    assert doc["purge_flag"] == [{"purged": True}]
     assert _count(core, {"imsi": SYNTHETIC_IMSI, "mme_timestamp": {"$type": "long"}}) == 1
     # ... while the fields RatelLink owns did change
     assert doc["ambr"]["downlink"] == {"value": 25, "unit": 2}

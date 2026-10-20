@@ -100,7 +100,7 @@ class SubscriberRepository(Protocol):
     """RatelCore's `subscribers` collection (Open5GS). RatelLink is its only writer.
 
     Every method changes named fields only. None replaces a document, because the HSS writes
-    fields of its own into it (`sqn`, `imeisv`, `mme_host`, `mm_realm`, `mme_timestamp`,
+    fields of its own into it (`sqn`, `imeisv`, `mme_host`, `mme_realm`, `mme_timestamp`,
     `purge_flag`).
     """
 
