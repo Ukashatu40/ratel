@@ -136,3 +136,12 @@ class VoiceTemplateSource(Protocol):
     def ims_session(self) -> dict[str, Any] | None:
         """A copy of the lab's ims session, or None if no template is configured."""
         ...
+
+
+class StoreHealth(Protocol):
+    def check(self) -> None:
+        """Return if the store answers with the access RatelLink needs. Raise if it does not.
+
+        Reads only. The exception is never shown to a caller: it can name hosts and users.
+        """
+        ...
