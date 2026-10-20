@@ -65,6 +65,52 @@ def test_restart_limits_are_in_the_unit_section() -> None:
     assert "StartLimitIntervalSec=" in unit_section and "StartLimitBurst=" in unit_section
 
 
+EXPIRY_UNIT = DEPLOY / "ratel-link-check-expiry.service"
+EXPIRY_TIMER = DEPLOY / "ratel-link-check-expiry.timer"
+# The unit settings that confine a process. The expiry job must have every one the service has.
+CONFINEMENT_PREFIXES = (
+    "NoNewPrivileges=",
+    "Private",
+    "Protect",
+    "Restrict",
+    "LockPersonality=",
+    "CapabilityBoundingSet=",
+    "AmbientCapabilities=",
+    "SystemCall",
+    "ReadOnlyPaths=",
+)
+
+
+def _settings(unit: str, prefixes: tuple[str, ...]) -> set[str]:
+    return {ln for ln in unit.splitlines() if ln.startswith(prefixes)}
+
+
+def test_the_expiry_job_runs_the_admin_command_as_the_service_user() -> None:
+    unit = EXPIRY_UNIT.read_text()
+    exec_start = next(ln for ln in unit.splitlines() if ln.startswith("ExecStart="))
+    assert exec_start.endswith("-m ratel_link.admin_cli api-key check-expiry")
+    assert "/opt/ratel-link/current/venv/bin/python" in exec_start
+    assert "User=ratellink" in unit and "EnvironmentFile=/etc/ratel-link/ratel-link.env" in unit
+    assert "Environment=PYTHONPATH=/opt/ratel-link/current/services" in unit
+    assert "Type=oneshot" in unit
+    assert "Restart=" not in unit  # a failed run is seen in the journal, not retried in a loop
+
+
+def test_the_expiry_job_is_confined_at_least_as_tightly_as_the_service() -> None:
+    service, job = UNIT.read_text(), EXPIRY_UNIT.read_text()
+    missing = _settings(service, CONFINEMENT_PREFIXES) - _settings(job, CONFINEMENT_PREFIXES)
+    assert missing == set(), f"add to {EXPIRY_UNIT.name}: {sorted(missing)}"
+
+
+def test_the_timer_runs_the_expiry_job_daily_and_catches_up_after_downtime() -> None:
+    timer = EXPIRY_TIMER.read_text()
+    assert "OnCalendar=daily" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=ratel-link-check-expiry.service" in timer
+    assert "WantedBy=timers.target" in timer
+    assert EXPIRY_UNIT.exists()
+
+
 def test_the_scripts_are_executable_where_they_are_run_directly() -> None:
     mode = os.stat(DEPLOY / "install-release.sh").st_mode
     assert mode & stat.S_IXUSR

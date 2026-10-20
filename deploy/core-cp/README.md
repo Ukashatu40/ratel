@@ -21,6 +21,7 @@ RatelCore down, which is why business, voice and ops each have their own VM.
 | `mongo/create-ratel-link-user.js` | Applies them: creates the roles and the `ratel_link` user (`mongosh`) |
 | `ratel-link.env.example` | The settings file, with placeholders |
 | `ratel-link.service` | The systemd unit (hardened, listens on 127.0.0.1 only) |
+| `ratel-link-check-expiry.service`, `.timer` | A daily job that logs `api_key.expiring` for caller keys close to expiry (same hardening, reads only) |
 | `install-release.sh` | Installs a release into its own folder and switches `current` to it |
 | `nginx/ratel-link.conf.example` | A TLS proxy template for callers on other hosts |
 
@@ -81,8 +82,13 @@ email). Then, on core-cp:
 sudo ./install-release.sh ratel-link-<commit>.tar.gz python3.12   # Python 3.12 or newer, see below
 sudo cp ratel-link.env.example /etc/ratel-link/ratel-link.env      # then edit it, see below
 sudo chown ratellink:ratellink /etc/ratel-link/ratel-link.env && sudo chmod 600 /etc/ratel-link/ratel-link.env
-sudo cp ratel-link.service /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo cp ratel-link.service ratel-link-check-expiry.service ratel-link-check-expiry.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+systemd-analyze verify /etc/systemd/system/ratel-link.service /etc/systemd/system/ratel-link-check-expiry.service /etc/systemd/system/ratel-link-check-expiry.timer
 ```
+
+`systemd-analyze verify` must print nothing. The unit files are checked by tests in this repository,
+but only the host can check them against its own systemd.
 
 **Python.** Checked 2026-10-15: core-cp runs Ubuntu 22.04.5 and its `python3` is **3.10.12**, which the
 install script refuses. RatelLink uses `datetime.UTC` and `StrEnum` (Python 3.11 and later) and its
@@ -119,8 +125,15 @@ Start it:
 ```
 sudo systemctl enable --now ratel-link
 journalctl -u ratel-link -n 50 --no-pager
-curl -s http://127.0.0.1:8081/healthz
+curl -s http://127.0.0.1:8081/healthz     # {"status":"ok"}: the process is up
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/readyz   # 200: MongoDB answers and the key is loaded
+sudo systemctl enable --now ratel-link-check-expiry.timer
+systemctl list-timers ratel-link-check-expiry.timer
 ```
+
+`/readyz` answers 200 or 503 and never says why; the reason is in the log as `readiness.failed`
+with the component (`store` or `key`). It is for the host and its monitoring only: the proxy
+forwards `/v1/` and `/healthz`, not `/readyz`.
 
 A healthy start shows no `ERROR` line. Expected warnings until the network team's inputs arrive:
 `startup.voice.template.not_configured`.

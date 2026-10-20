@@ -18,7 +18,7 @@ from ratel_link.main import create_app as create_link_app
 from tests.contract.helpers import not_implemented, operations
 from tests.route_walk import effective_routes
 
-OPERATIONAL = {("GET", "/healthz")}
+OPERATIONAL = {("GET", "/healthz"), ("GET", "/readyz")}
 TAG_FOR_SERVICE = {"ratel_link": "RatelLink", "app": "RatelMeter"}
 
 

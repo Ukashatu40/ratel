@@ -1,0 +1,48 @@
+# Logs api_key.expiring for caller keys that are close to expiry. Install as
+# /etc/systemd/system/ratel-link-check-expiry.service (deploy/core-cp/README.md). It is started
+# by ratel-link-check-expiry.timer, not enabled by itself.
+#
+# It only reads. Warnings go to the journal: journalctl -u ratel-link-check-expiry -p warning
+# TODO(RatelOps): turn the api_key.expiring warning into an alert (Build Plan, week 5).
+[Unit]
+Description=RatelLink: log API keys close to expiry
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ratellink
+Group=ratellink
+WorkingDirectory=/opt/ratel-link/current
+# The same owner-only settings file as the service. Never in Git.
+EnvironmentFile=/etc/ratel-link/ratel-link.env
+Environment=PYTHONPATH=/opt/ratel-link/current/services
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli api-key check-expiry
+TimeoutStartSec=60
+UMask=0077
+
+# Hardening: the same as the service. This job needs MongoDB and its own code, nothing else.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ReadOnlyPaths=/opt/ratel-link /etc/ratel-link

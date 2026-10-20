@@ -8,6 +8,7 @@ from ratel_link.services.api_key_admin import KeyPolicy, create_system
 from ratel_link.services.authentication import authenticate
 from tests.ratel_link.fakes import (
     FakeClock,
+    FakeStoreHealth,
     InMemoryApiKeyRepository,
     InMemoryAuditLogRepository,
     InMemoryIpAllocationRepository,
@@ -48,4 +49,5 @@ def all_fakes() -> dict[str, Any]:
         "ip_allocations": InMemoryIpAllocationRepository(),
         "subscribers": InMemorySubscriberRepository(),
         "voice_template": InMemoryVoiceTemplate(),
+        "store_health": FakeStoreHealth(),
     }

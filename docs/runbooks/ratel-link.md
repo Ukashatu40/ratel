@@ -20,7 +20,13 @@ Every `/v1` call needs `Authorization: Bearer <key>`.
 ## Health checks
 
 - `GET http://127.0.0.1:<port>/healthz` returns `{"status":"ok"}`. This is **liveness only**: it
-  does not check MongoDB or the key. TODO: readiness check.
+  does not check MongoDB or the key.
+- `GET http://127.0.0.1:<port>/readyz` is **readiness**: 200 `{"status":"ready"}` only when MongoDB
+  answers (as the `ratel_link` user, so a wrong password fails too) and the encryption key is
+  loaded. Otherwise 503 `{"status":"unavailable"}` and nothing else: the body never says why. The
+  reason is in the log: `readiness.failed` with `component` `store` or `key`. Reachable from the
+  host only; the proxy does not forward it. With MongoDB down the call takes up to 5 seconds (the
+  driver's connection timeout), so give a monitor a timeout longer than that.
 - After a start, read the startup log lines (below). Healthy means none of these appeared:
   `key.provider.none`, `startup.indexes.missing`, `startup.checks.failed`.
 - Degraded looks like: callers getting 401 after a rotation, 500 on `/v1` (usually MongoDB), or an
@@ -50,6 +56,7 @@ JSON on stdout (`journalctl -u <unit>`). Events that matter:
 | `startup.subscribers.index.missing` | The core's `subscribers` collection has no unique index on `imsi`. RatelLink never creates one. Ask the network team. |
 | `key.unavailable` | A request needed the encryption key and there was none. Callers got 503. Check the key file. |
 | `startup.checks.failed` | MongoDB was unreachable at startup. |
+| `readiness.failed` (`component`, `exc_type`) | `/readyz` answered 503. `component` is `store` (MongoDB unreachable, wrong password or a missing privilege) or `key` (no usable encryption key). Never contains the driver's message. |
 
 Logs must not contain keys, tokens or Ki/OPc. If you find one, it is a security issue: see below.
 Run the service with the HTTP server's own access log off, because it prints raw paths that contain
@@ -98,8 +105,11 @@ Calling systems today: `bss-app` (RatelBSS) and `meter-agent` (the RatelMeter ag
   3. Check the caller works. In the log, `auth.rejected` for that `api_key_id` should not appear.
   4. Optionally `api-key revoke --id <id> --generation <old>` to end the old key at once.
   No contract or code change is needed. At most two keys of a system are valid at the same time.
-- **Expiry checks:** the service logs `api_key.expiring` at every start. Also run `check-expiry`
-  on a schedule. TODO(owner): who runs it and how it alerts (RatelOps).
+- **Expiry checks:** the service logs `api_key.expiring` at every start, and the systemd timer
+  `ratel-link-check-expiry.timer` runs `check-expiry` once a day. Read the warnings with
+  `journalctl -u ratel-link-check-expiry -p warning`, and confirm the timer is scheduled with
+  `systemctl list-timers ratel-link-check-expiry.timer`. A failed run (MongoDB down) shows in
+  `systemctl status ratel-link-check-expiry`. TODO(RatelOps): turn the warning into an alert.
 - A disabled system cannot be re-enabled with the CLI. Create a new system id, or ask for an
   `enable` command. Systems and keys are never deleted.
 - Run administration commands one at a time. Two people changing the same system at once can undo
@@ -118,7 +128,7 @@ Calling systems today: `bss-app` (RatelBSS) and `meter-agent` (the RatelMeter ag
 | `startup.indexes.missing` | `init-db` never ran | Run it. It also creates the `ip_allocation` indexes. |
 | Callers get 503 `unavailable` on `POST /v1/sims` | No usable encryption key (the key file is missing or was never configured) | Fix the key file as above. Nothing was stored. |
 | Caller gets 409 `conflict` on `POST /v1/sims` | That IMSI already has different keys | Nothing was changed. Find out which keys are right with the SIM supplier before anyone tries again. |
-| `/v1` returns 500 | MongoDB down, the `ratel_link` user cannot authenticate, or the user lacks a privilege | Check MongoDB and the `unhandled_error` line's `exc_type` (`OperationFailure` with code 13 means a missing privilege: compare the user's roles with `deploy/core-cp/mongo/ratel-link-roles.json`). TODO: readiness check. |
+| `/v1` returns 500 | MongoDB down, the `ratel_link` user cannot authenticate, or the user lacks a privilege | Check MongoDB and the `unhandled_error` line's `exc_type` (`OperationFailure` with code 13 means a missing privilege: compare the user's roles with `deploy/core-cp/mongo/ratel-link-roles.json`). `/readyz` returning 503 with `readiness.failed` `component` `store` confirms it. |
 | `http.unhandled_error` with `exc_type` `DecryptionError` | The key file is not the one that encrypted the record, or a record was altered | Stop. Do not retry in a loop. Tell the project lead. |
 | `a calling system with api_key_id ... already exists` | The system exists | Use `rotate`. |
 
@@ -146,7 +156,7 @@ Do not paste the exposed value anywhere to "check" it. Say which kind it was and
 2. The key file present with the right owner and mode (restored from the offline backup if lost).
 3. Start the service. Confirm no `key.provider.none`, `startup.indexes.missing` or
    `startup.checks.failed` lines.
-4. `GET /healthz`, then one authenticated call from a caller.
+4. `GET /healthz`, then `GET /readyz` (must be 200), then one authenticated call from a caller.
 5. If keys expired while it was down, `api-key rotate` and redistribute.
 
 ## Proving a line works (the gate)
