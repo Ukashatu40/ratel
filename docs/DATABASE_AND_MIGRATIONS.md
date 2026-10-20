@@ -28,11 +28,11 @@ make migrate-heads        # offline, no database needed
 - **Indexes.** Add for lookups the Build Plan requires (find a line by MSISDN, ICCID or IMSI in under a second). Name via convention. Do not index speculatively.
 - **Timestamps.** `timestamptz` only, UTC. Use `TimestampMixin` (`created_at`, `updated_at`). Epoch seconds are an API wire format, not a column type.
 - **Money.** `BIGINT` kobo. Never `FLOAT`, `REAL`, `NUMERIC` for money. A test fails the build if a `*_kobo` column is not `BIGINT` (`tests/app/test_db_conventions.py`).
-- **Append-only tables** (`ledger_entry`, audit entries): enforce with database permissions or triggers that reject `UPDATE` and `DELETE`, not only with code. TODO: decide the mechanism when the ledger migration is written.
+- **Append-only tables** (`ledger_entry`, audit entries): enforce with database permissions or triggers that reject `UPDATE` and `DELETE`, not only with code. `ledger_entry` uses triggers that refuse `UPDATE`, `DELETE` and `TRUNCATE` ([ADR 0009](adr/0009-ledger-append-only-in-the-database.md), proposed). A migration that drops such a table must refuse while it holds rows. TODO: the audit table's mechanism when it is written; the production roles (insert and select only) with M-27.
 - **State columns** are changed only by the state machine code path, which also writes the audit entry in the same transaction.
 - **Audit records.** `who`, `why`, `before`, `after`, `at`. Never contain Ki, OPc or PINs.
 - **Order of deploys.** Backward-compatible migration first, then code that uses it, then clean up. Never ship a migration and code that must change together without saying how to roll back.
-- **No real data in tests or fixtures.** Tests that need PostgreSQL use `compose.dev.yaml`.
+- **No real data in tests or fixtures.** Tests that need PostgreSQL use `compose.dev.yaml`, or any PostgreSQL named by `RATEL_TEST_POSTGRES_URI` (a connection string that may create and drop databases; each test builds its own database from the real migrations and drops it). They are marked `integration` and skipped when the variable is not set. TODO(project lead): a PostgreSQL service in the CI integration job, so CI runs them.
 
 ### Review checklist for a migration
 
