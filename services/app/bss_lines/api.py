@@ -7,13 +7,14 @@ contracts/openapi.yaml, which describes RatelLink and RatelMeter only.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.bss_lines.client import RatelLinkClient
+from app.bss_lines.client import RatelLinkClient, RatelLinkError
 from app.bss_lines.services import ActivationError, activate_line
 from app.config import Settings
 
@@ -28,8 +29,9 @@ def get_db(request: Request) -> Iterator[Session]:
         yield session
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return application settings."""
+    """Application settings, read once per process."""
     return Settings()
 
 
@@ -75,7 +77,16 @@ def post_activate(
     session: Annotated[Session, Depends(get_db)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> ActivateResponse:
-    """Activate a line through the RatelLink client."""
+    """Activate a line through the RatelLink client.
+
+    TODO(auth, M-26): this route has no authentication and takes the audit
+    ``actor`` from the request body. That must not be deployed before M-26 adds
+    staff authentication. Anyone who can reach this route can claim to be any
+    actor, and the audit log would record it.
+
+    TODO(contract, M-02): this route and body will be replaced by whatever M-02
+    specifies in contracts/openapi.yaml.
+    """
     try:
         result = activate_line(
             session,
@@ -85,9 +96,13 @@ def post_activate(
             idempotency_key=payload.idempotency_key,
         )
     except ActivationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RatelLinkError as exc:
+        # RatelLink is downstream of us: a failure there is a gateway problem,
+        # not a bug in the request.
         raise HTTPException(
-            status_code=400,
-            detail=str(exc),
+            status_code=502,
+            detail=f"RatelLink error: {exc}",
         ) from exc
 
     return ActivateResponse(

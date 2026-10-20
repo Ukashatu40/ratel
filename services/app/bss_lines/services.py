@@ -6,7 +6,6 @@ No other code path may set a line's state directly.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -18,9 +17,6 @@ from app.bss_lines.domain import (
     validate_transition,
 )
 from app.bss_lines.models import Line, LineAudit
-from common.logging import log_event
-
-log = logging.getLogger("ratel.bss.lines.activation")
 
 
 class RatelLinkClientProto(Protocol):
@@ -77,6 +73,10 @@ def activate_line(
     if line.customer.kyc_status != "verified":
         raise ActivationError("KYC is not verified; activation is refused")
 
+    # TODO(idempotency, M-26): a repeat call with the same Idempotency-Key
+    # currently returns 400 ("active -> active is refused"), not the first
+    # result. True idempotent behaviour — return the original response for a
+    # repeated key — needs a key store, planned for M-26.
     try:
         transition = validate_transition(LineState(line.state), LineState.ACTIVE)
     except InvalidTransition as exc:
@@ -108,11 +108,4 @@ def activate_line(
     )
     session.commit()
 
-    log_event(
-        log,
-        logging.INFO,
-        "line.activate.succeeded",
-        line_id=line.line_id,
-        api_key_id=None,  # filled in later by the API layer
-    )
     return ActivationResult(line.line_id, transition.from_state, transition.to_state)
