@@ -12,6 +12,11 @@ The Build Plan's three "Done when" statements for RatelLink exist as repeatable 
 2. Its Open5GS document matches the template field for field, apart from its own values (automated, `lab` marker plus a local template-comparison unit test).
 3. A test searches every log file after a full test run and finds no Ki or OPc value. The sentinel guard in `tests/conftest.py` covers the pytest log (Ki, OPc and API-key sentinels); extend it to RatelLink's process logs and any log files written by integration tests.
 
+## Delivered by the acceptance pull request (`feature/ratellink-acceptance`)
+- **Item 3 (logs):** `tests/ratel_link/acceptance/test_no_key_in_any_log.py` starts a real RatelLink process at debug level, runs a line through import, activate, change, deactivate and re-activate plus every failure the contract allows, then searches the process log, the admin command line's log and every RatelLink collection for the synthetic Ki and OPc (both cases) and the caller key. The pytest-log guard in `tests/conftest.py` now also looks for those. Proven able to fail: a key planted in a scratch log is found, and a deliberate `log_event(..., note=<key>)` in the activation service turned the test red.
+- **Item 2 (template):** `tests/ratel_link/acceptance/test_subscriber_matches_template.py` compares RatelLink's document with a synthetic template (written from the Integration Guide's example, not from RatelLink's own builder), also on a real MongoDB, and with the network team's export when `RATEL_LINK_TEMPLATE_COMPARE_FILE` names it. Sixteen deliberate breaks prove it can fail.
+- **Item 1 (a phone):** the recorded procedure is [ratel-link-lab-acceptance.md](../runbooks/ratel-link-lab-acceptance.md). Still to be run on the lab: it waits for N1, N2, N3, MongoDB authentication, the SIM keys and the radio.
+
 ## Out of scope
 New features.
 

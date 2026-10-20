@@ -58,5 +58,8 @@ Thumbs.db
 # See docs/source/README.md.
 docs/source/*.pdf
 
+# Working notes for the network lead: not project documentation, never committed.
+docs/source/needs-from-captraven.md
+
 # Agent spool files (written on core-up and voice, never committed)
 spool/

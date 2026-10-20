@@ -200,6 +200,25 @@ SUBSCRIBERS = "subscribers"
 _SESSIONS = "slice.0.session"
 
 
+class MongoStoreHealth:
+    """Proves MongoDB is reachable and that the `ratel_link` user can read what it must.
+
+    `ping` needs no privilege, so it also succeeds for a user who may read nothing. This therefore
+    also reads one document id from each database RatelLink uses: a wrong password fails the
+    connection, and a missing read privilege fails the read, here and not on the first real
+    request. Reads only, within the privileges RatelLink already has.
+    """
+
+    def __init__(self, database: Database[Any], open5gs_database: Database[Any]) -> None:
+        self._database = database
+        self._open5gs = open5gs_database
+
+    def check(self) -> None:
+        self._database.command("ping")
+        self._database[API_KEY].find_one({}, {"_id": 1})
+        self._open5gs[SUBSCRIBERS].find_one({}, {"_id": 1})
+
+
 class MongoSubscriberRepository:
     """Writes to the Open5GS `subscribers` collection, one atomic operation per change.
 
@@ -253,6 +272,9 @@ class MongoSubscriberRepository:
             {"imsi": imsi}, {"$pull": {_SESSIONS: {"name": "internet"}}}
         )
         return result.matched_count == 1
+
+    def remove_line(self, imsi: str) -> bool:
+        return self._collection.delete_one({"imsi": imsi}).deleted_count == 1
 
 
 def subscriber_index_missing(open5gs_database: Database[Any]) -> bool:

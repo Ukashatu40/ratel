@@ -51,7 +51,7 @@ definition of "onboarded".
    the code organisation PR) and review it together with the checklist from
    [CODE_REVIEW_GUIDELINES.md](CODE_REVIEW_GUIDELINES.md). Learn to label comments *blocker*, *suggestion* or
    *question*, and to say what you checked. *Exercise: write three comments on a small PR.*
-4. **The code and its layers** (backend people: Abbalolo, ml-lawarn, capitanaserdel for review). A tour of
+4. **The code and its layers** (backend people: Abbalolo and capitanaserdel; ml-lawarn is frontend only, decision 58). A tour of
    `services/ratel_link/`: `api`, `services`, `domain`, `repositories`, `security`, and why imports only go
    inward. Run the tests, add one. Run the service and call `/healthz`. *Exercise: add a test for an existing function.*
 5. **Security habits** (30 minutes, everyone). What must never be committed or pasted anywhere

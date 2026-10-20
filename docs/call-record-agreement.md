@@ -1,14 +1,35 @@
 # Call record agreement: RatelVoice → RatelMeter
 
 **Status:** DRAFT — awaiting sign-off
-**Drafted by:** @ml-lawarn (RatelMeter owner)
-**To be signed off by:** @CaptRaven (network lead) and @ml-lawarn (RatelMeter owner)
+**Drafted by:** @ml-lawarn
+**To be signed off by:** @CaptRaven (network lead) and @capitanaserdel (RatelMeter owner since 2026-10-18)
 **Reviewers:** @Ukashatu40, @CaptRaven
 **Source:** Build Plan, RatelMeter spec "How calls work"; week two RatelVoice
 column ("call record fields agreed with RatelMeter"); ticket "Agree the call
 record fields with the network team".
 **Related:** `contracts/openapi.yaml` (`CallRecord`, `end_reason` TODO),
 DECISIONS_PENDING.md, W2-10 (call mode), W2-12 (ingest call).
+
+## Lab finding, 2026-10-16: no finished-call record exists on RatelVoice yet
+
+Read-only checks on the voice VM by @Ukashatu40 (names and counts only, no rows, no credentials):
+
+- No `acc`, `missed_calls` or CDR table exists in any database (`icscf`, `pcscf`, `scscf`,
+  `ims_hss_db`).
+- The S-CSCF and P-CSCF configurations load `ims_dialog.so`, and the S-CSCF also loads
+  `ims_charging.so`. **Neither loads the `acc` module**, and no `acc_log_flag` or `acc_db_flag`
+  is set. The IMS dialog tables (`dialog_in`, `dialog_out`, `dialog_vars`) and `ro_session` exist.
+- A count of those tables read outside a call returned 0. **That does not show what they hold
+  during or after a call**: it was not read while a call was up. TODO(network team): read them
+  during a call and after it ends.
+- The configurations were edited by hand (backup copies sit beside them) and are not in Git.
+
+What this means: sections 3 and 10 assume `acc` and `dialog` write one record per call. On the lab
+as it stands, nothing is known to keep a call after it ends. The call-mode agent has nothing to
+read until the network team decides where call records come from (enable `acc` writing to MySQL
+in UTC, or another source such as the charging session) and sends the table definition.
+Sections 3 to 10 stay as the *proposal* for that source, not as a description of what exists.
+Related: N7 in [RATELCORE_INTEGRATION_FACTS.md](RATELCORE_INTEGRATION_FACTS.md).
 
 ## 1. Purpose
 
@@ -175,7 +196,7 @@ Please answer inline. These block sign-off.
 ## 11. Sign-off
 
 - [ ] @CaptRaven (network lead) — Kamailio side confirmed; questions answered.
-- [ ] @ml-lawarn (RatelMeter owner) — agent side confirmed; contract updated.
+- [ ] @capitanaserdel (RatelMeter owner) — agent side confirmed; contract updated.
 - [ ] `contracts/openapi.yaml` `end_reason` TODO resolved in the same commit.
 
 Signed: ______________________ (network lead)   Date: __________

@@ -21,6 +21,7 @@ RatelCore down, which is why business, voice and ops each have their own VM.
 | `mongo/create-ratel-link-user.js` | Applies them: creates the roles and the `ratel_link` user (`mongosh`) |
 | `ratel-link.env.example` | The settings file, with placeholders |
 | `ratel-link.service` | The systemd unit (hardened, listens on 127.0.0.1 only) |
+| `ratel-link-check-expiry.service`, `.timer` | A daily job that logs `api_key.expiring` for caller keys close to expiry (same hardening, reads only) |
 | `install-release.sh` | Installs a release into its own folder and switches `current` to it |
 | `nginx/ratel-link.conf.example` | A TLS proxy template for callers on other hosts |
 
@@ -41,7 +42,7 @@ These are not developer tasks and nothing goes near real SIMs until they are don
    configurations are updated to match.
 2. The core's `subscribers` collection has a **unique index on `imsi`**. RatelLink never creates
    indexes in the core's database. It checks, and logs `startup.subscribers.index.missing` if the
-   index is not there.
+   index is not there. *Checked 2026-10-15: the index exists (`imsi_1`, unique).*
 3. **Create RatelLink's database user.** From this folder, with an administrator account:
 
    ```
@@ -56,8 +57,9 @@ These are not developer tasks and nothing goes near real SIMs until they are don
 
    What the user can do: read and write RatelLink's own collections, but **never change or delete a
    stored SIM key, never read, change or delete an audit entry** (insert only), and never delete
-   anything. In the core's database it can read, insert and update `subscribers` and nothing else:
-   no delete, no index, no other collection. `tests/ratel_link/repositories/test_mongo_roles_integration.py`
+   anything of its own. In the core's database it can read, insert, update and **delete**
+   `subscribers` (deactivating a line deletes its document) and nothing else: no index, no other
+   collection. `tests/ratel_link/repositories/test_mongo_roles_integration.py`
    proves both halves against a real MongoDB: RatelLink does all its work with exactly these
    privileges, and every operation outside them is refused.
 4. **Agree with RatelLink's owner** the address range for lines (`RATEL_LINK_UE_POOL`, outside the
@@ -77,15 +79,30 @@ Copy the tarball and `install-release.sh` to core-cp (by the usual secure copy, 
 email). Then, on core-cp:
 
 ```
-sudo ./install-release.sh ratel-link-<commit>.tar.gz python3.12   # Python 3.12 or newer
+sudo ./install-release.sh ratel-link-<commit>.tar.gz python3.12   # Python 3.12 or newer, see below
 sudo cp ratel-link.env.example /etc/ratel-link/ratel-link.env      # then edit it, see below
 sudo chown ratellink:ratellink /etc/ratel-link/ratel-link.env && sudo chmod 600 /etc/ratel-link/ratel-link.env
-sudo cp ratel-link.service /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo cp ratel-link.service ratel-link-check-expiry.service ratel-link-check-expiry.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+systemd-analyze verify /etc/systemd/system/ratel-link.service /etc/systemd/system/ratel-link-check-expiry.service /etc/systemd/system/ratel-link-check-expiry.timer
 ```
 
-The install needs the Python package index (PyPI) reachable from core-cp. If it is not, build the
-release's packages on another machine (`pip download -r requirements/link.txt -c requirements/constraints.txt -d wheels`)
-and install with `pip install --no-index --find-links wheels`. TODO(network team): say which it is.
+`systemd-analyze verify` must print nothing. The unit files are checked by tests in this repository,
+but only the host can check them against its own systemd.
+
+**Python.** Checked 2026-10-15: core-cp runs Ubuntu 22.04.5 and its `python3` is **3.10.12**, which the
+install script refuses. RatelLink uses `datetime.UTC` and `StrEnum` (Python 3.11 and later) and its
+pinned dependencies were verified on 3.12 only, so lowering the requirement is not an option.
+Install Python 3.12 **next to** the system one (Ubuntu's own tools need 3.10, so never replace it),
+with its `venv` module, and pass that executable as the script's second argument. How to get it is
+the network team's decision, because it adds software to a core host: a third-party apt repository
+(deadsnakes: `python3.12`, `python3.12-venv`) or a standalone build (for example `uv python install 3.12`,
+which needs the host to reach GitHub). TODO(network team): choose, and install.
+
+**Package index.** Checked 2026-10-15: PyPI is reachable from core-cp (HTTP 200 on the `pip` index
+page), so a plain install works. If that ever changes, build the release's packages on another
+machine (`pip download -r requirements/link.txt -c requirements/constraints.txt -d wheels`) and
+install with `pip install --no-index --find-links wheels`.
 
 Edit `/etc/ratel-link/ratel-link.env`: put the generated MongoDB password into `MONGO_URI`, and set
 `RATEL_LINK_UE_POOL` once the range is agreed. Then, as the service user (the settings are loaded
@@ -108,8 +125,15 @@ Start it:
 ```
 sudo systemctl enable --now ratel-link
 journalctl -u ratel-link -n 50 --no-pager
-curl -s http://127.0.0.1:8081/healthz
+curl -s http://127.0.0.1:8081/healthz     # {"status":"ok"}: the process is up
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/readyz   # 200: MongoDB answers and the key is loaded
+sudo systemctl enable --now ratel-link-check-expiry.timer
+systemctl list-timers ratel-link-check-expiry.timer
 ```
+
+`/readyz` answers 200 or 503 and never says why; the reason is in the log as `readiness.failed`
+with the component (`store` or `key`). It is for the host and its monitoring only: the proxy
+forwards `/v1/` and `/healthz`, not `/readyz`.
 
 A healthy start shows no `ERROR` line. Expected warnings until the network team's inputs arrive:
 `startup.voice.template.not_configured`.

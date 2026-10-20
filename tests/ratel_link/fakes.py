@@ -223,6 +223,22 @@ class InMemorySubscriberRepository:
         sessions[:] = [s for s in sessions if s["name"] != "internet"]
         return True
 
+    def remove_line(self, imsi: str) -> bool:
+        return self.documents.pop(imsi, None) is not None
+
+
+class FakeStoreHealth:
+    """A store that answers, or fails with the exception it is given."""
+
+    def __init__(self, failure: Exception | None = None) -> None:
+        self.failure = failure
+        self.checks = 0
+
+    def check(self) -> None:
+        self.checks += 1
+        if self.failure is not None:
+            raise self.failure
+
 
 class InMemoryVoiceTemplate:
     """A voice template. `session=None` means none is configured."""

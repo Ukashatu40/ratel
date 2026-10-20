@@ -25,6 +25,7 @@ from ratel_link.repositories.mongo import (
     MongoIpAllocationRepository,
     MongoLineStateRepository,
     MongoSimKeyRepository,
+    MongoStoreHealth,
     MongoSubscriberRepository,
     missing_indexes,
     open_database,
@@ -36,6 +37,7 @@ from ratel_link.repositories.ports import (
     IpAllocationRepository,
     LineStateRepository,
     SimKeyRepository,
+    StoreHealth,
     SubscriberRepository,
     VoiceTemplateSource,
 )
@@ -47,7 +49,9 @@ from ratel_link.services.audit_log import AuditLog
 from ratel_link.services.data_mode import DataModeService
 from ratel_link.services.ip_allocation import IpAllocator
 from ratel_link.services.line_activation import LineActivationService
+from ratel_link.services.line_deactivation import LineDeactivationService
 from ratel_link.services.line_status import LineStatusService
+from ratel_link.services.readiness import ReadinessService
 from ratel_link.services.sim_import import SimImportService
 from ratel_link.services.sim_keys import SimKeyStore
 
@@ -93,6 +97,7 @@ def create_app(
     ip_allocations: IpAllocationRepository | None = None,
     subscribers: SubscriberRepository | None = None,
     voice_template: VoiceTemplateSource | None = None,
+    store_health: StoreHealth | None = None,
     key_provider: KeyProvider | None = None,
     clock: Callable[[], datetime] = utc_now,
 ) -> FastAPI:
@@ -126,6 +131,8 @@ def create_app(
     )
     voice_template = voice_template or FileVoiceTemplate(settings.ratel_link_voice_template_file)
     database = opened[0] if opened else None
+    if store_health is None and database is not None:
+        store_health = MongoStoreHealth(database, database.client[settings.open5gs_db_name])
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -154,16 +161,21 @@ def create_app(
     app.state.line_status = LineStatusService(line_states, sim_keys)
     app.state.assignments = AssignmentService(ip_allocations, clock)
     audit_log = AuditLog(audit, clock)
+    allocator = IpAllocator(ip_allocations, IpPool.from_cidr(settings.ratel_link_ue_pool), clock)
     app.state.line_activation = LineActivationService(
         SimKeyStore(sim_keys, key_provider, clock),
         subscribers,
         line_states,
-        IpAllocator(ip_allocations, IpPool.from_cidr(settings.ratel_link_ue_pool), clock),
+        allocator,
         voice_template,
         audit_log,
         clock,
     )
+    app.state.line_deactivation = LineDeactivationService(
+        sim_keys, subscribers, line_states, allocator, audit_log, clock
+    )
     app.state.data_mode = DataModeService(subscribers, line_states, audit_log, clock)
+    app.state.readiness = ReadinessService(store_health, key_provider)
     install_error_handlers(app)
     install_request_context(app)
 
@@ -178,9 +190,20 @@ def create_app(
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
-        # Liveness only, and the only route without an API key. It exposes nothing.
-        # TODO: readiness check (MongoDB ping) once RatelLink has a store.
+        # Liveness only: the process is up. Whether it can do its job is /readyz.
         return {"status": "ok"}
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz() -> JSONResponse:
+        # Readiness: the store answers with the access RatelLink needs and the key is loaded.
+        # No API key (a monitor has none), so the body says only ready or not, never why. The
+        # reason goes to the log as a component name. The proxy does not forward this route.
+        result = await run_in_threadpool(app.state.readiness.check)
+        return JSONResponse(
+            status_code=200 if result.ready else 503,
+            content={"status": "ready" if result.ready else "unavailable"},
+            headers={"Cache-Control": "no-store"},
+        )
 
     app.include_router(build_v1_router())
     return app

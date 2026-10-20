@@ -123,8 +123,25 @@ class SubscriberRepository(Protocol):
         """Remove the internet session and leave the ims session. False if there is no document."""
         ...
 
+    def remove_line(self, imsi: str) -> bool:
+        """Delete the line's whole subscriber document. False if there was none.
+
+        The only delete. The document goes with the fields the HSS keeps in it, `security.sqn`
+        among them: a later activation creates a fresh document.
+        """
+        ...
+
 
 class VoiceTemplateSource(Protocol):
     def ims_session(self) -> dict[str, Any] | None:
         """A copy of the lab's ims session, or None if no template is configured."""
+        ...
+
+
+class StoreHealth(Protocol):
+    def check(self) -> None:
+        """Return if the store answers with the access RatelLink needs. Raise if it does not.
+
+        Reads only. The exception is never shown to a caller: it can name hosts and users.
+        """
         ...

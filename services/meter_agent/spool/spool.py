@@ -3,14 +3,15 @@
 The spool never opens a network connection. The sender is passed in, so
 tests use a fake sender and a temporary directory. See W2-15.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 # A sender takes one batch (a JSON-serialisable dict or list) and returns
 # True when the API acknowledged it. It may raise; the spool treats any
@@ -21,9 +22,21 @@ Sender = Callable[[object], bool]
 @dataclass(frozen=True, slots=True)
 class SpoolResult:
     """What happened in one replay pass."""
+
     delivered: int
     remaining: int
     quarantined: int
+
+
+def _make_private(directory: Path) -> None:
+    """Create the directory if needed and make it readable by its owner only.
+
+    Batches hold IMSIs, which are personal data. The mode is set explicitly
+    after creating, because `mkdir` obeys the umask and leaves an existing
+    directory as it was. Files made by `mkstemp` are already owner-only.
+    """
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.chmod(0o700)
 
 
 class Spool:
@@ -36,9 +49,9 @@ class Spool:
 
     def __init__(self, directory: str | os.PathLike[str]) -> None:
         self._dir = Path(directory)
-        self._dir.mkdir(parents=True, exist_ok=True)
+        _make_private(self._dir)
         self._quarantine = self._dir / "quarantine"
-        self._quarantine.mkdir(parents=True, exist_ok=True)
+        _make_private(self._quarantine)
 
     def spool(self, name: str, batch: object) -> Path:
         """Write one batch to disk atomically.
@@ -68,11 +81,7 @@ class Spool:
 
         Temporary files and the quarantine directory are ignored.
         """
-        files = [
-            p
-            for p in self._dir.iterdir()
-            if p.is_file() and not p.name.startswith(".tmp-")
-        ]
+        files = [p for p in self._dir.iterdir() if p.is_file() and not p.name.startswith(".tmp-")]
         return sorted(files, key=lambda p: p.name)
 
     def replay(self, sender: Sender) -> SpoolResult:
@@ -104,6 +113,4 @@ class Spool:
                 delivered += 1
 
         remaining = len(self.pending())
-        return SpoolResult(
-            delivered=delivered, remaining=remaining, quarantined=quarantined
-        )
+        return SpoolResult(delivered=delivered, remaining=remaining, quarantined=quarantined)

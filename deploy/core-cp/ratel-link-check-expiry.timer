@@ -1,0 +1,17 @@
+# Runs ratel-link-check-expiry.service once a day. Install as
+# /etc/systemd/system/ratel-link-check-expiry.timer, then:
+#   sudo systemctl enable --now ratel-link-check-expiry.timer
+# Check it: systemctl list-timers ratel-link-check-expiry.timer
+[Unit]
+Description=RatelLink: daily check for API keys close to expiry
+
+[Timer]
+# Daily, in the host's time (UTC). Persistent: a run missed while the host was off happens at boot.
+OnCalendar=daily
+Persistent=true
+# Spread the start a little so it never lands on a restart or a backup.
+RandomizedDelaySec=15min
+Unit=ratel-link-check-expiry.service
+
+[Install]
+WantedBy=timers.target
