@@ -65,9 +65,7 @@ def _make_line(
     return line
 
 
-def test_activation_calls_activate_exactly_once(
-    session: Session, repo: SqlLinesRepository
-) -> None:
+def test_activation_calls_activate_exactly_once(session: Session, repo: SqlLinesRepository) -> None:
     line = _make_line(session)
     client = FakeRatelLinkClient()
     activate_line(repo, client, line.line_id, actor="staff:test", idempotency_key="key-1")
@@ -127,9 +125,7 @@ def test_fake_client_does_not_double_record_on_same_key() -> None:
     assert len(client.calls) == 1
 
 
-def test_activation_refused_without_kyc(
-    session: Session, repo: SqlLinesRepository
-) -> None:
+def test_activation_refused_without_kyc(session: Session, repo: SqlLinesRepository) -> None:
     line = _make_line(session, kyc_status="pending")
     client = FakeRatelLinkClient()
     with pytest.raises(ActivationError, match="KYC"):
@@ -137,9 +133,7 @@ def test_activation_refused_without_kyc(
     assert client.calls == []
 
 
-def test_activation_writes_audit_entry(
-    session: Session, repo: SqlLinesRepository
-) -> None:
+def test_activation_writes_audit_entry(session: Session, repo: SqlLinesRepository) -> None:
     line = _make_line(session)
     client = FakeRatelLinkClient()
     activate_line(repo, client, line.line_id, actor="alice", idempotency_key="k")
@@ -150,9 +144,7 @@ def test_activation_writes_audit_entry(
     assert audits[0].to_state == LineState.ACTIVE.value
 
 
-def test_activation_refused_from_wrong_state(
-    session: Session, repo: SqlLinesRepository
-) -> None:
+def test_activation_refused_from_wrong_state(session: Session, repo: SqlLinesRepository) -> None:
     line = _make_line(session, state="terminated")
     client = FakeRatelLinkClient()
     with pytest.raises(ActivationError):

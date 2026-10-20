@@ -20,11 +20,9 @@ from tests.route_walk import effective_routes
 
 # Routes that exist on our services but are intentionally not in the
 # cross-system contract. The contract covers only RatelLink and RatelMeter;
-# RatelBSS's own API is not in scope (see contracts/openapi.yaml, info.description).
-OPERATIONAL = {
-    ("GET", "/healthz"),
-    ("POST", "/v1/lines/activate"),  # RatelBSS-internal; not part of the contract
-}
+# RatelBSS's own API is out of scope (see contracts/openapi.yaml, info.description).
+OPERATIONAL = {("GET", "/healthz"), ("GET", "/readyz"), ("POST", "/v1/lines/activate")}
+
 TAG_FOR_SERVICE = {"ratel_link": "RatelLink", "app": "RatelMeter"}
 
 
