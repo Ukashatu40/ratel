@@ -125,6 +125,21 @@ jobs:
           MONGO_INITDB_ROOT_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
         ports:
           - 27017:27017
+      # A throwaway PostgreSQL, the same way. The ledger tests create and drop their own databases
+      # in it and prove the append-only triggers, BIGINT and concurrency (ADR 0009). The version
+      # matches compose.dev.yaml. TODO: confirm the production PostgreSQL version and align both.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -133,11 +148,13 @@ jobs:
           cache: pip
           cache-dependency-path: requirements/constraints.txt
       - run: pip install -r requirements/dev.txt -c requirements/constraints.txt
-      # Runs the tests marked `integration` against the MongoDB service above. TODO: PostgreSQL
-      # and Redis service containers when the first tests that need them exist.
+      # Runs the tests marked `integration` against the MongoDB and PostgreSQL services above.
+      # The job keeps its name because branch rules may require it. TODO: a Redis service
+      # container when the first tests that need it exist.
       - name: Integration tests
         env:
           RATEL_TEST_MONGO_URI: mongodb://ci:ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:27017/?authSource=admin
+          RATEL_TEST_POSTGRES_URI: postgresql+psycopg://ci:ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/postgres
         run: pytest -m integration
 
   config-validate:
