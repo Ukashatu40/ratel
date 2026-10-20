@@ -1,0 +1,362 @@
+/* SignInScreen.css - Unified, Responsive, and Pixel-Perfect RatelDesk Sign-In */
+
+.signin-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100vh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* =========================================================
+   LEFT BLUE HERO PANEL (50% Width)
+   ========================================================= */
+.signin-hero {
+  position: relative;
+  min-height: 100vh;
+  background-color: #002b74;
+  /* Ratel Primary Corporate Navy */
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 24vh 4.7vw 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Text Content Area in Left Hero (Stays in top half) */
+.signin-hero-content {
+  position: relative;
+  z-index: 10;
+  max-width: none;
+  width: 100%;
+  min-width: 0;
+}
+
+.signin-hero-tag {
+  color: #fdb813;
+  /* Ratel Gold/Yellow */
+  font-size: 0.9vw;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 1.5vw;
+}
+
+.signin-hero-title {
+  font-size: 2.4vw;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #ffffff;
+  margin: 0 0 1.2vw 0;
+  letter-spacing: -0.02em;
+}
+
+.signin-hero-subtitle {
+  font-size: 1.05vw;
+  line-height: 1.55;
+  color: #c0d3f2;
+  margin: 0 0 1.5vw 0;
+  max-width: 100%;
+}
+
+/* Feature bullets */
+.signin-features-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1vw;
+}
+
+.signin-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85vw;
+}
+
+.signin-feature-badge {
+  flex-shrink: 0;
+  width: 1.4vw;
+  height: 1.4vw;
+  border-radius: 50%;
+  background: #001f54;
+  border: 1px solid #1a3f85;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fdb813;
+  font-size: 0.75vw;
+  font-weight: bold;
+}
+
+.signin-feature-text {
+  font-size: 0.98vw;
+  color: #f1f5f9;
+  font-weight: 400;
+}
+
+/* Anchor the arcs to the same panel as the viewport-scaled copy. */
+.signin-hero-arcs-wrapper {
+  position: absolute;
+  inset: auto 0 0;
+  height: 64vh;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.signin-hero-arcs-svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* =========================================================
+   RIGHT WHITE FORM PANEL (50% Width)
+   ========================================================= */
+.signin-form-panel {
+  position: relative;
+  min-height: 100vh;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: clamp(2rem, 4vw, 3.5rem);
+  box-sizing: border-box;
+}
+
+.signin-form-card {
+  width: 100%;
+  max-width: 400px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Ratel Logo Card Box with Shadow */
+.signin-logo-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  padding: 0.85rem 1.75rem;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px -2px rgba(0, 43, 116, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  margin-bottom: 2rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.signin-logo-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(0, 43, 116, 0.12), 0 4px 8px -2px rgba(0, 0, 0, 0.05);
+}
+
+.signin-logo-img {
+  height: 48px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Header Text */
+.signin-heading-box {
+  text-align: center;
+  margin-bottom: 1.75rem;
+  width: 100%;
+}
+
+.signin-heading {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #0c2340;
+  margin: 0 0 0.4rem 0;
+}
+
+.signin-subheading {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Form inputs */
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.signin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.signin-field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.signin-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #475569;
+}
+
+.signin-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.signin-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 0.85rem;
+  font-size: 0.9rem;
+  color: #0f172a;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.signin-input:focus {
+  border-color: #002b74;
+  box-shadow: 0 0 0 3px rgba(0, 43, 116, 0.12);
+}
+
+.signin-show-toggle {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.signin-show-toggle:hover {
+  color: #002b74;
+}
+
+/* Submit button */
+.signin-submit-btn {
+  width: 100%;
+  height: 46px;
+  margin-top: 0.5rem;
+  background-color: #002b74;
+  color: #ffffff;
+  font-size: 0.925rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, transform 0.05s ease;
+}
+
+.signin-submit-btn:hover {
+  background-color: #001f54;
+}
+
+.signin-submit-btn:active {
+  transform: scale(0.99);
+}
+
+.signin-submit-btn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+/* VPN Notice */
+.signin-vpn-notice {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-align: center;
+  margin-top: 1.25rem;
+  width: 100%;
+}
+
+/* Watermark footer */
+.signin-watermark {
+  position: absolute;
+  bottom: 1rem;
+  right: 1.5rem;
+  font-size: 0.65rem;
+  color: #cbd5e1;
+}
+
+/* RESPONSIVE BREAKPOINT FOR MOBILE VIEW */
+@media (max-width: 900px) {
+  .signin-container {
+    grid-template-columns: 1fr;
+  }
+
+  .signin-hero {
+    min-height: auto;
+    padding: 3rem 2rem 4rem 2rem;
+  }
+
+  .signin-hero-content {
+    max-width: 520px;
+  }
+
+  .signin-hero-tag {
+    font-size: clamp(0.75rem, 1vw, 0.825rem);
+    margin-bottom: 1.5rem;
+  }
+
+  .signin-hero-title {
+    font-size: 2rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .signin-hero-subtitle {
+    font-size: clamp(0.875rem, 1.1vw, 0.95rem);
+    margin-bottom: 2.25rem;
+  }
+
+  .signin-features-list {
+    gap: 1.2rem;
+  }
+
+  .signin-feature-item {
+    gap: 0.85rem;
+  }
+
+  .signin-feature-badge {
+    width: 22px;
+    height: 22px;
+    font-size: 0.75rem;
+  }
+
+  .signin-feature-text {
+    font-size: clamp(0.85rem, 1vw, 0.925rem);
+  }
+
+  .signin-hero-arcs-wrapper {
+    position: relative;
+    inset: auto;
+    align-self: flex-end;
+    width: 100%;
+    max-width: 650px;
+    height: clamp(12rem, 28vw, 20rem);
+    flex-shrink: 0;
+    margin-top: 1.5rem;
+  }
+
+  .signin-form-panel {
+    min-height: auto;
+    padding: 3rem 1.5rem 4rem 1.5rem;
+  }
+}
