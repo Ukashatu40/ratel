@@ -1,8 +1,14 @@
 """In-memory RatelLinkClient for tests.
 
 Records every call so we can assert "exactly one /activate".
-Honours the idempotency key: a repeat with the same key is a no-op.
+A repeat with the same key does not record a second call (mirrors what
+RatelLink promises by body, in the contract).
 Can be told to fail, for error-path tests.
+
+TODO(idempotency, M-26): the real HTTP API currently returns 400 on a
+repeat with the same key (the state machine refuses active -> active).
+Returning the *original response* for a repeat needs a key store,
+planned for M-26. This fake does not simulate that yet.
 """
 
 from __future__ import annotations

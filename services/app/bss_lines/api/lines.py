@@ -14,8 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.bss_lines.client import RatelLinkClient, RatelLinkError
-from app.bss_lines.services import ActivationError, activate_line
+from app.bss_lines.repositories.sql import SqlLinesRepository
+from app.bss_lines.services.activation import ActivationError, activate_line
+from app.bss_lines.services.ratel_link_client import RatelLinkClient, RatelLinkError
 from app.config import Settings
 
 router = APIRouter(prefix="/v1")
@@ -53,6 +54,13 @@ def get_client(
     )
 
 
+def get_lines_repo(
+    session: Annotated[Session, Depends(get_db)],
+) -> SqlLinesRepository:
+    """Wrap the session in the repository the service expects."""
+    return SqlLinesRepository(session)
+
+
 class ActivateBody(BaseModel):
     """Request payload for activating a line."""
 
@@ -68,13 +76,10 @@ class ActivateResponse(BaseModel):
     state: str
 
 
-@router.post(
-    "/lines/activate",
-    response_model=ActivateResponse,
-)
+@router.post("/lines/activate", response_model=ActivateResponse)
 def post_activate(
     payload: ActivateBody,
-    session: Annotated[Session, Depends(get_db)],
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> ActivateResponse:
     """Activate a line through the RatelLink client.
@@ -89,7 +94,7 @@ def post_activate(
     """
     try:
         result = activate_line(
-            session,
+            lines,
             client,
             payload.line_id,
             actor=payload.actor,

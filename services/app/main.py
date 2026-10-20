@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app.bss_lines.api import router as bss_lines_router
+from app.bss_lines.api.lines import router as bss_lines_router
 from app.config import Settings
 from app.db import make_engine, session_factory
 from common.errors import install_error_handlers

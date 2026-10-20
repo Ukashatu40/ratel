@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.bss_lines.client import RatelLinkClient, RatelLinkError
+from app.bss_lines.services.ratel_link_client import RatelLinkClient, RatelLinkError
 
 
 def test_activate_sends_expected_body_and_headers(httpx_mock) -> None:

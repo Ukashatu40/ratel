@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.bss_lines.api import get_client
-from app.bss_lines.models import Customer, Line, Number, Plan, Sim
+from app.bss_lines.api.lines import get_client
+from app.bss_lines.models.lines import Customer, Line, Number, Plan, Sim
 from app.config import Settings
 from app.db import Base
 from app.main import create_app
@@ -24,13 +24,10 @@ def fake_client() -> FakeRatelLinkClient:
 
 @pytest.fixture
 def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Iterator[TestClient]:
-    # File-backed SQLite so the app's session factory and the test's seeding
-    # share the same database.
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
 
-    # Seed a customer, SIM, number, plan, and an awaiting_activation line.
     with factory() as s:
         customer = Customer(name="Alice", phone="2348000000001", kyc_status="verified")
         sim = Sim(

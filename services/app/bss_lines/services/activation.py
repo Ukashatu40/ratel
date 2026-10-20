@@ -1,7 +1,10 @@
 """The activation flow. Only this module drives state changes.
 
-Everything in this module goes through domain.validate_transition().
+Everything in this module goes through domain.state_machine.validate_transition().
 No other code path may set a line's state directly.
+
+It talks to storage through LinesRepository (repositories/ports.py), not through
+a database session. That keeps the rules testable without a database.
 """
 
 from __future__ import annotations
@@ -9,14 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from sqlalchemy.orm import Session
-
-from app.bss_lines.domain import (
+from app.bss_lines.domain.state_machine import (
     InvalidTransition,
     LineState,
     validate_transition,
 )
-from app.bss_lines.models import Line, LineAudit
+from app.bss_lines.repositories.ports import LinesRepository
 
 
 class RatelLinkClientProto(Protocol):
@@ -50,7 +51,7 @@ class ActivationResult:
 
 
 def activate_line(
-    session: Session,
+    lines: LinesRepository,
     client: RatelLinkClientProto,
     line_id: int,
     *,
@@ -60,13 +61,13 @@ def activate_line(
     """Run the sell-to-activate flow for one line.
 
     Order:
-      1. Load the line.
+      1. Load the line through the repository.
       2. Refuse if the customer's KYC is not verified.
       3. Ask the state machine what to do (must be awaiting_activation -> active).
       4. Execute each RatelLink call the transition implies.
       5. Set the line's new state, write an audit entry, commit.
     """
-    line = session.get(Line, line_id)
+    line = lines.get(line_id)
     if line is None:
         raise ActivationError(f"line {line_id} not found")
 
@@ -93,19 +94,17 @@ def activate_line(
                 idempotency_key=idempotency_key,
             )
         else:
-            # The domain should not imply other calls for awaiting_activation -> active.
             raise ActivationError(f"unexpected RatelLink call: {call.endpoint}")
 
     line.state = transition.to_state.value
-    session.add(
-        LineAudit(
-            line_id=line.line_id,
-            from_state=transition.from_state.value,
-            to_state=transition.to_state.value,
-            actor=actor,
-            reason="customer activation",
-        )
+    lines.save(line)
+    lines.add_audit(
+        line_id=line.line_id,
+        from_state=transition.from_state.value,
+        to_state=transition.to_state.value,
+        actor=actor,
+        reason="customer activation",
     )
-    session.commit()
+    lines.commit()
 
     return ActivationResult(line.line_id, transition.from_state, transition.to_state)

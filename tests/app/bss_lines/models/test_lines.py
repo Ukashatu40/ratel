@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import app.bss_lines.models  # noqa: F401 -- registers the models
+import app.bss_lines.models.lines  # noqa: F401 -- registers the models
 from app.db import Base
 
 
