@@ -1,4 +1,4 @@
-"""W2-09 stub. The real client comes from W2-03 or its mock.
+"""Assignment cache protocol and HTTP client implementation for RatelMeter.
 
 The cache refreshes every interval. If the refresh fails, the agent
 spools the raw (ue_ip, bytes_up, bytes_down) and resolves IMSIs on
@@ -8,6 +8,8 @@ replay — the policy confirmed by the RatelMeter owner.
 from __future__ import annotations
 
 from typing import Protocol
+
+from .client import HttpAssignmentCache
 
 
 class AssignmentCache(Protocol):
@@ -22,3 +24,6 @@ class AssignmentCache(Protocol):
     def imsi_for(self, ue_ip: str) -> str | None:
         """Return the IMSI for an address, or None if unknown."""
         ...
+
+
+__all__ = ["AssignmentCache", "HttpAssignmentCache"]

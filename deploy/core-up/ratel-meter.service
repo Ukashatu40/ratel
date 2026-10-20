@@ -1,0 +1,49 @@
+# RatelMeter agent on core-up. Install as /etc/systemd/system/ratel-meter.service (deploy/core-up/README.md).
+[Unit]
+Description=RatelMeter data agent
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+User=ratelmeter
+Group=ratelmeter
+WorkingDirectory=/opt/ratel-meter/current
+EnvironmentFile=/etc/ratel-meter/ratel-meter.env
+Environment=PYTHONPATH=/opt/ratel-meter/current/services
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/ratel-meter/current/venv/bin/python -m meter_agent.main
+Restart=always
+RestartSec=5
+UMask=0077
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ReadOnlyPaths=/opt/ratel-meter /etc/ratel-meter
+ReadWritePaths=/var/spool/ratel-meter
+
+[Install]
+WantedBy=multi-user.target

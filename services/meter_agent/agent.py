@@ -44,7 +44,7 @@ class Agent:
         self._config = config
         self._last: dict[str, Reading] = {}
 
-    def run_once(self) -> None:
+    def run_once(self, now: int | None = None) -> None:
         """Run one interval's work.
 
         Intended to be called every INTERVAL_SECONDS, aligned to the
@@ -56,7 +56,7 @@ class Agent:
         # tick, which keeps this call's behavior unambiguous.
         self._spool.replay(self._poster)
 
-        now = utc_epoch_now()
+        current_time = now if now is not None else utc_epoch_now()
         readings = self._reader.read()
 
         cache_ok = True
@@ -84,7 +84,9 @@ class Agent:
                     }
                 )
             if raw:
-                name = f"raw-{interval_start(now, self._config.interval_seconds):010d}.json"
+                name = (
+                    f"raw-{interval_start(current_time, self._config.interval_seconds):010d}.json"
+                )
                 self._spool.spool(name, raw)
             return
 
@@ -99,7 +101,7 @@ class Agent:
                 # Not a line we know about; skip it.
                 continue
 
-            record = build_record(imsi, now, delta)
+            record = build_record(imsi, current_time, delta)
             if record is None:
                 # Zero-byte interval: no record.
                 continue
@@ -118,5 +120,5 @@ class Agent:
 
         if not self._poster(batch):
             # API unreachable: spool and try later.
-            name = f"{interval_start(now, self._config.interval_seconds):010d}.json"
+            name = f"{interval_start(current_time, self._config.interval_seconds):010d}.json"
             self._spool.spool(name, batch)
