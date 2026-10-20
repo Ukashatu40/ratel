@@ -1,0 +1,36 @@
+.wal{display:flex;flex-direction:column;gap:16px}
+.wal-finder{position:relative;max-width:620px}
+.wal-finder__box{display:flex;align-items:center;gap:14px;padding:12px 18px}
+.wal-finder__box input{flex:1;font:inherit;color:var(--text);border:0;outline:none;background:none}
+.wal-finder__list{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 6px);padding:6px;display:flex;flex-direction:column}
+.wal-finder__list button{display:flex;justify-content:space-between;gap:12px;text-align:left;background:none;border:0;font:inherit;color:inherit;padding:10px 12px;border-radius:8px;cursor:pointer}
+.wal-finder__list button:hover{background:#f3f6fb}
+.wal-finder__empty{padding:10px 12px}
+.wal-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.wal-card__label{color:var(--muted)}
+.wal-card__row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:10px}
+.wal-card__value{font-size:32px;font-weight:700;letter-spacing:-.02em}
+.wal-card__delta{margin-top:4px;font-size:13px;color:var(--muted)}
+.wal-card--navy{background:linear-gradient(135deg,#00338d,#0a4bb8);border:0;color:#fff}
+.wal-card--navy .wal-card__label,.wal-card--navy .wal-card__delta{color:#cfdcf5}
+.wal-line{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px 22px;align-items:center}
+.wal-line__avatar{width:48px;height:48px;border-radius:24px;font-size:16px;margin:0}
+.wal-line__amount{font-size:28px;font-weight:700;letter-spacing:-.02em}
+.wal-line__actions{display:flex;gap:8px}
+.wal-line__note{grid-column:1 / -1;font-size:13px}
+.wal-tabs{display:flex;gap:26px;border-bottom:1px solid var(--border);overflow-x:auto}
+.wal-tabs button{background:none;border:0;font:inherit;color:var(--muted);padding:12px 0;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.wal-tabs button.on{color:var(--navy);font-weight:700;border-bottom-color:var(--navy)}
+.wal-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px;align-items:start}
+.wal-ledger{padding:0}
+.wal-message{padding:16px 20px;display:flex;gap:12px;align-items:center}
+.wal-footer{display:flex;align-items:center;justify-content:space-between;padding:14px 20px}
+.wal-pages{display:flex;align-items:center;gap:10px}
+.wal-in{color:#006b3f}
+.wal-out{color:#b0001f}
+.wal-link{color:var(--navy);font-weight:600}
+.wal-link:hover{text-decoration:underline}
+.wal-legend{display:flex;gap:18px;margin-top:6px;font-size:13px;color:var(--muted)}
+.wal-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+@media (max-width:1300px){.wal-grid{grid-template-columns:1fr}}
+@media (max-width:1100px){.wal-cards{grid-template-columns:1fr}.wal-line{grid-template-columns:1fr}.wal-ledger{overflow-x:auto}}
