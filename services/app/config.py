@@ -15,3 +15,4 @@ class Settings(BaseSettings):
     redis_url: SecretStr = SecretStr("redis://127.0.0.1:6379/0")
     ratel_link_base_url: str = "http://127.0.0.1:4010"
     ratel_link_api_key: SecretStr | None = None
+    meter_api_key: SecretStr = SecretStr("test-only-not-a-real-key")
