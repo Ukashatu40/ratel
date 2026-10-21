@@ -21,7 +21,7 @@ from a template exported from the lab, not from the guide's abbreviated example 
 
 1. RatelLink is the only writer of `subscribers`. Documents created by hand are deleted before the gate.
 2. **Never replace a whole existing document.** The HSS writes `sqn`, `imeisv`, `mme_host`,
-   `mm_realm`, `mme_timestamp` and `purge_flag` into it, and a replace wipes them. Use `$set` on
+   `mme_realm`, `mme_timestamp` and `purge_flag` into it, and a replace wipes them. Use `$set` on
    named paths only.
 3. **Exact BSON types.** Integers are int32. Keys and the MSISDN are strings. A double where an
    int32 is expected can be read as 0.
@@ -51,7 +51,8 @@ from a template exported from the lab, not from the guide's abbreviated example 
 | `access_restriction_data` | int32 | 32 |
 | `network_access_mode` | int32 | 2 |
 | `subscribed_rau_tau_timer` | int32 | 12 |
-| HSS-owned: `imeisv`, `mme_host`, `mm_realm`, `purge_flag` | arrays | create as `[]`, never write again |
+| HSS-owned: `imeisv`, `mme_host`, `mme_realm`, `purge_flag` | arrays | create as `[]`, never write again |
+| `mm_realm` | array | create as `[]`. **Not an Open5GS field**: the guide's name for `mme_realm` is a typo (checked 2026-10-20 against the v2.8.0 HSS source and web UI schema, and against the lab's two working documents, which carry both). Kept so the document matches the working ones field for field. TODO(network team): correct the guide and say whether `mm_realm` can be dropped |
 
 **Speeds** are `{value: int32, unit: int32}`, unit 0 bps, 1 Kbps, 2 Mbps, 3 Gbps, 4 Tbps. A plan of 10
 Mbps is `{10, 2}`. A decimal plan becomes whole numbers in a smaller unit (1.5 Mbps is 1500 Kbps).
