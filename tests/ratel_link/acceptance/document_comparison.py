@@ -31,7 +31,7 @@ OWN_VALUES = (
 
 # What the HSS keeps in the document. RatelLink creates the arrays empty and never writes them
 # again, so only the container type is compared; the template has them filled in by a real attach.
-HSS_OWNED = ("imeisv", "mme_host", "mm_realm", "mme_timestamp", "purge_flag")
+HSS_OWNED = ("imeisv", "mme_host", "mme_realm", "mm_realm", "mme_timestamp", "purge_flag")
 
 # Present in a document that has attached, left out on create, never written by RatelLink.
 NEVER_WRITTEN = ("security.sqn",)
@@ -133,6 +133,7 @@ def synthetic_template() -> dict[str, Any]:
         "msisdn": ["2342064730042"],
         "imeisv": ["3540000000000001"],
         "mme_host": ["mme.example.invalid"],
+        "mme_realm": ["realm.example.invalid"],
         "mm_realm": ["realm.example.invalid"],
         "mme_timestamp": Int64(1760000000),
         "purge_flag": [],

@@ -4,7 +4,7 @@ Everything here follows the network team's RatelLink Developer Integration Guide
 summarised without addresses in docs/RATELCORE_INTEGRATION_FACTS.md. The rules that matter:
 
 - an existing document is never replaced, only changed with `$set` on named paths, because the HSS
-  writes `sqn`, `imeisv`, `mme_host`, `mm_realm`, `mme_timestamp` and `purge_flag` into it;
+  writes `sqn`, `imeisv`, `mme_host`, `mme_realm`, `mme_timestamp` and `purge_flag` into it;
 - `security.sqn` is never written;
 - every integer is a Python `int` (stored as int32), never a float, and keys are strings;
 - the `internet` session is always first in the session list;
@@ -178,6 +178,10 @@ def activation_fields(
         "schema_version": 1,
         "imeisv": [],
         "mme_host": [],
+        # Open5GS names this field `mme_realm` (the HSS writes it at attach). The guide's `mm_realm`
+        # is not an Open5GS field, but the working documents carry both, so both are created to
+        # match them field for field. TODO(network team): can `mm_realm` be dropped?
+        "mme_realm": [],
         "mm_realm": [],
         "mme_timestamp": [],
         "purge_flag": [],
