@@ -19,8 +19,9 @@ from tests.ratel_link.fakes import (
 from tests.ratel_link.helpers import all_fakes
 from tests.route_walk import effective_routes
 
-# Routes that are public on purpose. /healthz is liveness only and exposes nothing.
-UNPROTECTED_ALLOWLIST = {"/healthz"}
+# Routes that are public on purpose. /healthz is liveness only. /readyz says ready or not and
+# never why. Both expose nothing, and the proxy forwards only /healthz and /v1.
+UNPROTECTED_ALLOWLIST = {"/healthz", "/readyz"}
 PACKAGE = Path(__file__).resolve().parents[3] / "services" / "ratel_link"
 MAIN = PACKAGE / "main.py"
 ROUTER = PACKAGE / "api" / "router.py"

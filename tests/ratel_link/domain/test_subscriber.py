@@ -185,7 +185,7 @@ def test_the_voice_session_has_no_fixed_address() -> None:
 
 def test_fields_the_hss_owns_are_only_created_never_set_on_update() -> None:
     fields = _fields()
-    for name in ("imeisv", "mme_host", "mm_realm", "mme_timestamp", "purge_flag"):
+    for name in ("imeisv", "mme_host", "mme_realm", "mm_realm", "mme_timestamp", "purge_flag"):
         assert fields.created_only[name] == []
         assert name not in fields.owned
     assert fields.created_only["schema_version"] == 1

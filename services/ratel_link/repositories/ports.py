@@ -100,7 +100,7 @@ class SubscriberRepository(Protocol):
     """RatelCore's `subscribers` collection (Open5GS). RatelLink is its only writer.
 
     Every method changes named fields only. None replaces a document, because the HSS writes
-    fields of its own into it (`sqn`, `imeisv`, `mme_host`, `mm_realm`, `mme_timestamp`,
+    fields of its own into it (`sqn`, `imeisv`, `mme_host`, `mme_realm`, `mme_timestamp`,
     `purge_flag`).
     """
 
@@ -135,4 +135,13 @@ class SubscriberRepository(Protocol):
 class VoiceTemplateSource(Protocol):
     def ims_session(self) -> dict[str, Any] | None:
         """A copy of the lab's ims session, or None if no template is configured."""
+        ...
+
+
+class StoreHealth(Protocol):
+    def check(self) -> None:
+        """Return if the store answers with the access RatelLink needs. Raise if it does not.
+
+        Reads only. The exception is never shown to a caller: it can name hosts and users.
+        """
         ...

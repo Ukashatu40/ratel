@@ -246,7 +246,8 @@ def test_the_first_activation_creates_the_fields_the_hss_will_fill_as_empty() ->
     env = Env()
     env.activate()
     doc = env.document()
-    assert (doc["imeisv"], doc["mme_host"], doc["mm_realm"], doc["purge_flag"]) == ([], [], [], [])
+    hss_fields = ("imeisv", "mme_host", "mme_realm", "mm_realm", "purge_flag")
+    assert [doc[name] for name in hss_fields] == [[], [], [], [], []]
     assert "sqn" not in doc["security"]
 
 
