@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from app.bss_lines.domain import (
+from app.bss_lines.domain.state_machine import (
     DataMode,
     InvalidSuspensionState,
     InvalidTransition,
@@ -143,7 +143,6 @@ def test_every_state_except_terminated_can_terminate(from_state: LineState) -> N
 # ---------------------------------------------------------------------------
 
 
-# The 15 allowed pairs. Kept here as data so the 36-pair test can check against it.
 ALLOWED_PAIRS: frozenset[tuple[LineState, LineState]] = frozenset(
     {
         (LineState.AWAITING_ACTIVATION, LineState.ACTIVE),
@@ -164,16 +163,12 @@ ALLOWED_PAIRS: frozenset[tuple[LineState, LineState]] = frozenset(
     }
 )
 
-# States a line can be suspended from. Terminating a suspended line is allowed
-# regardless of the previous state, so TERMINATED is not in this set.
 RESTORABLE_FROM: frozenset[LineState] = frozenset({LineState.ACTIVE, LineState.OUT_OF_DATA})
 
 
 def _call_kwargs(from_state: LineState, to_state: LineState) -> dict[str, object]:
-    """The extra keyword arguments a pair needs, if any."""
     kwargs: dict[str, object] = {}
     if from_state is LineState.SUSPENDED and to_state is not LineState.TERMINATED:
-        # The only legal "previous" that matches the target is the target itself.
         kwargs["state_before_suspension"] = to_state
     if (from_state is LineState.ACTIVE and to_state is LineState.OUT_OF_DATA) or (
         from_state is LineState.SUSPENDED and to_state is LineState.OUT_OF_DATA
@@ -200,10 +195,6 @@ def test_every_pair_is_either_allowed_or_refused(
         assert len(transition.calls) >= 1
         return
 
-    # A `suspended -> X` (X != terminated) is refused two ways:
-    #   - if X is not the stored previous state: InvalidTransition (the move itself is wrong)
-    #   - if X == previous but previous is not a restorable state: InvalidSuspensionState
-    #     (the stored data is wrong, and the code must say so loudly)
     if from_state is LineState.SUSPENDED and to_state is not LineState.TERMINATED:
         previous = kwargs.get("state_before_suspension")
         if previous is not None and previous in RESTORABLE_FROM:
@@ -264,10 +255,6 @@ def test_suspended_cannot_return_to_a_different_state() -> None:
 
 
 def test_suspended_can_terminate_regardless_of_previous_state() -> None:
-    """Terminating a suspended line is allowed from any previous state.
-
-    state_before_suspension is irrelevant for -> terminated: we are not restoring.
-    """
     for previous in ALL_STATES:
         t = validate_transition(
             LineState.SUSPENDED,
@@ -278,13 +265,11 @@ def test_suspended_can_terminate_regardless_of_previous_state() -> None:
 
 
 def test_suspended_from_a_non_restorable_state_is_refused_loudly() -> None:
-    """A stored previous state that is not active or out_of_data is wrong.
-
-    The table has no `awaiting_activation -> suspended`, `expired -> suspended`
-    or `suspended -> suspended` row, so a line cannot legitimately be suspended
-    from those. If we see one stored, the data is wrong: refuse loudly.
-    """
-    for previous in (LineState.AWAITING_ACTIVATION, LineState.EXPIRED, LineState.SUSPENDED):
+    for previous in (
+        LineState.AWAITING_ACTIVATION,
+        LineState.EXPIRED,
+        LineState.SUSPENDED,
+    ):
         with pytest.raises(InvalidSuspensionState):
             validate_transition(
                 LineState.SUSPENDED,
@@ -365,12 +350,7 @@ def test_transition_refuses_no_calls() -> None:
 
 
 def test_domain_module_imports_only_stdlib_and_pydantic() -> None:
-    """The domain layer may not import FastAPI, SQLAlchemy, ratel_link or drivers.
-
-    tests/architecture/test_layers.py enforces this for the whole layer; this
-    local check keeps the rule visible in the file that would break it.
-    """
-    source = Path("services/app/bss_lines/domain.py").read_text()
+    source = Path("services/app/bss_lines/domain/state_machine.py").read_text()
     forbidden_roots = {
         "fastapi",
         "starlette",
@@ -382,15 +362,11 @@ def test_domain_module_imports_only_stdlib_and_pydantic() -> None:
         "cryptography",
         "ratel_link",
         "meter_agent",
-        "app",  # bss_lines must not import its siblings either
+        "app",
     }
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                assert alias.name.split(".")[0] not in forbidden_roots, (
-                    f"domain.py must not import {alias.name}"
-                )
+                assert alias.name.split(".")[0] not in forbidden_roots
         elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            assert node.module.split(".")[0] not in forbidden_roots, (
-                f"domain.py must not import from {node.module}"
-            )
+            assert node.module.split(".")[0] not in forbidden_roots
