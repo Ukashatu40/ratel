@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -14,90 +15,56 @@ from services.meter_agent.counters import (
     parse_nftables_json,
 )
 
-
-def test_empty_snapshot_returns_empty_dict() -> None:
-    empty_nftables = {"nftables": []}
-    assert parse_nftables_json(empty_nftables) == {}
-    assert parse_nftables_json({}) == {}
-    assert parse_conntrack_dump("") == {}
+FIXTURES = Path(__file__).parent / "fixtures"
+# Real `nft -j list table` output from core-up (nftables 1.0.2); synthetic addresses and counts.
+REAL_TABLE = (FIXTURES / "nft_table_core_up.json").read_text()
 
 
-def test_nftables_one_long_transfer() -> None:
-    # A single UE performs a large 2.5 GB download and 50 MB upload
-    snapshot = {
-        "nftables": [
-            {
-                "element": {
-                    "family": "inet",
-                    "table": "ratel_meter",
-                    "name": "ue_up",
-                    "elem": {
-                        "val": "10.45.0.2",
-                        "counter": {"packets": 35000, "bytes": 52428800},
-                    },
-                }
-            },
-            {
-                "element": {
-                    "family": "inet",
-                    "table": "ratel_meter",
-                    "name": "ue_down",
-                    "elem": {
-                        "val": "10.45.0.2",
-                        "counter": {"packets": 1750000, "bytes": 2684354560},
-                    },
-                }
-            },
-        ]
+def _table(up: dict | None = None, down: dict | None = None) -> dict:
+    def make(name: str, elems: dict | None) -> dict:
+        body: dict = {"family": "inet", "name": name, "table": "t", "type": "ipv4_addr"}
+        if elems is not None:
+            body["elem"] = [
+                {"elem": {"val": ip, "counter": {"packets": 1, "bytes": n}}}
+                for ip, n in elems.items()
+            ]
+        return {"set": body}
+
+    return {"nftables": [{"metainfo": {"version": "1.0.2"}}, make("up", up), make("down", down)]}
+
+
+def test_real_nft_output_is_read_into_readings() -> None:
+    readings = parse_nftables_json(REAL_TABLE, read_at=1791820800)
+    assert set(readings) == {"192.0.2.2", "192.0.2.3"}
+    first = readings["192.0.2.2"]
+    assert (first.bytes_up_total, first.bytes_down_total) == (102800, 102800)
+    assert first.read_at == 1791820800
+    # Counted going up only: the download side is zero, not missing.
+    second = readings["192.0.2.3"]
+    assert (second.bytes_up_total, second.bytes_down_total) == (700, 0)
+
+
+def test_sets_with_no_traffic_yet_are_valid_and_empty() -> None:
+    assert parse_nftables_json(_table(up=None, down=None)) == {}
+    assert parse_nftables_json(_table(up={}, down={})) == {}
+
+
+def test_the_big_numbers_survive() -> None:
+    readings = parse_nftables_json(
+        _table(up={"10.45.0.2": 52428800}, down={"10.45.0.2": 2684354560})
+    )
+    assert readings["10.45.0.2"].bytes_down_total == 2684354560
+
+
+def test_many_addresses() -> None:
+    ups = {f"10.45.0.{n}": n * 1000 for n in range(1, 4)}
+    downs = {f"10.45.0.{n}": n * 4000 for n in range(1, 4)}
+    readings = parse_nftables_json(_table(up=ups, down=downs))
+    assert {ip: (r.bytes_up_total, r.bytes_down_total) for ip, r in readings.items()} == {
+        "10.45.0.1": (1000, 4000),
+        "10.45.0.2": (2000, 8000),
+        "10.45.0.3": (3000, 12000),
     }
-    readings = parse_nftables_json(snapshot, read_at=1791820800)
-    assert len(readings) == 1
-    assert "10.45.0.2" in readings
-    r = readings["10.45.0.2"]
-    assert r.ue_ip == "10.45.0.2"
-    assert r.bytes_up_total == 52428800
-    assert r.bytes_down_total == 2684354560
-    assert r.read_at == 1791820800
-
-
-def test_nftables_many_short_flows() -> None:
-    # Multiple UEs with element lists
-    snapshot = {
-        "nftables": [
-            {
-                "element": {
-                    "family": "inet",
-                    "table": "ratel_meter",
-                    "name": "ue_up",
-                    "elem": [
-                        {"val": "10.45.0.1", "counter": {"packets": 10, "bytes": 1000}},
-                        {"val": "10.45.0.2", "counter": {"packets": 20, "bytes": 2000}},
-                        {"val": "10.45.0.3", "counter": {"packets": 30, "bytes": 3000}},
-                    ],
-                }
-            },
-            {
-                "element": {
-                    "family": "inet",
-                    "table": "ratel_meter",
-                    "name": "ue_down",
-                    "elem": [
-                        {"val": "10.45.0.1", "counter": {"packets": 40, "bytes": 4000}},
-                        {"val": "10.45.0.2", "counter": {"packets": 50, "bytes": 5000}},
-                        {"val": "10.45.0.3", "counter": {"packets": 60, "bytes": 6000}},
-                    ],
-                }
-            },
-        ]
-    }
-    readings = parse_nftables_json(snapshot)
-    assert len(readings) == 3
-    assert readings["10.45.0.1"].bytes_up_total == 1000
-    assert readings["10.45.0.1"].bytes_down_total == 4000
-    assert readings["10.45.0.2"].bytes_up_total == 2000
-    assert readings["10.45.0.2"].bytes_down_total == 5000
-    assert readings["10.45.0.3"].bytes_up_total == 3000
-    assert readings["10.45.0.3"].bytes_down_total == 6000
 
 
 def test_conntrack_many_short_flows() -> None:
@@ -133,40 +100,81 @@ def test_malformed_snapshots_raise_error_and_never_return_zero() -> None:
     with pytest.raises(MalformedSnapshotError):
         parse_nftables_json("this is not json")
 
-    # Negative bytes
-    bad_bytes = {"entries": [{"ue_ip": "10.45.0.5", "bytes_up": -100, "bytes_down": 200}]}
-    with pytest.raises(MalformedSnapshotError, match="non-negative"):
-        parse_nftables_json(bad_bytes)
-
-    # Invalid IP address
-    bad_ip = {"entries": [{"ue_ip": "999.999.999.999", "bytes_up": 100, "bytes_down": 200}]}
-    with pytest.raises(MalformedSnapshotError, match="Invalid IP address"):
-        parse_nftables_json(bad_ip)
-
     # Malformed conntrack line
     bad_conntrack = "ipv4 src=10.45.0.5 bytes=broken"
     with pytest.raises(MalformedSnapshotError, match="Malformed conntrack line"):
         parse_conntrack_dump(bad_conntrack)
 
 
+def _without(doc: dict, name: str) -> dict:
+    return {"nftables": [i for i in doc["nftables"] if i.get("set", {}).get("name") != name]}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {},  # an empty object is not "no usage": it is not nftables output
+        {"nftables": []},  # no sets at all: the counting table is not loaded
+        {"nftables": "x"},
+        {"unrelated": 1},
+        [],
+        "[]",
+        "",
+        "null",
+        _without(_table(up={}, down={}), "down"),
+        _without(_table(up={}, down={}), "up"),
+        {"nftables": [5]},
+        {"nftables": [{"set": 5}]},
+    ],
+    ids=lambda v: repr(v)[:40],
+)
+def test_anything_that_is_not_the_counting_table_is_an_error_never_empty(bad: object) -> None:
+    with pytest.raises(MalformedSnapshotError):
+        parse_nftables_json(bad)  # type: ignore[arg-type]
+
+
+def test_bad_elements_are_errors() -> None:
+    good = _table(up={"10.45.0.2": 1}, down={})
+    for mutate in (
+        lambda s: s["elem"][0]["elem"].pop("counter"),
+        lambda s: s["elem"][0]["elem"].update(counter={"packets": 1, "bytes": -1}),
+        lambda s: s["elem"][0]["elem"].update(counter={"packets": 1, "bytes": "9"}),
+        lambda s: s["elem"][0]["elem"].update(counter={"packets": 1, "bytes": True}),
+        lambda s: s["elem"][0]["elem"].update(val="999.1.1.1"),
+        lambda s: s["elem"][0]["elem"].update(val="2001:db8::1"),  # the table is ipv4_addr
+        lambda s: s["elem"][0]["elem"].pop("val"),
+        lambda s: s["elem"].append(dict(s["elem"][0])),  # the same address twice
+        lambda s: s.update(elem="oops"),
+        lambda s: s.update(elem=[{"val": "10.45.0.2"}]),  # not wrapped in {"elem": ...}
+    ):
+        doc = json.loads(json.dumps(good))
+        mutate(doc["nftables"][1]["set"])
+        with pytest.raises(MalformedSnapshotError):
+            parse_nftables_json(doc)
+
+
+def test_the_same_set_twice_is_an_error() -> None:
+    doc = _table(up={}, down={})
+    doc["nftables"].append(doc["nftables"][1])
+    with pytest.raises(MalformedSnapshotError, match="more than once"):
+        parse_nftables_json(doc)
+
+
 def test_snapshot_file_reader(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    snapshot_file = tmp_path / "nftables_snapshot.json"
-    snapshot_file.write_text(
-        """{
-        "entries": [
-            {"ue_ip": "10.45.0.10", "bytes_up": 4096, "bytes_down": 8192}
-        ]
-    }"""
-    )
+    snapshot_file = tmp_path / "recorded.json"
+    snapshot_file.write_text(REAL_TABLE)
 
     caplog.set_level(logging.DEBUG)
-    reader = SnapshotCounterReader(snapshot_file)
-    readings = reader.read()
+    readings = SnapshotCounterReader(snapshot_file).read()
 
-    assert len(readings) == 1
-    assert readings["10.45.0.10"].bytes_up_total == 4096
-    assert readings["10.45.0.10"].bytes_down_total == 8192
+    assert readings["192.0.2.2"].bytes_up_total == 102800
+    assert readings["192.0.2.2"].bytes_down_total == 102800
 
     # Verify no IP address appears in log messages
     for record in caplog.records:
-        assert "10.45.0.10" not in record.getMessage()
+        assert "192.0.2.2" not in record.getMessage()
+
+
+def test_a_missing_snapshot_file_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(MalformedSnapshotError, match="does not exist"):
+        SnapshotCounterReader(tmp_path / "nope.json").read()

@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy/core-up"
 ENV_EXAMPLE = DEPLOY / "ratel-meter.env.example"
 UNIT = DEPLOY / "ratel-meter.service"
+NFT_UNIT = DEPLOY / "ratel-meter-nft.service"
+NFT_TABLE = DEPLOY / "ratel-meter.nft"
 
 
 def _files() -> list[Path]:
@@ -41,12 +43,59 @@ def test_the_unit_keeps_its_hardening() -> None:
         "ProtectSystem=strict",
         "ProtectHome=yes",
         "PrivateTmp=yes",
-        "CapabilityBoundingSet=",
-        "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX",
+        "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK",
         "ReadOnlyPaths=/opt/ratel-meter /etc/ratel-meter",
         "ReadWritePaths=/var/spool/ratel-meter",
     ):
         assert setting in unit, setting
+
+
+def test_the_agent_has_exactly_one_capability_and_never_runs_as_root() -> None:
+    unit = UNIT.read_text()
+    # nft talks to the kernel over netlink and needs CAP_NET_ADMIN, nothing more.
+    assert re.search(r"^CapabilityBoundingSet=CAP_NET_ADMIN$", unit, re.MULTILINE)
+    assert re.search(r"^AmbientCapabilities=CAP_NET_ADMIN$", unit, re.MULTILINE)
+    assert re.search(r"^User=ratelmeter$", unit, re.MULTILINE)
+    assert "NoNewPrivileges=yes" in unit
+    assert "CAP_SYS_ADMIN" not in unit and "CAP_NET_RAW" not in unit
+
+
+def test_the_agent_needs_the_counting_table_loaded_first() -> None:
+    unit = UNIT.read_text()
+    assert "Requires=ratel-meter-nft.service" in unit
+    assert re.search(r"^After=.*ratel-meter-nft\.service", unit, re.MULTILINE)
+
+
+def test_the_table_loader_runs_only_nft_on_the_one_table_with_one_capability() -> None:
+    loader = NFT_UNIT.read_text()
+    assert "ExecStart=/usr/sbin/nft -f /etc/ratel-meter/ratel-meter.nft" in loader
+    assert "ExecStop=/usr/sbin/nft delete table inet ratel_meter" in loader
+    assert "CapabilityBoundingSet=CAP_NET_ADMIN" in loader
+    assert "Type=oneshot" in loader and "RemainAfterExit=yes" in loader
+
+
+def test_the_counting_table_only_counts_and_matches_what_the_agent_reads() -> None:
+    rules = NFT_TABLE.read_text()
+    code = [line for line in rules.splitlines() if not line.lstrip().startswith("#")]
+    text = "\n".join(code)
+    settings = Settings.model_fields
+    assert f"table inet {settings['nft_table'].default}" in text
+    assert f"set {settings['nft_up_set'].default} " in text
+    assert f"set {settings['nft_down_set'].default} " in text
+    assert "policy accept" in text  # counting must never drop traffic
+    for verb in ("drop", "reject", "queue", "dnat", "snat", "masquerade", "redirect", "mark set"):
+        assert verb not in text, verb
+    assert 'iifname "ogstun" update @up   { ip saddr counter }' in text
+    assert 'oifname "ogstun" update @down { ip daddr counter }' in text
+    # Re-loading replaces the table instead of stacking a second copy of the rules.
+    assert text.index("delete table inet ratel_meter") < text.index("table inet ratel_meter {")
+
+
+def test_the_env_template_defaults_match_the_code_defaults() -> None:
+    text = ENV_EXAMPLE.read_text()
+    for name in ("nft_path", "nft_family", "nft_table", "nft_up_set", "nft_down_set"):
+        match = re.search(rf"^METER_AGENT_{name.upper()}=(.*)$", text, re.MULTILINE)
+        assert match and match.group(1) == str(Settings.model_fields[name].default), name
 
 
 def test_restart_limits_are_in_the_unit_section() -> None:

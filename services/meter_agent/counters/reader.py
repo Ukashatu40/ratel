@@ -1,7 +1,7 @@
-"""Counter reader implementations and snapshot parsers for core-up.
+"""Snapshot parsers and the file-backed reader for core-up counters.
 
-Reads cumulative byte counters from nftables or conntrack snapshots,
-keyed by UE IP address.
+Reads cumulative byte counters from nftables JSON or conntrack text, keyed by UE IP address. The
+live reader (it runs `nft`) is in nftables.py.
 """
 
 from __future__ import annotations
@@ -36,123 +36,112 @@ def _validate_ip(ip_str: str) -> str:
         raise MalformedSnapshotError(f"Invalid IP address format: {exc}") from exc
 
 
-def parse_nftables_json(
-    raw: dict[str, Any] | str, read_at: int | None = None
-) -> dict[str, Reading]:
-    """Parse nftables JSON output containing set/map elements or counter rules.
+UP_SET = "up"
+DOWN_SET = "down"
 
-    Expected formats:
-    1. Standard `nft -j list ...` with element entries in 'ue_up' and 'ue_down' sets/maps.
-    2. Direct structured snapshot dict with 'entries' list.
+
+def _counter_bytes(inner: dict[str, Any]) -> int:
+    counter = inner.get("counter")
+    if not isinstance(counter, dict):
+        # A set element with no counter means the counting rules are not the ones we expect.
+        raise MalformedSnapshotError("A set element has no counter: is the counting table right?")
+    value = counter.get("bytes")
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise MalformedSnapshotError("Counter bytes must be a non-negative integer")
+    return value
+
+
+def _set_totals(nft_set: dict[str, Any], name: str) -> dict[str, int]:
+    """The cumulative bytes per address in one set, read from its `elem` list."""
+    elements = nft_set.get("elem", [])  # a set nothing has been counted in has no `elem` key
+    if not isinstance(elements, list):
+        raise MalformedSnapshotError(f"Set '{name}': 'elem' must be a list")
+    totals: dict[str, int] = {}
+    for entry in elements:
+        inner = entry.get("elem") if isinstance(entry, dict) else None
+        if not isinstance(inner, dict):
+            raise MalformedSnapshotError(f"Set '{name}': an element is not {{'elem': {{...}}}}")
+        address = inner.get("val")
+        if not isinstance(address, str):
+            raise MalformedSnapshotError(f"Set '{name}': an element has no address")
+        try:
+            ipaddress.IPv4Address(address)
+        except ValueError as exc:
+            raise MalformedSnapshotError(f"Set '{name}': invalid IPv4 address") from exc
+        if address in totals:
+            raise MalformedSnapshotError(f"Set '{name}': the same address appears twice")
+        totals[address] = _counter_bytes(inner)
+    return totals
+
+
+def parse_nftables_json(
+    raw: dict[str, Any] | str,
+    read_at: int | None = None,
+    *,
+    up_set: str = UP_SET,
+    down_set: str = DOWN_SET,
+) -> dict[str, Reading]:
+    """Read the per-address byte counters out of `nft -j list set|table ...` output.
+
+    The shape (nftables 1.0.2, captured on core-up on 2026-10-20) is:
+
+        {"nftables": [{"metainfo": {...}},
+                      {"set": {"name": "up", "type": "ipv4_addr", ...,
+                               "elem": [{"elem": {"val": "192.0.2.2",
+                                           "counter": {"packets": 100, "bytes": 102800}}}]}}]}
+
+    A set nothing was counted in yet has no `elem` key and is valid. Anything else that is wrong
+    raises `MalformedSnapshotError`: a document that is not nftables JSON, a missing `up` or `down`
+    set (the counting table is not loaded), an element without a counter, a bad address or byte
+    count. Nothing here ever turns a problem into an empty result.
     """
     now = read_at if read_at is not None else utc_epoch_now()
 
     if isinstance(raw, str):
         try:
             data = json.loads(raw)
-        except Exception as exc:
-            raise MalformedSnapshotError(f"Malformed JSON in snapshot: {exc}") from exc
+        except ValueError as exc:
+            raise MalformedSnapshotError("Snapshot is not valid JSON") from exc
     elif isinstance(raw, dict):
         data = raw
     else:
         raise MalformedSnapshotError(f"Expected dict or JSON string, got {type(raw).__name__}")
 
-    if not isinstance(data, dict):
-        raise MalformedSnapshotError("Snapshot root must be a JSON object")
+    if not isinstance(data, dict) or not isinstance(data.get("nftables"), list):
+        raise MalformedSnapshotError("Snapshot is not nftables JSON: no 'nftables' list")
 
-    up_map: dict[str, int] = {}
-    down_map: dict[str, int] = {}
+    totals: dict[str, dict[str, int]] = {}
+    for item in data["nftables"]:
+        if not isinstance(item, dict):
+            raise MalformedSnapshotError("An nftables item is not an object")
+        nft_set = item.get("set")
+        if nft_set is None:
+            continue  # metainfo, table, chain, rule: not counters
+        if not isinstance(nft_set, dict):
+            raise MalformedSnapshotError("A 'set' item is not an object")
+        name = nft_set.get("name")
+        if name not in (up_set, down_set):
+            continue
+        if name in totals:
+            raise MalformedSnapshotError(f"Set '{name}' appears more than once")
+        totals[name] = _set_totals(nft_set, name)
 
-    # Handle direct structured snapshot: {"timestamp": ..., "entries": [...]}
-    if "entries" in data:
-        entries = data.get("entries")
-        if not isinstance(entries, list):
-            raise MalformedSnapshotError("'entries' field must be a list")
-        for idx, entry in enumerate(entries):
-            if not isinstance(entry, dict):
-                raise MalformedSnapshotError(f"Entry {idx} must be a dict")
-            ip = entry.get("ue_ip")
-            if not isinstance(ip, str):
-                raise MalformedSnapshotError(f"Entry {idx} missing 'ue_ip'")
-            _validate_ip(ip)
+    missing = [n for n in (up_set, down_set) if n not in totals]
+    if missing:
+        raise MalformedSnapshotError(
+            f"Snapshot has no set named {', '.join(missing)}: is the counting table loaded?"
+        )
 
-            bytes_up = entry.get("bytes_up")
-            bytes_down = entry.get("bytes_down")
-            if (
-                not isinstance(bytes_up, int)
-                or isinstance(bytes_up, bool)
-                or not isinstance(bytes_down, int)
-                or isinstance(bytes_down, bool)
-            ):
-                raise MalformedSnapshotError(f"Entry {idx} bytes must be integer")
-            if bytes_up < 0 or bytes_down < 0:
-                raise MalformedSnapshotError(f"Entry {idx} bytes must be non-negative")
-
-            up_map[ip] = bytes_up
-            down_map[ip] = bytes_down
-
-    # Handle nftables JSON: {"nftables": [...]}
-    elif "nftables" in data:
-        items = data.get("nftables")
-        if not isinstance(items, list):
-            raise MalformedSnapshotError("'nftables' field must be a list")
-
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            elem = item.get("element")
-            if not elem or not isinstance(elem, dict):
-                continue
-
-            set_name = elem.get("name")
-            elem_obj = elem.get("elem")
-            if not elem_obj:
-                continue
-
-            elements = elem_obj if isinstance(elem_obj, list) else [elem_obj]
-            for e in elements:
-                if not isinstance(e, dict):
-                    continue
-                val = e.get("val")
-                if not isinstance(val, str):
-                    continue
-                _validate_ip(val)
-
-                counter = e.get("counter")
-                if not isinstance(counter, dict):
-                    continue
-                b = counter.get("bytes")
-                if not isinstance(b, int) or isinstance(b, bool) or b < 0:
-                    raise MalformedSnapshotError("Counter bytes must be a non-negative integer")
-
-                if set_name in ("ue_up", "upload", "up"):
-                    up_map[val] = b
-                elif set_name in ("ue_down", "download", "down"):
-                    down_map[val] = b
-                else:
-                    # Generic counter: check if field indicates direction
-                    direction = e.get("direction")
-                    if direction == "up":
-                        up_map[val] = b
-                    elif direction == "down":
-                        down_map[val] = b
-    else:
-        # If empty dict or unknown structure without entries/nftables
-        if not data:
-            return {}
-        raise MalformedSnapshotError("Snapshot missing recognized counter format")
-
-    all_ips = set(up_map.keys()) | set(down_map.keys())
-    result = {
+    up_map, down_map = totals[up_set], totals[down_set]
+    return {
         ip: Reading(
             ue_ip=ip,
             bytes_up_total=up_map.get(ip, 0),
             bytes_down_total=down_map.get(ip, 0),
             read_at=now,
         )
-        for ip in all_ips
+        for ip in sorted(set(up_map) | set(down_map))
     }
-    return result
 
 
 def parse_conntrack_dump(

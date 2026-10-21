@@ -23,3 +23,5 @@ meter_api/
 - Usage records are personal data.
 - Operational logs strictly omit sensitive identifiers (`imsi`, phone numbers).
 - Authenticated via Bearer token (`meter_api_key`).
+  There is no built-in key. If `METER_API_KEY` is unset, empty or `CHANGE_ME`, every request gets 401, and
+  outside `local` and `test` the app refuses to start.

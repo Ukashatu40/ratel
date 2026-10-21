@@ -1,0 +1,27 @@
+# Per-address byte counters for the RatelMeter agent. Install as /etc/ratel-meter/ratel-meter.nft;
+# ratel-meter-nft.service loads it at boot (deploy/core-up/README.md).
+#
+# It only counts. Every rule ends in "update @set { ... counter }", and the chain's policy is
+# accept, so no packet is ever dropped, changed or delayed. It looks at the internet APN's
+# interface (ogstun) and nothing else: voice uses the ims APN on another interface and is not rated.
+#
+# Upload is counted by source address (a phone sending), download by destination address (a phone
+# receiving). In the forward hook both are the phone's own address, because replies are un-NATed
+# before routing. Check the syntax without applying it:   sudo nft -c -f /etc/ratel-meter/ratel-meter.nft
+#
+# This is the ruleset proven on core-up on 2026-10-20 (nftables 1.0.2, kernel 5.15): the kernel
+# accepted it, and 100 test packets of 1028 bytes counted exactly 102800 bytes each way.
+# The first two lines make a reload replace the table instead of stacking a second copy of the rules.
+table inet ratel_meter
+delete table inet ratel_meter
+
+table inet ratel_meter {
+    set up   { type ipv4_addr; flags dynamic; size 65536; }
+    set down { type ipv4_addr; flags dynamic; size 65536; }
+
+    chain count {
+        type filter hook forward priority -10; policy accept;
+        iifname "ogstun" update @up   { ip saddr counter }
+        oifname "ogstun" update @down { ip daddr counter }
+    }
+}

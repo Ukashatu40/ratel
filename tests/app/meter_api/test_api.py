@@ -13,7 +13,7 @@ from app.config import Settings
 from app.db import Base
 from app.main import create_app
 
-TEST_KEY = "test-only-not-a-real-key"
+TEST_KEY = "unit-test-key-0000000000000000"
 AUTH_HEADER = {"Authorization": f"Bearer {TEST_KEY}"}
 
 
@@ -157,3 +157,72 @@ def test_no_imsi_in_logs(client: TestClient, caplog: pytest.LogCaptureFixture) -
     for record in caplog.records:
         if record.name.startswith("ratel."):
             assert test_imsi not in record.message
+
+
+def _app_client(**settings: object) -> TestClient:
+    app = create_app(
+        Settings(ratel_env="test", database_url=SecretStr("sqlite:///:memory:"), **settings)  # type: ignore[arg-type]
+    )
+    Base.metadata.create_all(app.state.engine)
+    return TestClient(app)
+
+
+@pytest.mark.parametrize("token", ["test-only-not-a-real-key", "test", "", "CHANGE_ME", "anything"])
+def test_with_no_key_configured_nothing_gets_in(token: str) -> None:
+    # No built-in or "test" keys: an unconfigured API refuses every caller.
+    client = _app_client()
+    assert (
+        client.get(
+            "/v1/usage?from=1&to=2", headers={"Authorization": f"Bearer {token}"}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/v1/usage", json={"records": []}, headers={"Authorization": f"Bearer {token}"}
+        ).status_code
+        == 401
+    )
+
+
+@pytest.mark.parametrize("configured", ["", "   ", "CHANGE_ME"])
+def test_an_empty_or_placeholder_key_counts_as_not_configured(configured: str) -> None:
+    client = _app_client(meter_api_key=SecretStr(configured))
+    for token in (configured.strip() or "x", "CHANGE_ME"):
+        res = client.get("/v1/usage?from=1&to=2", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 401
+
+
+def test_only_the_configured_key_is_accepted() -> None:
+    client = _app_client(meter_api_key=SecretStr(TEST_KEY))
+    ok = client.get("/v1/usage?from=1&to=2", headers=AUTH_HEADER)
+    assert ok.status_code == 200
+    for wrong in ("test", "test-only-not-a-real-key", TEST_KEY + "x", TEST_KEY[:-1]):
+        bad = client.get("/v1/usage?from=1&to=2", headers={"Authorization": f"Bearer {wrong}"})
+        assert bad.status_code == 401
+
+
+def test_a_token_with_non_ascii_characters_is_a_401_not_a_crash() -> None:
+    client = _app_client(meter_api_key=SecretStr(TEST_KEY))
+    res = client.get(
+        "/v1/usage?from=1&to=2", headers={"Authorization": "Bearer caf\u00e9".encode("latin-1")}
+    )
+    assert res.status_code == 401
+
+
+@pytest.mark.parametrize("env", ["lab", "staging", "production"])
+def test_a_deployed_app_without_a_key_refuses_to_start(env: str) -> None:
+    with pytest.raises(RuntimeError, match="METER_API_KEY"):
+        create_app(Settings(ratel_env=env, database_url=SecretStr("sqlite:///:memory:")))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("env", ["lab", "staging", "production"])
+def test_a_deployed_app_with_a_key_starts(env: str) -> None:
+    app = create_app(
+        Settings(
+            ratel_env=env,  # type: ignore[arg-type]
+            database_url=SecretStr("sqlite:///:memory:"),
+            meter_api_key=SecretStr(TEST_KEY),
+        )
+    )
+    assert app is not None

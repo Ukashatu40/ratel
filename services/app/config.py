@@ -15,4 +15,14 @@ class Settings(BaseSettings):
     redis_url: SecretStr = SecretStr("redis://127.0.0.1:6379/0")
     ratel_link_base_url: str = "http://127.0.0.1:4010"
     ratel_link_api_key: SecretStr | None = None
-    meter_api_key: SecretStr = SecretStr("test-only-not-a-real-key")
+    # No default. Unset (or empty, or the CHANGE_ME placeholder) means the usage API refuses every
+    # request, and outside local and test the app refuses to start (see app/main.py).
+    meter_api_key: SecretStr | None = None
+
+    @property
+    def meter_api_key_value(self) -> str | None:
+        """The configured usage API key, or None when it is unset, empty or the placeholder."""
+        if self.meter_api_key is None:
+            return None
+        value = self.meter_api_key.get_secret_value().strip()
+        return None if value in ("", "CHANGE_ME") else value
