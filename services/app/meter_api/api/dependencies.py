@@ -41,19 +41,19 @@ def require_api_key(
         )
 
     settings = getattr(request.app.state, "settings", None)
-    expected_key = None
-    if settings is not None and hasattr(settings, "meter_api_key"):
-        expected_key = settings.meter_api_key.get_secret_value()
+    expected_key = getattr(settings, "meter_api_key_value", None)
+    if expected_key is None:
+        # No key is configured, so no caller can be right. Never fall back to a built-in key.
+        log.error("meter_api.key_not_configured")
+        raise ApiError(
+            401,
+            "unauthorized",
+            "Invalid or missing API key.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    if not expected_key:
-        expected_key = "test-only-not-a-real-key"
-
-    # In local/test mode, allow test keys or constant-time comparison
-    is_valid = hmac.compare_digest(token, expected_key) or (
-        settings is not None
-        and getattr(settings, "ratel_env", "local") in ("local", "test")
-        and token in ("test-only-not-a-real-key", "test")
-    )
+    # Constant-time comparison. The only accepted token is the configured key.
+    is_valid = hmac.compare_digest(token.encode(), expected_key.encode())
 
     if not is_valid:
         raise ApiError(

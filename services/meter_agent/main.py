@@ -16,7 +16,7 @@ from common.timeutil import utc_epoch_now
 from .agent import Agent, AgentConfig
 from .assignments import HttpAssignmentCache
 from .config import Settings
-from .counters import CounterReader, SnapshotCounterReader
+from .counters import CounterReader, NftablesCounterReader, SnapshotCounterReader
 from .ingest import HttpMeterPoster
 from .spool import Spool
 
@@ -24,18 +24,26 @@ log = logging.getLogger("ratel.meter.main")
 
 
 def create_counter_reader(settings: Settings) -> CounterReader:
+    """A recorded file if one is named (tests, replays); otherwise the live nftables counters.
+
+    There is no fallback to an empty reader: if the counters cannot be read, the tick fails and is
+    logged, and no usage is invented for that interval.
+    """
     if settings.snapshot_path is not None:
         return SnapshotCounterReader(settings.snapshot_path)
-    # Default snapshot location for core-up if not explicitly configured
-    default_path = Path("/var/run/ratel-meter/counters.json")
-    if default_path.exists():
-        return SnapshotCounterReader(default_path)
-    # Fallback to empty snapshot generator if file does not exist yet
-    return SnapshotCounterReader(lambda: {"nftables": []})
+    return NftablesCounterReader(
+        nft_path=settings.nft_path,
+        family=settings.nft_family,
+        table=settings.nft_table,
+        up_set=settings.nft_up_set,
+        down_set=settings.nft_down_set,
+        timeout_seconds=settings.nft_timeout_seconds,
+    )
 
 
 def create_agent(settings: Settings | None = None) -> Agent:
-    settings = settings or Settings()
+    # The two API keys come from the environment (METER_AGENT_*); there is no built-in default.
+    settings = settings or Settings()  # type: ignore[call-arg]
     reader = create_counter_reader(settings)
     cache = HttpAssignmentCache(
         base_url=settings.ratel_link_base_url,
@@ -112,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
-    settings = Settings()
+    settings = Settings()  # type: ignore[call-arg]  # the keys come from the environment
     if args.mode:
         settings.mode = args.mode
 

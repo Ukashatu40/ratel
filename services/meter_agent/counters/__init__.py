@@ -10,7 +10,8 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..domain.records import Reading
-from .errors import MalformedSnapshotError
+from .errors import CounterReadError, CounterUnavailableError, MalformedSnapshotError
+from .nftables import NftablesCounterReader
 from .reader import (
     SnapshotCounterReader,
     parse_conntrack_dump,
@@ -28,8 +29,11 @@ class CounterReader(Protocol):
 
 
 __all__ = [
+    "CounterReadError",
     "CounterReader",
+    "CounterUnavailableError",
     "MalformedSnapshotError",
+    "NftablesCounterReader",
     "SnapshotCounterReader",
     "parse_conntrack_dump",
     "parse_nftables_json",

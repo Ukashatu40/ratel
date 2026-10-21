@@ -14,6 +14,9 @@ from common.logging import configure_logging
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     configure_logging(settings.log_level)
+    if settings.ratel_env not in ("local", "test") and settings.meter_api_key_value is None:
+        # Fail closed: a deployed app must not come up with the usage API unprotected or unusable.
+        raise RuntimeError("METER_API_KEY is not set: refusing to start outside local and test")
     app = FastAPI(
         title="Ratel app", version="0.0.0", docs_url=None, redoc_url=None, openapi_url=None
     )

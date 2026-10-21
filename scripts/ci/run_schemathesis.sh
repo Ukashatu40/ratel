@@ -122,6 +122,8 @@ PY
 }
 
 prepare_ratelmeter() {
+  # The usage API has no built-in key: the server must be given the one Schemathesis will send.
+  export METER_API_KEY="$DEFAULT_KEY"
   if [ -n "${RATEL_TEST_POSTGRES_URI:-}" ]; then
     export DATABASE_URL="$RATEL_TEST_POSTGRES_URI"
   else
