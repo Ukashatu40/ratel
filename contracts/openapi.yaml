@@ -227,6 +227,32 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/usage:
+    post:
+      tags: [RatelMeter]
+      operationId: meter_ingest_usage
+      summary: Ingest a batch of data usage records.
+      description: |
+        Ingests a batch of 300-second data usage records delivered by the meter agent.
+        Records are keyed on `imsi` plus `period_start`. Replay of an identical interval
+        overwrites the existing record, never duplicates.
+        At most 5,000 records per batch. A batch containing any invalid record is rejected as a whole.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UsageBatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/OkEmpty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
     get:
       tags: [RatelMeter]
       operationId: meter_get_usage
@@ -577,6 +603,33 @@ components:
         bytes_down:
           type: integer
           minimum: 0
+      examples:
+        - imsi: "621000000000001"
+          period_start: 1791820800
+          period_end: 1791821100
+          bytes_up: 1048576
+          bytes_down: 5242880
+    UsageBatch:
+      type: object
+      required: [records]
+      additionalProperties: false
+      description: |
+        A batch of 300-second usage records from the meter agent.
+        Each record is keyed on imsi + period_start; sending the same interval again overwrites.
+      properties:
+        records:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            $ref: "#/components/schemas/UsageRecord"
+      examples:
+        - records:
+            - imsi: "621000000000001"
+              period_start: 1791820800
+              period_end: 1791821100
+              bytes_up: 1048576
+              bytes_down: 5242880
     UsageList:
       type: object
       required: [records, next_cursor]
