@@ -65,11 +65,13 @@ class Line(Base, TimestampMixin):
     __tablename__ = "line"
 
     line_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.customer_id"))
-    iccid: Mapped[str] = mapped_column(ForeignKey("sim.iccid"))
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customer.customer_id", ondelete="RESTRICT")
+    )
+    iccid: Mapped[str] = mapped_column(ForeignKey("sim.iccid", ondelete="RESTRICT"))
     imsi: Mapped[str] = mapped_column(String(15))
-    msisdn: Mapped[str] = mapped_column(ForeignKey("number.msisdn"))
-    plan_id: Mapped[int] = mapped_column(ForeignKey("plan.plan_id"))
+    msisdn: Mapped[str] = mapped_column(ForeignKey("number.msisdn", ondelete="RESTRICT"))
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plan.plan_id", ondelete="RESTRICT"))
     # a LineState value from domain.py
     state: Mapped[str] = mapped_column(String(30))
 
@@ -83,7 +85,7 @@ class LineAudit(Base, TimestampMixin):
     __tablename__ = "line_audit"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    line_id: Mapped[int] = mapped_column(ForeignKey("line.line_id"))
+    line_id: Mapped[int] = mapped_column(ForeignKey("line.line_id", ondelete="RESTRICT"))
     from_state: Mapped[str] = mapped_column(String(30))
     to_state: Mapped[str] = mapped_column(String(30))
     actor: Mapped[str] = mapped_column(String(120))
