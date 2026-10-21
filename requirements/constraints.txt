@@ -1,6 +1,6 @@
 # Exact versions verified by 'make check' on Python 3.12 (generated with pip freeze).
 # Regenerate deliberately when upgrading: see docs/DEVELOPMENT_GUIDE.md. Do not hand-edit.
-actionlint_py==1.7.7.23
+actionlint_py==1.7.12.25
 alembic==1.20.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
