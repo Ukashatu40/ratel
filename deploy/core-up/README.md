@@ -12,60 +12,95 @@ these steps in the PR that fixes the files.
 
 | File | Purpose |
 | ---- | ------- |
+| `install-release.sh` | Installs a release into its own folder with its own virtualenv and points `current` at it. Never restarts anything |
 | `ratel-meter.nft` | The counting table: one set per direction, an element counter per address. Counts only, never drops or changes a packet |
 | `ratel-meter-nft.service` | Loads that table at boot and removes it on stop (runs as root, does only that) |
 | `ratel-meter.service` | The agent. Runs as the unprivileged user `ratelmeter` with one capability, `CAP_NET_ADMIN`, so it can read the table |
 | `ratel-meter.env.example` | The agent's settings, with placeholders |
 
+## Layout on core-up
+
+```
+/opt/ratel-meter/releases/<release>/   code and its own virtualenv (owned by root, read-only)
+/opt/ratel-meter/current               a link to the active release (the unit runs from here)
+/etc/ratel-meter/ratel-meter.env       settings and the two API keys (mode 0600)
+/etc/ratel-meter/ratel-meter.nft       the counting table
+/var/spool/ratel-meter/                usage waiting to be sent (service user only, mode 0700)
+```
+
 ## Installation
 
-1. Create the system user and group:
+1. **Python 3.12 must exist on core-up** (`python3.12 --version`). Ubuntu 22.04 ships 3.10, so it is
+   built from the python.org source and installed with `make altinstall`, so the system Python is
+   not touched. TODO: write the exact steps as a runbook from the core-cp install.
+
+2. **Build the release on your machine, from a reviewed commit on `main`** (never from a working
+   tree), and copy it over with the script and the unit files:
    ```bash
-   sudo useradd -r -s /usr/sbin/nologin ratelmeter
+   git switch main && git pull
+   REL=ratel-meter-$(git rev-parse --short HEAD)
+   git archive --format=tar.gz --prefix=$REL/ -o /tmp/$REL.tar.gz HEAD \
+     services/meter_agent services/common requirements
+   shasum -a 256 /tmp/$REL.tar.gz
+   scp /tmp/$REL.tar.gz deploy/core-up/install-release.sh deploy/core-up/ratel-meter.nft \
+     deploy/core-up/ratel-meter-nft.service deploy/core-up/ratel-meter.service \
+     deploy/core-up/ratel-meter.env.example <core-up>:/tmp/
    ```
+   On core-up, compare `sha256sum /tmp/$REL.tar.gz` with the value printed above.
 
-2. Create the directories with restricted permissions:
+3. **Install the release** (creates the user `ratelmeter` and the folders, installs the
+   dependencies from `requirements/constraints.txt`, checks the service user can import it):
    ```bash
-   sudo mkdir -p /opt/ratel-meter/current /etc/ratel-meter /var/spool/ratel-meter
-   sudo chown -R ratelmeter:ratelmeter /opt/ratel-meter /var/spool/ratel-meter
-   sudo chown root:ratelmeter /etc/ratel-meter && sudo chmod 0750 /etc/ratel-meter
-   sudo chmod 0700 /var/spool/ratel-meter
+   cd /tmp && sudo ./install-release.sh $REL.tar.gz /usr/local/bin/python3.12
    ```
+   If it fails, the half-made release is removed and nothing else changes. Run it again after fixing.
 
-3. Deploy code and dependencies into `/opt/ratel-meter/current` with a Python 3.12 venv.
-
-4. Install the counting table and **check it before loading it** (a dry run, nothing is applied):
+4. **Install the counting table, and check it before loading** (a dry run, nothing is applied):
    ```bash
-   sudo cp deploy/core-up/ratel-meter.nft /etc/ratel-meter/ratel-meter.nft
+   sudo cp /tmp/ratel-meter.nft /etc/ratel-meter/ratel-meter.nft
    sudo nft -c -f /etc/ratel-meter/ratel-meter.nft && echo "syntax accepted"
    ```
 
-5. Install the settings:
+5. **Install the settings.** Put the two real keys in without displaying them in a ticket or chat:
    ```bash
-   sudo cp deploy/core-up/ratel-meter.env.example /etc/ratel-meter/ratel-meter.env
-   sudo chmod 0600 /etc/ratel-meter/ratel-meter.env
-   sudo chown ratelmeter:ratelmeter /etc/ratel-meter/ratel-meter.env
-   # Edit it: put the two real keys in. Never paste a key into a ticket or chat.
+   sudo install -m 0600 -o ratelmeter -g ratelmeter /tmp/ratel-meter.env.example /etc/ratel-meter/ratel-meter.env
+   sudo -e /etc/ratel-meter/ratel-meter.env
    ```
+   Until the real keys exist, any non-empty placeholder lets the agent start and read its own
+   counters, but it cannot reach RatelLink or the usage API.
 
-6. Install the units and check them with the host's own systemd:
+6. **Install the units and check them with the host's own systemd:**
    ```bash
-   sudo cp deploy/core-up/ratel-meter-nft.service deploy/core-up/ratel-meter.service /etc/systemd/system/
+   sudo cp /tmp/ratel-meter-nft.service /tmp/ratel-meter.service /etc/systemd/system/
    sudo systemctl daemon-reload
    systemd-analyze verify /etc/systemd/system/ratel-meter-nft.service /etc/systemd/system/ratel-meter.service
    ```
    `systemd-analyze verify` must print nothing about these two files.
 
-7. Load the counting table, then check it counts nothing wrong before starting the agent:
+7. **Load the counting table, then run the agent once by hand before starting the service:**
    ```bash
-   sudo systemctl enable --now ratel-meter-nft.service
+   sudo systemctl start ratel-meter-nft.service
    sudo nft list table inet ratel_meter          # the table and its two empty sets
+   sudo systemd-run --wait --pipe -p User=ratelmeter -p EnvironmentFile=/etc/ratel-meter/ratel-meter.env \
+     -p AmbientCapabilities=CAP_NET_ADMIN -p CapabilityBoundingSet=CAP_NET_ADMIN \
+     -p Environment=PYTHONPATH=/opt/ratel-meter/current/services \
+     /opt/ratel-meter/current/venv/bin/python -m meter_agent.main --once
+   echo "exit status: $?"
+   ```
+   Exit status 0 means it read the counters. An error line with `error_type` and status 1 says why not.
+
+8. **Start the agent, and enable both at boot only when you are happy:**
+   ```bash
+   sudo systemctl start ratel-meter.service
+   sudo systemctl enable ratel-meter-nft.service ratel-meter.service
    ```
 
-8. Start the agent:
-   ```bash
-   sudo systemctl enable --now ratel-meter.service
-   ```
+## Upgrade and rollback
+
+Upgrade: build a new release (step 2), run `install-release.sh` (step 3), then
+`sudo systemctl restart ratel-meter.service`. Rollback: point `/opt/ratel-meter/current` at the
+previous release in `/opt/ratel-meter/releases/` (`sudo ln -sfn <old release> /opt/ratel-meter/current`)
+and restart. Old releases are never deleted by the script.
 
 ## Verification
 
