@@ -64,9 +64,26 @@ def test_the_lines_migration_applies_rolls_back_one_step_and_applies_again(db: D
 def test_a_rollback_is_refused_while_customers_exist_and_nothing_is_lost(db: Database) -> None:
     _add_a_line(db)
     with pytest.raises(RuntimeError, match="refusing to drop"):
-        db.alembic("downgrade", "-1")
+        db.alembic("downgrade", "0001")
     assert LINE_TABLES <= _tables(db)
     assert db.scalar("SELECT count(*) FROM line") == 1
+
+
+def test_the_lines_migration_refuses_on_its_own_when_only_a_customer_exists(db: Database) -> None:
+    # No line and no bundle, so the newer migration (expiry fields, bundle) has nothing to refuse
+    # and the step that runs into the data is the lines migration itself. Without this test, its
+    # own guard would be hidden behind the newer one.
+    with db.engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO customer (name, phone, kyc_status) "
+                "VALUES ('Synthetic', '2340000000001', 'verified')"
+            )
+        )
+    with pytest.raises(RuntimeError, match="refusing to drop customer"):
+        db.alembic("downgrade", "0001")
+    assert LINE_TABLES <= _tables(db)
+    assert db.scalar("SELECT count(*) FROM customer") == 1
 
 
 @pytest.mark.parametrize(
