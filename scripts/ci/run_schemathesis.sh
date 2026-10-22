@@ -129,7 +129,10 @@ prepare_ratelmeter() {
   else
     meter_workdir="$(mktemp -d)"
     export DATABASE_URL="sqlite:///$meter_workdir/meter.db"
-    PYTHONPATH=services:. "$PY" - <<'PY'
+  fi
+  # Create the tables on either database. Without this a PostgreSQL run fuzzes an empty database
+  # and every request is a 500 ("relation usage_record does not exist").
+  PYTHONPATH=services:. "$PY" - <<'PY'
 import os
 from sqlalchemy import create_engine
 from app.db import Base
@@ -137,7 +140,6 @@ import app.models
 engine = create_engine(os.environ["DATABASE_URL"])
 Base.metadata.create_all(engine)
 PY
-  fi
 }
 
 for entry in "${SERVICES[@]}"; do

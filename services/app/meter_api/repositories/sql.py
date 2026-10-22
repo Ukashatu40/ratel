@@ -60,18 +60,22 @@ class SqlUsageRepository:
         if not records:
             return 0
 
-        values = [
-            {
+        # One row per (imsi, period_start), keyed as the database will see it (after clamping).
+        # The contract says a repeated interval overwrites, so the last one in the batch wins.
+        # PostgreSQL refuses an ON CONFLICT statement that would change one row twice.
+        by_key: dict[tuple[str, datetime], dict[str, object]] = {}
+        for r in records:
+            period_start = from_epoch(min(r.period_start, MAX_TIMESTAMP_EPOCH))
+            by_key[(r.imsi, period_start)] = {
                 "imsi": r.imsi,
-                "period_start": from_epoch(min(r.period_start, MAX_TIMESTAMP_EPOCH)),
+                "period_start": period_start,
                 "period_end": from_epoch(
                     min(max(r.period_start, r.period_end), MAX_TIMESTAMP_EPOCH)
                 ),
                 "bytes_up": min(r.bytes_up, MAX_INT64),
                 "bytes_down": min(r.bytes_down, MAX_INT64),
             }
-            for r in records
-        ]
+        values = list(by_key.values())
 
         dialect_name = (
             self._session.bind.dialect.name if self._session.bind is not None else "postgresql"
@@ -103,7 +107,7 @@ class SqlUsageRepository:
                 )
             )
 
-        return len(records)
+        return len(values)
 
     def query_usage(
         self,
