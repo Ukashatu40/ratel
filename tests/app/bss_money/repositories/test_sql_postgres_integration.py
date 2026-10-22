@@ -78,7 +78,6 @@ def test_every_kobo_column_is_bigint_in_the_real_database(db: Database) -> None:
     assert {(r[0], r[1]) for r in rows} == {
         ("wallet", "balance_kobo"),
         ("ledger_entry", "amount_kobo"),
-        ("bundle", "price_kobo"),
     }
     assert {r[2] for r in rows} == {"bigint"}
 
