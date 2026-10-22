@@ -40,6 +40,7 @@ class Sim(Base, TimestampMixin):
     # in_stock | in_use | retired
     state: Mapped[str] = mapped_column(String(20))
 
+
 class Number(Base, TimestampMixin):
     __tablename__ = "number"
 
