@@ -101,3 +101,23 @@ def test_no_address_is_logged(caplog: pytest.LogCaptureFixture) -> None:
     NftablesCounterReader(runner=FakeRun(REAL_TABLE)).read()
     assert caplog.records
     assert all("192.0.2" not in r.getMessage() for r in caplog.records)
+
+
+# --- Real `nft -j list table inet ratel_meter` output captured on core-up on 2026-10-22 ----------
+# (nftables 1.0.2, table loaded from deploy/core-up/ratel-meter.nft; no traffic yet; one element
+# was added by hand with a documentation address). These are the shapes the agent really meets.
+
+EMPTY_TABLE = (Path(__file__).parent / "fixtures/nft_table_empty_core_up.json").read_text()
+ONE_ELEMENT = (Path(__file__).parent / "fixtures/nft_table_one_element_core_up.json").read_text()
+
+
+def test_a_freshly_loaded_table_with_no_traffic_yet_is_valid_and_empty() -> None:
+    # Neither set has an "elem" key at all. That is healthy, not an error.
+    assert NftablesCounterReader(runner=FakeRun(EMPTY_TABLE)).read() == {}
+
+
+def test_an_element_nested_in_a_real_table_listing_is_read() -> None:
+    readings = NftablesCounterReader(runner=FakeRun(ONE_ELEMENT)).read()
+    assert set(readings) == {"192.0.2.99"}
+    only = readings["192.0.2.99"]
+    assert (only.bytes_up_total, only.bytes_down_total) == (0, 0)  # present in up, none in down
