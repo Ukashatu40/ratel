@@ -18,7 +18,8 @@ class UsageRepository(Protocol):
 
         Keyed on (imsi, period_start). If a record for the same key already exists,
         its period_end, bytes_up, bytes_down, and updated_at are updated.
-        Returns the number of records upserted.
+        If the batch holds the same key twice, the later record wins.
+        Returns the number of rows written (one per distinct key).
         """
         ...
 

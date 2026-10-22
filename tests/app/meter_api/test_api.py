@@ -226,3 +226,20 @@ def test_a_deployed_app_with_a_key_starts(env: str) -> None:
         )
     )
     assert app is not None
+
+
+def test_the_same_interval_twice_in_one_batch_is_accepted_and_the_last_one_kept(
+    client: TestClient,
+) -> None:
+    rec = {
+        "imsi": "621000000000001",
+        "period_start": 1791820800,
+        "period_end": 1791821100,
+        "bytes_up": 1,
+        "bytes_down": 2,
+    }
+    batch = {"records": [rec, {**rec, "bytes_up": 7, "bytes_down": 8}]}
+    res = client.post("/v1/usage", json=batch, headers={**AUTH_HEADER, "Idempotency-Key": "dup-1"})
+    assert res.status_code == 200
+    got = client.get("/v1/usage?from=1791820800&to=1791821100", headers=AUTH_HEADER).json()
+    assert [(r["bytes_up"], r["bytes_down"]) for r in got["records"]] == [(7, 8)]

@@ -50,6 +50,48 @@ def test_the_same_interval_posted_twice_leaves_one_row_with_the_latest_bytes(db:
     assert db.scalar("SELECT bytes_down FROM usage_record") == 3000
 
 
+def test_the_same_interval_twice_in_one_batch_is_one_row_and_the_last_one_wins(
+    db: Database,
+) -> None:
+    # PostgreSQL refuses an ON CONFLICT statement that touches one row twice; the contract says a
+    # repeated interval overwrites, so the later record in the batch is the one that is kept.
+    _post(db, [_record(up=1, down=2), _record(up=7, down=8)])
+    assert _count(db) == 1
+    assert db.scalar("SELECT bytes_up FROM usage_record") == 7
+    assert db.scalar("SELECT bytes_down FROM usage_record") == 8
+
+
+def test_duplicates_mixed_with_other_intervals_and_lines(db: Database) -> None:
+    other = "621000000000002"
+    _post(
+        db,
+        [
+            _record(up=1),
+            _record(other, up=5),
+            _record(start=T0 + 300, up=3),
+            _record(up=2),  # the same interval again: this one is kept
+            _record(other, up=6),
+            _record(up=9),
+        ],
+    )
+    assert _count(db) == 3
+    rows = (
+        db.engine.connect()
+        .execute(text("SELECT imsi, bytes_up FROM usage_record ORDER BY imsi, period_start"))
+        .all()
+    )
+    assert [tuple(r) for r in rows] == [(IMSI, 9), (IMSI, 3), (other, 6)]
+
+
+def test_two_intervals_that_both_clamp_to_the_largest_time_are_one_row(db: Database) -> None:
+    # The store clamps absurd times to year 9999, so two different absurd times become one key.
+    # Duplicates must be found by the key the database will really see, not the key sent.
+    far = 253402300799
+    _post(db, [_record(start=far + 10_000, up=1), _record(start=far + 20_000, up=2)])
+    assert _count(db) == 1
+    assert db.scalar("SELECT bytes_up FROM usage_record") == 2
+
+
 def test_a_replayed_batch_does_not_change_the_row_count(db: Database) -> None:
     batch = [_record(start=T0 + 300 * i, up=i + 1, down=i + 2) for i in range(50)]
     _post(db, batch)
@@ -159,3 +201,82 @@ def test_the_usage_migration_rolls_back_and_applies_again(db: Database) -> None:
     assert "wallet" in tables()  # the money tables stay
     db.alembic("upgrade", "head")
     assert USAGE_TABLE in tables()
+
+
+def test_posting_the_same_interval_twice_in_one_batch_over_http_is_a_200_not_a_500(
+    db: Database,
+) -> None:
+    # The path a real agent takes: HTTP, authentication, validation, then the PostgreSQL upsert.
+    from fastapi.testclient import TestClient
+    from pydantic import SecretStr
+
+    from app.config import Settings
+    from app.main import create_app
+
+    key = "pg-test-key-000000000000000000"
+    url = db.engine.url.render_as_string(hide_password=False)
+    app = create_app(
+        Settings(ratel_env="test", database_url=SecretStr(url), meter_api_key=SecretStr(key))
+    )
+    rec = {
+        "imsi": IMSI,
+        "period_start": T0,
+        "period_end": T0 + 300,
+        "bytes_up": 1,
+        "bytes_down": 2,
+    }
+    batch = {"records": [rec, {**rec, "bytes_up": 7, "bytes_down": 8}]}
+    with TestClient(app) as client:
+        res = client.post(
+            "/v1/usage",
+            json=batch,
+            headers={"Authorization": f"Bearer {key}", "Idempotency-Key": "dup-pg"},
+        )
+    assert res.status_code == 200
+    assert _count(db) == 1
+    assert db.scalar("SELECT bytes_up FROM usage_record") == 7
+
+
+def test_a_row_at_the_largest_time_is_readable_whatever_timezone_the_server_defaults_to(
+    db: Database,
+) -> None:
+    # The store clamps absurd times to 9999-12-31 23:59:59 UTC. If the connection used the server's
+    # own timezone (here UTC+14), PostgreSQL would render that as year 10000 and the driver fails.
+    # The app pins every connection to UTC, so a server default must not matter.
+    from fastapi.testclient import TestClient
+    from pydantic import SecretStr
+
+    from app.config import Settings
+    from app.db import make_engine
+    from app.main import create_app
+
+    db_name = db.engine.url.database
+    with db.engine.begin() as conn:
+        conn.execute(text(f"ALTER DATABASE \"{db_name}\" SET timezone TO 'Etc/GMT-14'"))
+    url = db.engine.url.render_as_string(hide_password=False)
+
+    with make_engine(url).connect() as conn:
+        assert conn.execute(text("SHOW timezone")).scalar() == "UTC"
+
+    key = "tz-test-key-0000000000000000000"
+    app = create_app(
+        Settings(ratel_env="test", database_url=SecretStr(url), meter_api_key=SecretStr(key))
+    )
+    far = 253402300799
+    batch = {
+        "records": [
+            {
+                "imsi": IMSI,
+                "period_start": far + 5,
+                "period_end": far + 5,
+                "bytes_up": 1,
+                "bytes_down": 2,
+            }
+        ]
+    }
+    headers = {"Authorization": f"Bearer {key}", "Idempotency-Key": "tz-1"}
+    with TestClient(app) as client:
+        assert client.post("/v1/usage", json=batch, headers=headers).status_code == 200
+        res = client.get("/v1/usage?from=0&to=253402300799", headers=headers)
+    assert res.status_code == 200
+    assert [r["bytes_up"] for r in res.json()["records"]] == [1]
