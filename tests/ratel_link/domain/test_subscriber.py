@@ -162,7 +162,8 @@ def test_the_internet_session_carries_the_fixed_address_and_the_plan_speeds() ->
         "downlink": {"value": 10, "unit": 2},
         "uplink": {"value": 5, "unit": 2},
     }
-    assert (internet["type"], internet["qos"]["index"]) == (3, 9)
+    # Type 1 = IPv4 only. The meter counts IPv4 addresses, so an IPv4v6 session (3) would leak.
+    assert (internet["type"], internet["qos"]["index"]) == (1, 9)
     assert internet["pcc_rule"] == []
 
 

@@ -11,10 +11,10 @@ tests parse. **Not yet done on the host:** installing the agent, and counting re
 namespace test on 2026-10-20 (100 packets of 1028 bytes counted as 102800 bytes each way). The first
 full install is the first real test of the rest: write down any difference from these steps.
 
-**IPv6 is not counted.** The table matches IPv4 addresses only. It is safe today only because the
-kernel does not forward IPv6 (`sysctl net.ipv6.conf.all.forwarding` is 0 on core-up), although the
-internet session is IPv4v6 and the UPF has an IPv6 pool. If IPv6 forwarding is ever turned on, IPv6
-traffic would pass unmetered. Keep it off, or count IPv6 first (see the runbook).
+**IPv6 is not counted.** The table matches IPv4 addresses only, so the internet session must stay IPv4
+only. The core was changed to IPv4 only on 2026-10-22 (SMF, UPF, `ogstun`, both lab subscribers) and RatelLink
+writes session type 1. Kernel IPv6 forwarding is off too. If IPv6 is ever turned back on, its traffic would pass
+unmetered until it is counted. A check on a real phone is still pending.
 
 ## What is here
 
