@@ -5,6 +5,6 @@ this package registers every table with `app.db.Base`, which is how `app/models.
 them. No ki or opc here: those live only in RatelLink.
 """
 
-from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
+from app.bss_lines.models.lines import Bundle, Customer, Line, LineAudit, Number, Plan, Sim
 
-__all__ = ["Customer", "Line", "LineAudit", "Number", "Plan", "Sim"]
+__all__ = ["Bundle", "Customer", "Line", "LineAudit", "Number", "Plan", "Sim"]

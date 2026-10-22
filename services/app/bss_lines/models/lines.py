@@ -12,7 +12,9 @@ which is what we want for a surrogate key.
 
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Integer, String
+from datetime import datetime
+
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base, TimestampMixin
@@ -32,7 +34,6 @@ class Customer(Base, TimestampMixin):
 
 class Sim(Base, TimestampMixin):
     __tablename__ = "sim"
-
     iccid: Mapped[str] = mapped_column(String(20), primary_key=True)
     imsi: Mapped[str] = mapped_column(String(15), unique=True)
     batch: Mapped[str] = mapped_column(String(40))
@@ -63,6 +64,11 @@ class Plan(Base, TimestampMixin):
 
 class Line(Base, TimestampMixin):
     __tablename__ = "line"
+    __table_args__ = (
+        Index("ix_line_msisdn", "msisdn"),
+        Index("ix_line_iccid", "iccid"),
+        Index("ix_line_imsi", "imsi"),
+    )
 
     line_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     customer_id: Mapped[int] = mapped_column(
@@ -78,6 +84,9 @@ class Line(Base, TimestampMixin):
     customer: Mapped[Customer] = relationship(back_populates="lines")
     plan: Mapped[Plan] = relationship()
 
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    state_before_suspension: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
 
 class LineAudit(Base, TimestampMixin):
     """Every state change goes here: who did it, why, from and to."""
@@ -90,3 +99,14 @@ class LineAudit(Base, TimestampMixin):
     to_state: Mapped[str] = mapped_column(String(30))
     actor: Mapped[str] = mapped_column(String(120))
     reason: Mapped[str] = mapped_column(String(200))
+
+
+class Bundle(Base, TimestampMixin):
+    __tablename__ = "bundle"
+
+    bundle_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    price_kobo: Mapped[int] = mapped_column(BigInteger)
+    validity_days: Mapped[int] = mapped_column(Integer)
+    data_bytes: Mapped[int] = mapped_column(BigInteger)
+    channels: Mapped[str] = mapped_column(String(40))
