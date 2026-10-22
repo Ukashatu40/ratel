@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from datetime import datetime
 
 from sqlalchemy import DateTime, MetaData, create_engine, func
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 NAMING_CONVENTION = {
@@ -36,6 +36,14 @@ class TimestampMixin:
 
 
 def make_engine(url: str) -> Engine:
+    """An engine whose PostgreSQL connections are always in UTC.
+
+    Time is UTC everywhere (docs/ENGINEERING_RULES.md). Without this a connection takes the
+    server's own default timezone, and a timestamp near the end of year 9999 then reads back as
+    year 10000, which the driver cannot represent.
+    """
+    if make_url(url).get_backend_name() == "postgresql":
+        return create_engine(url, pool_pre_ping=True, connect_args={"options": "-c timezone=UTC"})
     return create_engine(url, pool_pre_ping=True)
 
 
