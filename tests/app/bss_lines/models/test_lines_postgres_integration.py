@@ -46,10 +46,17 @@ def _add_a_line(database: Database) -> None:
 
 
 def test_the_lines_migration_applies_rolls_back_one_step_and_applies_again(db: Database) -> None:
+    """Roll back to the migration *before* the lines migration and confirm the tables are gone.
+
+    The lines migration is no longer the head: bss_lines added one on top
+    (expires_at, state_before_suspension, bundle, indexes). This test downgrades
+    explicitly to the revision before lines (0001) rather than to head - 1, so
+    it stays correct as more migrations land.
+    """
     assert LINE_TABLES <= _tables(db)
-    db.alembic("downgrade", "-1")
+    db.alembic("downgrade", "0001")
     assert not LINE_TABLES & _tables(db)
-    assert MONEY_TABLES <= _tables(db)  # only the lines step was undone
+    assert MONEY_TABLES <= _tables(db)  # only the lines migration was undone
     db.alembic("upgrade", "head")
     assert LINE_TABLES <= _tables(db)
 
