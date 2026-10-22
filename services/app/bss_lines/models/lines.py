@@ -34,14 +34,11 @@ class Customer(Base, TimestampMixin):
 
 class Sim(Base, TimestampMixin):
     __tablename__ = "sim"
-    __table_args__ = (Index("ix_sim_imsi", "imsi"),)
-
     iccid: Mapped[str] = mapped_column(String(20), primary_key=True)
     imsi: Mapped[str] = mapped_column(String(15), unique=True)
     batch: Mapped[str] = mapped_column(String(40))
     # in_stock | in_use | retired
     state: Mapped[str] = mapped_column(String(20))
-
 
 class Number(Base, TimestampMixin):
     __tablename__ = "number"
