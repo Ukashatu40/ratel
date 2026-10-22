@@ -30,9 +30,10 @@ these steps in the PR that fixes the files.
 
 ## Installation
 
-1. **Python 3.12 must exist on core-up** (`python3.12 --version`). Ubuntu 22.04 ships 3.10, so it is
-   built from the python.org source and installed with `make altinstall`, so the system Python is
-   not touched. TODO: write the exact steps as a runbook from the core-cp install.
+1. **Python 3.12 must exist on core-up** at `/opt/python-3.12/bin/python3.12`. Ubuntu 22.04 ships 3.10, so
+   it is built from the python.org source with `make altinstall` and does not touch the system Python:
+   [docs/runbooks/python-3.12-on-ubuntu-22.04.md](../../docs/runbooks/python-3.12-on-ubuntu-22.04.md).
+   Installed on core-up on 2026-10-22 (3.12.15).
 
 2. **Build the release on your machine, from a reviewed commit on `main`** (never from a working
    tree), and copy it over with the script and the unit files:
@@ -51,7 +52,7 @@ these steps in the PR that fixes the files.
 3. **Install the release** (creates the user `ratelmeter` and the folders, installs the
    dependencies from `requirements/constraints.txt`, checks the service user can import it):
    ```bash
-   cd /tmp && sudo ./install-release.sh $REL.tar.gz /usr/local/bin/python3.12
+   cd /tmp && sudo ./install-release.sh $REL.tar.gz /opt/python-3.12/bin/python3.12
    ```
    If it fails, the half-made release is removed and nothing else changes. Run it again after fixing.
 
