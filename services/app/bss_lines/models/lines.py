@@ -14,7 +14,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base, TimestampMixin
@@ -103,7 +111,11 @@ class LineAudit(Base, TimestampMixin):
 
 class Bundle(Base, TimestampMixin):
     __tablename__ = "bundle"
-
+    __table_args__ = (
+        CheckConstraint("price_kobo >= 0", name="ck_bundle_price_kobo_non_negative"),
+        CheckConstraint("validity_days > 0", name="ck_bundle_validity_days_positive"),
+        CheckConstraint("data_bytes >= 0", name="ck_bundle_data_bytes_non_negative"),
+    )
     bundle_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
     price_kobo: Mapped[int] = mapped_column(BigInteger)

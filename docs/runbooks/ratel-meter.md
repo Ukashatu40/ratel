@@ -4,8 +4,9 @@ Keep it short. The person reading it is tired and the service is down. Never put
 real customer data in a ticket, a chat message or this file. If you see one in a log, stop and tell
 the project lead.
 
-- **Last verified:** not yet. TODO: nobody has followed these steps on core-up. The code is tested in unit and
-  PostgreSQL tests only, and the counting rules were proven on core-up on 2026-10-20 in a throwaway namespace test.
+- **Last verified:** 2026-10-22 (partly). By hand on core-up: the counting table loads and rolls back, the unit
+  works, and the real `nft -j list table` output parses. TODO: the agent has not run on core-up, and nothing
+  has counted real phone traffic yet. Do not claim more until that is done.
 - **Owner:** @capitanaserdel (RatelMeter owner)
 - **Runs on:** core-up, as the systemd unit `ratel-meter.service`, with the counting table loaded by
   `ratel-meter-nft.service` (files and install steps in `deploy/core-up/`)
@@ -31,6 +32,15 @@ it fails that interval and logs it. It never reports "no usage" for a failure.
 - Degraded / offline:
   - `meter.assignments.refresh_failed` or `meter.assignments.error`: RatelLink unreachable; raw readings spooled.
   - `meter.poster.rejected` or `meter.poster.error`: RatelMeter API unreachable; usage batches spooled to `/var/spool/ratel-meter`.
+
+## What the meter does not count
+
+- **IPv6.** The counters match IPv4 addresses only. The internet session is IPv4v6 and the UPF has an IPv6 pool,
+  so IPv6 is unmetered whenever the kernel forwards it. It is off on core-up
+  (`sysctl net.ipv6.conf.all.forwarding` = 0, checked 2026-10-22). Before anyone enables it, either make
+  the internet session IPv4-only or add IPv6 counting. TODO: decision with the network lead.
+- **Voice and SMS.** The ims APN uses another interface (`ogstun2`) and is not counted here.
+- **Traffic on other interfaces**, and anything that does not pass the forward hook.
 
 ## Dependencies
 
