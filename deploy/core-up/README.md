@@ -3,10 +3,18 @@
 RatelCore user plane host. Runs the **meter_agent** in data mode, and the small nftables table
 that counts bytes per phone address for it.
 
-**Status: not yet installed on core-up.** The counting rules were proven there on 2026-10-20 (the
-kernel accepted them, and 100 test packets counted exactly 102800 bytes each way), but the agent has
-never run on the host. The first install is the first real test: write down any difference from
-these steps in the PR that fixes the files.
+**Status (2026-10-22).** The counting table was loaded on core-up and rolled back by hand. The kernel
+accepted it, `ratel-meter-nft.service` started and stopped it cleanly, nothing else on the host
+changed, and the real `nft -j list table` output (empty sets, and one element) is the fixture the
+tests parse. **Not yet done on the host:** installing the agent, and counting real phone traffic on
+`ogstun` (needs a phone, lab session #52). The counting rules were also proven exactly in a throwaway
+namespace test on 2026-10-20 (100 packets of 1028 bytes counted as 102800 bytes each way). The first
+full install is the first real test of the rest: write down any difference from these steps.
+
+**IPv6 is not counted.** The table matches IPv4 addresses only. It is safe today only because the
+kernel does not forward IPv6 (`sysctl net.ipv6.conf.all.forwarding` is 0 on core-up), although the
+internet session is IPv4v6 and the UPF has an IPv6 pool. If IPv6 forwarding is ever turned on, IPv6
+traffic would pass unmetered. Keep it off, or count IPv6 first (see the runbook).
 
 ## What is here
 
