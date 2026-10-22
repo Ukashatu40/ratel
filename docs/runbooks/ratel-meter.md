@@ -35,10 +35,11 @@ it fails that interval and logs it. It never reports "no usage" for a failure.
 
 ## What the meter does not count
 
-- **IPv6.** The counters match IPv4 addresses only. The internet session is IPv4v6 and the UPF has an IPv6 pool,
-  so IPv6 is unmetered whenever the kernel forwards it. It is off on core-up
-  (`sysctl net.ipv6.conf.all.forwarding` = 0, checked 2026-10-22). Before anyone enables it, either make
-  the internet session IPv4-only or add IPv6 counting. TODO: decision with the network lead.
+- **IPv6.** The counters match IPv4 addresses only, so the internet session must stay IPv4 only. The core was
+  changed on 2026-10-22 (SMF, UPF, `ogstun`, and both lab subscribers), and RatelLink writes the internet session
+  as type 1. Kernel IPv6 forwarding is also off on core-up (checked 2026-10-22). TODO: confirm on a real phone
+  that it attaches IPv4 only (the network lead will confirm when a SIM reattaches). Before anyone re-enables
+  IPv6, count it first.
 - **Voice and SMS.** The ims APN uses another interface (`ogstun2`) and is not counted here.
 - **Traffic on other interfaces**, and anything that does not pass the forward hook.
 

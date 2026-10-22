@@ -152,7 +152,7 @@ def synthetic_template() -> dict[str, Any]:
                 "session": [
                     {
                         "name": "internet",
-                        "type": 3,
+                        "type": 1,
                         "qos": {
                             "index": 9,
                             "arp": {

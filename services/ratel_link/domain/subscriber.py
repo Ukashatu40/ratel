@@ -75,11 +75,18 @@ def ambr_document(upload: Speed, download: Speed) -> dict[str, dict[str, int]]:
     return {"downlink": download.to_document(), "uplink": upload.to_document()}
 
 
+# The internet session is IPv4 only (Open5GS session type 1). Usage is counted per IPv4 address
+# on core-up (deploy/core-up/ratel-meter.nft); an IPv4v6 session (type 3) would let IPv6 traffic
+# through uncounted. The core was changed to IPv4 only on 2026-10-22 (SMF, UPF, ogstun). Do not
+# change this without counting IPv6 first.
+INTERNET_SESSION_TYPE = 1
+
+
 def internet_session(ambr: Mapping[str, Any], ue_ip: str) -> dict[str, Any]:
     """The data session: QCI 9, ARP 8, the plan speeds, and the line's fixed address."""
     return {
         "name": INTERNET,
-        "type": 3,
+        "type": INTERNET_SESSION_TYPE,
         "qos": {
             "index": 9,
             "arp": {
