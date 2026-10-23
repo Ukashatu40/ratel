@@ -4,9 +4,11 @@ Keep it short. The person reading it is tired and the service is down. Never put
 real customer data in a ticket, a chat message or this file. If you see one in a log, stop and tell
 the project lead.
 
-- **Last verified:** 2026-10-22 (partly). By hand on core-up: the counting table loads and rolls back, the unit
-  works, and the real `nft -j list table` output parses. TODO: the agent has not run on core-up, and nothing
-  has counted real phone traffic yet. Do not claim more until that is done.
+- **Last verified:** 2026-10-23 (partly). By hand on core-up: the counting table loads and rolls back, the unit
+  works, the real `nft -j list table` output parses, and the agent (release installed with
+  `install-release.sh`) ran once as `ratelmeter` with only `CAP_NET_ADMIN`, read the table and exited 0.
+  TODO: the agent has not run as a service, it cannot reach RatelLink or the usage API yet, and nothing has
+  counted real phone traffic. Do not claim more until that is done.
 - **Owner:** @capitanaserdel (RatelMeter owner)
 - **Runs on:** core-up, as the systemd unit `ratel-meter.service`, with the counting table loaded by
   `ratel-meter-nft.service` (files and install steps in `deploy/core-up/`)

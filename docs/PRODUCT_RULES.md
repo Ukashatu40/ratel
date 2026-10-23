@@ -7,9 +7,12 @@ it, so this page takes its place. When it is approved it is the document that CL
 source README mean by "the PRD". If the original PRD turns up, compare it with this page in a pull
 request and change whichever is wrong.
 **Starting text:** the Build Plan of 28 Sep 2026 and the extract the network lead (@CaptRaven)
-wrote on 2026-10-22 ("Ratelplus Product Rules (Build Plan extract)", kept outside Git). Nothing
-here is new product behaviour except the rows marked **Decided**, each with its date and who
-decided it.
+wrote on 2026-10-22 ("Ratelplus Product Rules (Build Plan extract)", kept outside Git), which he
+drafted with AI assistance from the Build Plan. Nothing here is new product behaviour except the
+rows marked **Decided**, each with its date and who decided it.
+**Review 2026-10-23:** @CaptRaven checked the page row by row against the Build Plan. The lifecycle
+table, the plan, wallet and rating rules, vouchers, payments and the call and usage record fields
+match it. He asked for six changes, all made in this revision. His approval is still pending.
 **To approve:** @CaptRaven (author of the Build Plan) and @capitanaserdel (frontend lead). Review
 each row against the Build Plan, which is the source for everything not marked Decided.
 
@@ -67,13 +70,15 @@ Rules:
 - No line activates until the customer's KYC is verified.
 - A transition not in the table is refused, and tests prove it.
 - Until live changes (CHG-6) land, a slowed or cut line may keep its old service until its phone next reattaches.
-- A number taken back from a terminated line is quarantined. **Demo value:** 90 days, for the demo only. The real period is compliance's (decision 4).
+- A number taken back from a terminated line is quarantined for a period compliance sets. **No value is decided**, so none is written here and code must not default one (decision 4). Any value used to run the demo is a setting labelled demo only, never a built-in default.
 - **Decided 2026-10-23, reasons:** every care action (suspend, reinstate, terminate) carries a reason from a short fixed list plus free text. Starting list: `fraud`, `non_payment`, `customer_request`, `lost_sim`, `other`. @capitanaserdel and @ml-lawarn edit the list before RatelDesk is built.
 - **Decided 2026-10-23, failure in the middle of a transition:** if RatelLink fails, the line's state does not change, the call is retried with the same `Idempotency-Key`, and an alert fires after repeated failure. The retry count is set when W2-11 is built (decision 16 in [DECISIONS_PENDING.md](DECISIONS_PENDING.md)).
 
 ## Plans, bundles, wallet and ledger
 
-Money is whole kobo, never a decimal. Time is UTC.
+Money is whole kobo, never a decimal. Time is stored and sent as UTC, epoch seconds on the wire.
+Both are engineering rules ([ENGINEERING_RULES.md](ENGINEERING_RULES.md)); the Build Plan itself
+says only that usage intervals align to UTC.
 
 - A **plan** has `plan_id`, name, `price_kobo`, `validity_days`, `data_bytes`, upload and download speeds, channels, `on_exhaustion` (`slow` or `stop`) and slow upload and download speeds. States: `on_sale`, `retired`.
 - A **bundle** has `bundle_id`, name, `price_kobo`, `validity_days`, `data_bytes` and channels. States: `on_sale`, `retired`.
@@ -121,7 +126,8 @@ Money is whole kobo, never a decimal. Time is UTC.
 
 - No line activates until `kyc_status` is `verified`.
 - The verification rules (which documents, who verifies, what a rejection means) are compliance's. The Build Plan says to confirm the current NCC SIM registration requirements with them before the pilot. Open (decision 2).
-- The NIN and every field above are personal data. They never appear in logs, tests or the repository, and RatelPay shows none of them (TOP-2). RatelDesk is served only on the office network and the VPN.
+- RatelPay shows none of these fields (TOP-2). RatelDesk is served only on the office network and the VPN.
+- **Decided (engineering rule, [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md)):** the NIN and every field above are personal data. They never appear in logs, tests or the repository. The Build Plan text does not state this.
 
 ## Staff access (RatelDesk)
 
@@ -134,6 +140,11 @@ reviewed before the pilot.
 **Decided 2026-10-10 (DECISIONS_PENDING.md item 4):** importing a SIM for an IMSI that already exists
 with the same keys changes nothing (200). With different keys it is refused with 409 and the keys are
 never overwritten. Changing a SIM's keys becomes a deliberate admin action later.
+
+## Addresses and sessions
+
+- **Rule:** RatelLink gives every line a fixed IPv4 address on the internet APN at activation, from `10.45.0.0/16`, and no line is activated without one. The IMS APN uses its own pool, set by the network team. The meter relies on this to map addresses to IMSIs.
+- **Decided 2026-10-22 (network lead):** the internet session is IPv4 only (Open5GS session type 1), because the meter counts IPv4 addresses and IPv6 would pass uncounted. The live core was changed on 2026-10-22 (SMF pool, UPF pool, `ogstun`, and both lab subscribers) and RatelLink writes the internet session as type 1 in the subscriber template, so a new line does not come up IPv4v6 again. A live phone attach to confirm it is still pending.
 
 ## Call and usage records
 
@@ -151,12 +162,12 @@ the phone's address count as upload, packets to it as download.
 How they are produced:
 
 - The S-CSCF writes a record when each call starts and ends (Kamailio `acc` and `dialog` modules, into RatelVoice's MySQL). Every 60 seconds the agent joins each call's start and end into one record and posts it to the RatelMeter API. The lab does not do this yet: see the lab finding in the call record agreement.
-- Every 300 seconds the data agent reads per-address counters on the `ogstun` interface, subtracts the previous reading, maps each address to an IMSI with `GET /v1/assignments`, and posts the batch. The internet session is IPv4 only so that every byte is counted.
+- Every 300 seconds the data agent reads per-address counters on the `ogstun` interface, subtracts the previous reading, maps each address to an IMSI with `GET /v1/assignments`, and posts the batch. The internet session is IPv4 only so that every byte is counted (see Addresses and sessions).
 - Intervals align to the clock in UTC (00:00, 00:05, 00:10 and so on), so a replayed interval always lands on the same key. Intervals with zero bytes are skipped.
 - A reading lower than the last one means the UPF or its host restarted, so the new reading counts from zero.
 - If the API is unreachable the agent spools to disk and replays in order. Nothing is lost and nothing is counted twice.
 - Clocks on core-up and the voice VM stay synchronised over NTP, because every record's key and every call's duration depend on them.
-- A released IP address is not reused for 24 hours, so a late counter reading is never charged to the wrong person. **Not yet checked** that the assignments endpoint guarantees this: ask the network lead.
+- A released IP address is not given to another line for 24 hours, so a late counter reading is never charged to the wrong person. This is **enforced by RatelLink's allocator** (it records release times in `ip_allocation.released_at`), not by Open5GS and not by the assignments endpoint. `GET /v1/assignments` lists current addresses and those still on hold ([DECISIONS_PENDING.md](DECISIONS_PENDING.md) item 52). A phone that is attached without a fixed address can be given a recently released one from the SMF's own pool, so the fixed addresses must be outside the SMF's dynamic range (N2 in [RATELCORE_INTEGRATION_FACTS.md](RATELCORE_INTEGRATION_FACTS.md), still open).
 
 ## Out of scope for the demo
 
@@ -181,10 +192,10 @@ the PRD" run through the screens without anyone touching the API by hand, but do
 
 | # | Decision | Owner | Status |
 | - | -------- | ----- | ------ |
-| 1 | Does the original PRD exist? | Project lead | **Closed 2026-10-23: no.** This page replaces it |
+| 1 | Does the original PRD exist? | Project lead | **Closed 2026-10-23 by the project lead: it does not exist.** It is not in the repo, in the project or with the Build Plan's author. This page replaces it |
 | 2 | Current NCC SIM registration and KYC verification rules | Compliance | Open. Asked: TODO date |
 | 3 | Allowed `id_type` values and the address format | Compliance, RatelBSS developers | Open. Demo values above |
-| 4 | Number quarantine period after termination | Compliance | Open. Demo value above |
+| 4 | Number quarantine period after termination | Compliance | Open. No value set; code must not default one |
 | 5 | Data retention for customer, usage and call records | Compliance | Open |
 | 6 | Payment provider | Project lead, finance | Open |
 | 7 | VAT rate | Finance | Open. Demo value above |
@@ -201,3 +212,4 @@ the PRD" run through the screens without anyone touching the API by hand, but do
 | Date | Change |
 | ---- | ------ |
 | 2026-10-23 | First draft by the project lead from the Build Plan and the network lead's extract. |
+| 2026-10-23 | Review by @CaptRaven against the Build Plan: addresses and sessions rule added, released-address rule corrected, quarantine demo value removed, UTC and NIN rules marked as engineering rules, extract authorship corrected. |

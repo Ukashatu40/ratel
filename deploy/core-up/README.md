@@ -3,11 +3,15 @@
 RatelCore user plane host. Runs the **meter_agent** in data mode, and the small nftables table
 that counts bytes per phone address for it.
 
-**Status (2026-10-22).** The counting table was loaded on core-up and rolled back by hand. The kernel
-accepted it, `ratel-meter-nft.service` started and stopped it cleanly, nothing else on the host
-changed, and the real `nft -j list table` output (empty sets, and one element) is the fixture the
-tests parse. **Not yet done on the host:** installing the agent, and counting real phone traffic on
-`ogstun` (needs a phone, lab session #52). The counting rules were also proven exactly in a throwaway
+**Status (2026-10-23).** The counting table was loaded on core-up and rolled back by hand on 2026-10-22.
+The kernel accepted it, `ratel-meter-nft.service` started and stopped it cleanly, and the real
+`nft -j list table` output (empty sets, and one element) is the fixture the tests parse. On 2026-10-23
+the agent was installed from a release with `install-release.sh`, the table was loaded by its unit, and
+one run of the agent as `ratelmeter` (step 7) read the table and exited 0. That run logged
+`meter.assignments.error` because nothing on core-up can reach RatelLink yet. **Not done:** the
+service is neither started nor enabled; the path from core-up to RatelLink on core-cp does not exist;
+the RatelMeter API is not deployed; and no real phone traffic has been counted on `ogstun` (needs a
+phone, lab session #52). The counting rules were also proven exactly in a throwaway
 namespace test on 2026-10-20 (100 packets of 1028 bytes counted as 102800 bytes each way). The first
 full install is the first real test of the rest: write down any difference from these steps.
 
@@ -44,18 +48,18 @@ unmetered until it is counted. A check on a real phone is still pending.
    Installed on core-up on 2026-10-22 (3.12.15).
 
 2. **Build the release on your machine, from a reviewed commit on `main`** (never from a working
-   tree), and copy it over with the script and the unit files:
+   tree), and copy it over with the script and the unit files. The release carries its own
+   dependencies as prebuilt Linux wheels (about 3 MB), so installing it needs no internet on core-up:
    ```bash
    git switch main && git pull
+   scripts/release/build-meter-release.sh HEAD /tmp     # prints the tarball name and its SHA-256
    REL=ratel-meter-$(git rev-parse --short HEAD)
-   git archive --format=tar.gz --prefix=$REL/ -o /tmp/$REL.tar.gz HEAD \
-     services/meter_agent services/common requirements
-   shasum -a 256 /tmp/$REL.tar.gz
    scp /tmp/$REL.tar.gz deploy/core-up/install-release.sh deploy/core-up/ratel-meter.nft \
      deploy/core-up/ratel-meter-nft.service deploy/core-up/ratel-meter.service \
      deploy/core-up/ratel-meter.env.example <core-up>:/tmp/
    ```
-   On core-up, compare `sha256sum /tmp/$REL.tar.gz` with the value printed above.
+   The builder refuses a commit that is not on `origin/main`, and builds for Python 3.12 on x86_64
+   Linux. On core-up, compare `sha256sum /tmp/$REL.tar.gz` with the value it printed.
 
 3. **Install the release** (creates the user `ratelmeter` and the folders, installs the
    dependencies from `requirements/constraints.txt`, checks the service user can import it):
@@ -63,6 +67,9 @@ unmetered until it is counted. A check on a real phone is still pending.
    cd /tmp && sudo ./install-release.sh $REL.tar.gz /opt/python-3.12/bin/python3.12
    ```
    If it fails, the half-made release is removed and nothing else changes. Run it again after fixing.
+   The install downloads packages, so core-up needs working DNS. On 2026-10-23 it failed once with
+   `Temporary failure in name resolution` during a site uplink outage; `getent hosts pypi.org` answered
+   again later and the same command then succeeded.
 
 4. **Install the counting table, and check it before loading** (a dry run, nothing is applied):
    ```bash
@@ -84,7 +91,9 @@ unmetered until it is counted. A check on a real phone is still pending.
    sudo systemctl daemon-reload
    systemd-analyze verify /etc/systemd/system/ratel-meter-nft.service /etc/systemd/system/ratel-meter.service
    ```
-   `systemd-analyze verify` must print nothing about these two files.
+   `systemd-analyze verify` must print nothing about these two files. Run it with `sudo`: without it, it prints
+   a permission error about `netplan-ovs-cleanup.service`. A line about `RestartMode` in `snapd.service`
+   also appears on Ubuntu 22.04 and is not about our files (seen 2026-10-23).
 
 7. **Load the counting table, then run the agent once by hand before starting the service:**
    ```bash
@@ -97,6 +106,8 @@ unmetered until it is counted. A check on a real phone is still pending.
    echo "exit status: $?"
    ```
    Exit status 0 means it read the counters. An error line with `error_type` and status 1 says why not.
+   Until RatelLink is reachable, a `meter.assignments.error` line with `ConnectError` and status 0 is the
+   expected result (seen 2026-10-23): the counters were read, and any usage is kept in the spool.
 
 8. **Start the agent, and enable both at boot only when you are happy:**
    ```bash

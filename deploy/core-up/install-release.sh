@@ -9,9 +9,9 @@
 # restart" (deploy/core-up/README.md). This script never restarts the service and never deletes an
 # old release.
 #
-# The tarball is built from a reviewed commit on a developer machine:
-#   git archive --format=tar.gz --prefix=ratel-meter-$(git rev-parse --short HEAD)/ \
-#     -o ratel-meter-$(git rev-parse --short HEAD).tar.gz HEAD services/meter_agent services/common requirements
+# The tarball is built from a reviewed commit on a developer machine, with its dependencies inside
+# (scripts/release/build-meter-release.sh). A tarball without a wheels/ folder still works: pip then
+# downloads the dependencies, which needs core-up to resolve names (it failed once, 2026-10-23).
 set -euo pipefail
 
 BASE="${RATEL_METER_BASE:-/opt/ratel-meter}"
@@ -80,8 +80,15 @@ for required in services/meter_agent/main.py services/common requirements/agent.
 done
 
 "$python" -m venv "$release/venv"
-"$release/venv/bin/pip" install --quiet --no-cache-dir --disable-pip-version-check \
-  -c "$release/requirements/constraints.txt" -r "$release/requirements/agent.txt"
+pip_args=(--quiet --no-cache-dir --disable-pip-version-check
+  -c "$release/requirements/constraints.txt" -r "$release/requirements/agent.txt")
+if [ -d "$release/wheels" ]; then
+  # A release built by scripts/release/build-meter-release.sh carries its dependencies: no network.
+  echo "Installing dependencies from the release's own wheels (no network used)."
+  "$release/venv/bin/pip" install "${pip_args[@]}" --no-index --find-links "$release/wheels"
+else
+  "$release/venv/bin/pip" install "${pip_args[@]}"
+fi
 
 # Code is owned by root and cannot be written by the service.
 chown -R root:root "$release"
