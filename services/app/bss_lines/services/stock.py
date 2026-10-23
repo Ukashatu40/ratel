@@ -18,7 +18,12 @@ from sqlalchemy.orm import Session
 
 
 class AlreadyTaken(Exception):
-    """Another caller already took this SIM or number. Nothing was changed."""
+    """Another caller already took this SIM or number. Nothing was changed.
+
+    Carries no value: the caller already has the ICCID or MSISDN, and an
+    exception message that repeated it would leak it into a traceback or a log
+    line, which the project's rules forbid.
+    """
 
 
 @dataclass(frozen=True)
@@ -36,7 +41,7 @@ class TakenNumber:
 def take_sim(session: Session, iccid: str) -> TakenSim:
     """Take a free SIM by ICCID. Returns its IMSI and batch.
 
-    Raises AlreadyTaken if the SIM is not in_stock.
+    Raises AlreadyTaken (with no value) if the SIM is not in_stock.
     """
     row = session.execute(
         text(
@@ -47,12 +52,12 @@ def take_sim(session: Session, iccid: str) -> TakenSim:
         {"iccid": iccid},
     ).first()
     if row is None:
-        raise AlreadyTaken(iccid)
+        raise AlreadyTaken
     return TakenSim(iccid=row.iccid, imsi=row.imsi, batch=row.batch)
 
 
 def take_number(session: Session, msisdn: str) -> TakenNumber:
-    """Take a free number. Raises AlreadyTaken if it is not available."""
+    """Take a free number. Raises AlreadyTaken (with no value) if not available."""
     row = session.execute(
         text(
             "UPDATE number SET state = 'in_use', updated_at = now() "
@@ -62,5 +67,5 @@ def take_number(session: Session, msisdn: str) -> TakenNumber:
         {"msisdn": msisdn},
     ).first()
     if row is None:
-        raise AlreadyTaken(msisdn)
+        raise AlreadyTaken
     return TakenNumber(msisdn=row.msisdn)
