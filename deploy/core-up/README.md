@@ -48,18 +48,18 @@ unmetered until it is counted. A check on a real phone is still pending.
    Installed on core-up on 2026-10-22 (3.12.15).
 
 2. **Build the release on your machine, from a reviewed commit on `main`** (never from a working
-   tree), and copy it over with the script and the unit files:
+   tree), and copy it over with the script and the unit files. The release carries its own
+   dependencies as prebuilt Linux wheels (about 3 MB), so installing it needs no internet on core-up:
    ```bash
    git switch main && git pull
+   scripts/release/build-meter-release.sh HEAD /tmp     # prints the tarball name and its SHA-256
    REL=ratel-meter-$(git rev-parse --short HEAD)
-   git archive --format=tar.gz --prefix=$REL/ -o /tmp/$REL.tar.gz HEAD \
-     services/meter_agent services/common requirements
-   shasum -a 256 /tmp/$REL.tar.gz
    scp /tmp/$REL.tar.gz deploy/core-up/install-release.sh deploy/core-up/ratel-meter.nft \
      deploy/core-up/ratel-meter-nft.service deploy/core-up/ratel-meter.service \
      deploy/core-up/ratel-meter.env.example <core-up>:/tmp/
    ```
-   On core-up, compare `sha256sum /tmp/$REL.tar.gz` with the value printed above.
+   The builder refuses a commit that is not on `origin/main`, and builds for Python 3.12 on x86_64
+   Linux. On core-up, compare `sha256sum /tmp/$REL.tar.gz` with the value it printed.
 
 3. **Install the release** (creates the user `ratelmeter` and the folders, installs the
    dependencies from `requirements/constraints.txt`, checks the service user can import it):
