@@ -74,6 +74,7 @@ keep their numbers below; this queue is ordered by urgency.
 
 | Date | Decision | Where |
 | ---- | -------- | ----- |
+| 2026-10-23 | **The PRD does not exist; `docs/PRODUCT_RULES.md` takes its place** once the network lead and the frontend lead approve it. It records the Build Plan's rules, and the project lead's decisions on care-action reasons, failure mid-transition, demo staff roles, charging for minutes and the demo journeys. Demo values (quarantine period, VAT, id type) are marked as such. | [PRODUCT_RULES.md](PRODUCT_RULES.md) |
 | 2026-10-07 | **RatelLink encryption at rest for Ki and OPc** (was open question 1): AES-256-GCM envelope with a key id and per-record associated data, key in an owner-only file outside MongoDB, a replaceable `KeyProvider`, `cryptography` as the one new dependency, no default or fallback key. | [ADR 0006](adr/0006-ki-opc-encryption-at-rest.md) |
 | 2026-10-07 | **How RatelLink verifies API keys** (was open question 2): `Authorization: Bearer <key>`, one key per calling system with an internal `api_key_id`, only a SHA-256 hash stored, generic 401, 90-day lifetime with rotation by key generations, no new auth protocol. | [ADR 0007](adr/0007-api-key-verification-and-rotation.md) |
 

@@ -57,7 +57,7 @@ Thumbs.db
 # Source documents with internal details (the Build Plan) are shared privately, not in Git.
 # See docs/source/README.md.
 docs/source/*.pdf
-
+docs/source/*.docx
 # Working notes for the network lead: not project documentation, never committed.
 docs/source/needs-from-captraven.md
 
