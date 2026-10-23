@@ -37,7 +37,7 @@ def test_assignment_cache_success_and_refresh() -> None:
         client=client,
     )
 
-    cache.refresh()
+    assert cache.refresh() is True
     assert calls == 1
     assert cache.imsi_for("10.45.0.2") == "621000000000001"
     assert cache.imsi_for("10.45.0.3") == "621000000000002"
@@ -70,27 +70,27 @@ def test_assignment_cache_failure_keeps_old_mapping_and_never_raises() -> None:
     )
 
     # Initial successful refresh
-    cache.refresh()
+    assert cache.refresh() is True
     assert cache.imsi_for("10.45.0.2") == "621000000000001"
 
     # 401 Unauthorized: does not raise, keeps old mapping
     status = 401
-    cache.refresh()
+    assert cache.refresh() is False
     assert cache.imsi_for("10.45.0.2") == "621000000000001"
 
     # 500 Server Error: does not raise, keeps old mapping
     status = 500
-    cache.refresh()
+    assert cache.refresh() is False
     assert cache.imsi_for("10.45.0.2") == "621000000000001"
 
     # Malformed body: does not raise, keeps old mapping
     status = 422
-    cache.refresh()
+    assert cache.refresh() is False
     assert cache.imsi_for("10.45.0.2") == "621000000000001"
 
     # Network timeout: does not raise, keeps old mapping
     status = 999
-    cache.refresh()
+    assert cache.refresh() is False
     assert cache.imsi_for("10.45.0.2") == "621000000000001"
 
 

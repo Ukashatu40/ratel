@@ -128,7 +128,12 @@ def main(argv: list[str] | None = None) -> int:
 
     agent = create_agent(settings)
     if args.once:
-        agent.run_once()
+        try:
+            agent.run_once()
+        except Exception as exc:
+            # Same event as the loop logs, and a non-zero status so a script or a person notices.
+            log_event(log, logging.ERROR, "meter.agent.tick_error", error_type=type(exc).__name__)
+            return 1
         return 0
 
     run_agent_loop(agent, interval_seconds=settings.interval_seconds)

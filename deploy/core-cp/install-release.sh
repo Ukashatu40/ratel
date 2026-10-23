@@ -55,11 +55,16 @@ install -d -m 0755 -o root -g root "$BASE" "$BASE/releases"
 install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_USER" "$CONFIG_DIR"
 
 mkdir "$release"
+installed=0
 cleanup_on_failure() {
-  rm -rf "$release"
-  echo "Install failed: $release was removed. The active release is unchanged." >&2
+  # Runs on every exit. A release that did not finish installing is removed, whether a command
+  # failed or this script stopped on purpose, so a retry never meets a half-made folder.
+  if [ "$installed" -ne 1 ]; then
+    rm -rf "$release"
+    echo "Install failed: $release was removed. The active release is unchanged." >&2
+  fi
 }
-trap cleanup_on_failure ERR
+trap cleanup_on_failure EXIT
 
 tar -xzf "$tarball" --no-same-owner --strip-components=1 -C "$release"
 for required in services/ratel_link/main.py services/common requirements/link.txt requirements/constraints.txt; do
@@ -80,7 +85,8 @@ chmod -R go-w "$release"
 # The service user must be able to import it. Nothing is started.
 runuser -u "$SERVICE_USER" -- env PYTHONPATH="$release/services" \
   "$release/venv/bin/python" -c 'import ratel_link.main' >/dev/null
-trap - ERR
+installed=1
+trap - EXIT
 
 previous="$(readlink "$BASE/current" 2>/dev/null || true)"
 ln -sfn "$release" "$BASE/current.new"

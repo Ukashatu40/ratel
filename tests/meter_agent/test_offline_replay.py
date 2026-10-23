@@ -21,8 +21,8 @@ class StaticCache:
     def __init__(self, mapping: dict[str, str]) -> None:
         self._mapping = mapping
 
-    def refresh(self) -> None:
-        pass
+    def refresh(self) -> bool:
+        return True
 
     def imsi_for(self, ue_ip: str) -> str | None:
         return self._mapping.get(ue_ip)

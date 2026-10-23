@@ -75,3 +75,22 @@ def test_main_once_flag(tmp_path: Path) -> None:
         exit_code = main(["--once", "--mode", "data"])
         assert exit_code == 0
         mock_agent.run_once.assert_called_once()
+
+
+def test_main_once_reports_a_failed_tick_with_a_status_and_no_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with (
+        patch("services.meter_agent.main.Settings") as mock_settings_cls,
+        patch("services.meter_agent.main.create_agent") as mock_create_agent,
+    ):
+        mock_settings = MagicMock()
+        mock_settings.mode = "data"
+        mock_settings.log_level = "INFO"
+        mock_settings_cls.return_value = mock_settings
+        mock_create_agent.return_value.run_once.side_effect = CounterReadError("nft failed")
+
+        assert main(["--once"]) == 1
+    assert any(getattr(r, "error_type", "") == "CounterReadError" for r in caplog.records) or any(
+        "tick_error" in r.getMessage() for r in caplog.records
+    )

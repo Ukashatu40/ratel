@@ -29,10 +29,12 @@ class HttpAssignmentCache:
         self._client = client
         self._cache: dict[str, str] = {}
 
-    def refresh(self) -> None:
+    def refresh(self) -> bool:
         """Fetch GET /v1/assignments and replace the cache.
 
-        Keeps the old cache on failure and never raises out of this method.
+        Returns True when the cache now matches RatelLink, False when it could not be refreshed.
+        Keeps the old cache on failure and never raises out of this method: the caller decides
+        what to do with usage it cannot attribute yet.
         """
         url = f"{self._base_url}/v1/assignments"
         headers = {
@@ -54,7 +56,7 @@ class HttpAssignmentCache:
                     "meter.assignments.refresh_failed",
                     status_code=response.status_code,
                 )
-                return
+                return False
 
             data: Any = response.json()
             if not isinstance(data, dict) or "assignments" not in data:
@@ -63,7 +65,7 @@ class HttpAssignmentCache:
                     logging.WARNING,
                     "meter.assignments.malformed_response",
                 )
-                return
+                return False
 
             assignments = data.get("assignments")
             if not isinstance(assignments, list):
@@ -72,7 +74,7 @@ class HttpAssignmentCache:
                     logging.WARNING,
                     "meter.assignments.malformed_response",
                 )
-                return
+                return False
 
             new_cache: dict[str, str] = {}
             for item in assignments:
@@ -89,6 +91,7 @@ class HttpAssignmentCache:
                 "meter.assignments.refreshed",
                 count=len(self._cache),
             )
+            return True
         except Exception as exc:
             # Never log the key or full exception with sensitive query/headers
             log_event(
@@ -97,6 +100,7 @@ class HttpAssignmentCache:
                 "meter.assignments.error",
                 error_type=type(exc).__name__,
             )
+            return False
 
     def imsi_for(self, ue_ip: str) -> str | None:
         """Return the IMSI mapped to ue_ip, or None if unknown."""
