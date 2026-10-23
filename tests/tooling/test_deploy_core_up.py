@@ -114,3 +114,27 @@ def test_no_file_in_core_up_holds_a_secret_or_real_address() -> None:
         text = path.read_text()
         for pattern in forbidden:
             assert not re.search(pattern, text), f"{path.relative_to(ROOT)} matches {pattern}"
+
+
+INSTALL_SCRIPTS = (DEPLOY / "install-release.sh", ROOT / "deploy/core-cp/install-release.sh")
+
+
+def test_the_install_scripts_are_executable_and_clean_up_on_any_failed_exit() -> None:
+    for script in INSTALL_SCRIPTS:
+        assert script.stat().st_mode & 0o100, f"{script.name} must be executable"
+        text = script.read_text()
+        # `trap ... ERR` misses a deliberate `exit 1` and leaves a half-made release behind.
+        assert "trap cleanup_on_failure EXIT" in text, script
+        assert "trap cleanup_on_failure ERR" not in text, script
+        assert "installed=1" in text and "trap - EXIT" in text, script
+
+
+def test_the_core_up_install_script_matches_the_unit_and_never_restarts_anything() -> None:
+    text = (DEPLOY / "install-release.sh").read_text()
+    unit = UNIT.read_text()
+    assert 'BASE="${RATEL_METER_BASE:-/opt/ratel-meter}"' in text
+    assert 'SERVICE_USER="${RATEL_METER_USER:-ratelmeter}"' in text
+    assert "requirements/agent.txt" in text and "services/meter_agent/main.py" in text
+    assert "/opt/ratel-meter/current/venv/bin/python" in unit  # the layout the script produces
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert "systemctl" not in code.replace("Next: put", "")
