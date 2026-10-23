@@ -30,7 +30,7 @@ it fails that interval and logs it. It never reports "no usage" for a failure.
   - `meter.assignments.refreshed`: address-to-IMSI mappings successfully loaded from RatelLink.
   - `meter.poster.success`: batch acknowledged by RatelMeter API.
 - Degraded / offline:
-  - `meter.assignments.refresh_failed` or `meter.assignments.error`: RatelLink unreachable; raw readings spooled.
+  - `meter.assignments.refresh_failed` or `meter.assignments.error`: RatelLink unreachable. The raw readings are kept in the spool (files starting `raw-`) and are attributed to lines, then sent, once a refresh works.
   - `meter.poster.rejected` or `meter.poster.error`: RatelMeter API unreachable; usage batches spooled to `/var/spool/ratel-meter`.
 
 ## What the meter does not count
@@ -65,6 +65,7 @@ JSON on stdout (`journalctl -u ratel-meter.service`). Key events:
 | `meter.poster.success` | Usage batch acknowledged by RatelMeter API. |
 | `meter.assignments.refresh_failed` | RatelLink returned non-200. Check RatelLink service on core-cp. |
 | `meter.poster.rejected` | RatelMeter API rejected batch. Check API token and status. |
+| `meter.agent.unmapped_usage` | Bytes were counted for addresses that no line owns (`addresses`, `bytes_up`, `bytes_down`; never the addresses). Those bytes are not sent and cannot be recovered. TODO(lab): learn from the lab session how often this happens. A steady stream means the assignments from RatelLink are missing a line. |
 | `meter.spool.replayed` | Pending spooled files delivered to the API. |
 
 Logs must never contain tokens, keys, IMSIs or UE IP addresses.
@@ -75,6 +76,7 @@ Logs must never contain tokens, keys, IMSIs or UE IP addresses.
 | ------- | ------------ | ---------- |
 | `PermissionError: /var/spool/ratel-meter` | Incorrect directory owner or permissions | Run `sudo chown -R ratelmeter:ratelmeter /var/spool/ratel-meter && sudo chmod 0700 /var/spool/ratel-meter` |
 | `meter.assignments.refresh_failed (401)` | Expired or incorrect `METER_AGENT_RATEL_LINK_API_KEY` | Generate new API key using RatelLink admin CLI and update `/etc/ratel-meter/ratel-meter.env` |
+| `raw-*.json` files accumulating in `/var/spool/ratel-meter` | RatelLink is unreachable or rejecting the key, so usage cannot be attributed yet | Fix the cause of `meter.assignments.*` in the journal; the files are sent in order on the next good refresh |
 | `meter.poster.rejected (401)` | Invalid `METER_AGENT_API_KEY` | Update `/etc/ratel-meter/ratel-meter.env` with correct key |
 | Spool files accumulating in `/var/spool/ratel-meter` | RatelMeter API is unreachable | Verify network connectivity to `METER_AGENT_METER_API_BASE_URL` |
 | Service crash loops on start | Missing environment file, or a missing key (the agent has no default keys) | Check `journalctl -u ratel-meter.service -e` and verify `/etc/ratel-meter/ratel-meter.env` exists and holds both keys |
