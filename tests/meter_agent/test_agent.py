@@ -27,9 +27,10 @@ class FakeCache:
         self._mapping = mapping
         self._fail = fail
 
-    def refresh(self) -> None:
+    def refresh(self) -> bool:
         if self._fail:
             raise RuntimeError("assignments unreachable")
+        return True
 
     def imsi_for(self, ue_ip: str) -> str | None:
         return self._mapping.get(ue_ip)
