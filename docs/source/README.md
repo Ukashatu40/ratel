@@ -6,7 +6,7 @@
 | `RatelLink_Developer_Integration_Guide.pdf` | **No, on purpose** | 6 pages, 11 Oct 2026. The subscriber document, its rules and gotchas, and what the core guarantees. **Read before W2-02.** Summarised, without addresses, in [../RATELCORE_INTEGRATION_FACTS.md](../RATELCORE_INTEGRATION_FACTS.md). |
 | `RatelLink_Development_Documentation.pdf` | **No, on purpose** | 5 pages, 11 Oct 2026. How the core and the voice layer were built, the first VoLTE call, open items. Hosts and operational detail. |
 | `RatelCore_Operations_Runbook.pdf` | **No, on purpose** | 5 pages, 11 Oct 2026. Boot persistence, the restore point, rollback steps. Hosts and operational detail. |
-| Ratel Plus Subscriber Platform PRD | No | Wins over the Build Plan on product behavior. **Where it lives is not recorded.** The Build Plan's first page links to it by name, but the PDF export dropped the link (the PDF was printed from a web page; its header says "Sep 28, 2026, @Muhammad"). The Build Plan's author ("@Muhammad" in the header) is **@CaptRaven**: ask them for it, then record the location here. The Build Plan cites PRD ids such as CHG-6, VOI-1 to VOI-7, TOP-2, TOP-3, ACC-3, OPS-1, OPS-2. |
+| Ratel Plus Subscriber Platform PRD | No | **Never found: it is not in the repo, the project, or with the Build Plan's author.** Its place is taken by [../PRODUCT_RULES.md](../PRODUCT_RULES.md) (draft from 2026-10-23, once approved it wins over the Build Plan on product behaviour). The Build Plan cites PRD ids such as CHG-6, VOI-1 to VOI-7, TOP-2, TOP-3, ACC-3, OPS-1, OPS-2; their original wording is unknown. If the original turns up, compare it with PRODUCT_RULES.md in a pull request. |
 
 ## Getting the Build Plan and the three network documents
 
@@ -27,7 +27,7 @@ rewriting `main` and force pushing, which the branch rules forbid and which the 
 (see [../DECISIONS_PENDING.md](../DECISIONS_PENDING.md) #7). If the repository becomes private
 (GitHub Pro or an organization plan), the PDF can be shared through the repository again.
 
-## What the PRD must contain (inferred from the Build Plan, to check against the real one)
+## What the PRD was expected to contain (inferred from the Build Plan; now covered by PRODUCT_RULES.md)
 
 The Build Plan cites these requirement ids, so the PRD defines at least: **CHG-6** (live changes, P1),
 **VOI-1 to VOI-7** (voice, including charging for minutes in VOI-7), **TOP-2** (RatelPay shows nothing
