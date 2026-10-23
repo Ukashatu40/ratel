@@ -12,6 +12,8 @@ secrets/
 credentials*.json
 # Dumps and backups can contain customer data or SIM keys
 *.sql
+# The one SQL file that is a script, not a dump: roles with no password in it.
+!deploy/bss-app/postgres-roles.sql
 *.dump
 *.bak
 *.archive

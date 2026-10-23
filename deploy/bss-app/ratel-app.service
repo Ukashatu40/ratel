@@ -1,0 +1,57 @@
+# The app on bss-app: RatelBSS and the RatelMeter API in one process. Install as
+# /etc/systemd/system/ratel-app.service (deploy/bss-app/README.md).
+#
+# It listens on 127.0.0.1 only. Callers reach it through the reverse proxy (deploy/bss-app/nginx/),
+# never directly. PostgreSQL and Redis run on this host and listen on 127.0.0.1 too.
+[Unit]
+Description=RatelBSS and RatelMeter API (app)
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+# A start that fails four times in two minutes is left stopped, not retried forever.
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+User=ratelbss
+Group=ratelbss
+WorkingDirectory=/opt/ratel-app/current
+# Owner-only file holding the settings, the database password and the two API keys. Never in Git.
+EnvironmentFile=/etc/ratel-app/ratel-app.env
+Environment=PYTHONPATH=/opt/ratel-app/current/services
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+# --no-access-log: uvicorn's access log prints raw paths, and the paths contain IMSIs and numbers.
+ExecStart=/opt/ratel-app/current/venv/bin/python -m uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8000 --no-access-log
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+# Hardening. The app needs the network (PostgreSQL, Redis, RatelLink, its own port), its code, and
+# nothing else.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# The code and the settings can be read but not written by the service.
+ReadOnlyPaths=/opt/ratel-app /etc/ratel-app
+
+[Install]
+WantedBy=multi-user.target
