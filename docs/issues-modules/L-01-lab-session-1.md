@@ -11,6 +11,7 @@ One real SIM, created only through RatelLink's API, attaches through our radio, 
 ## State on 2026-10-23 (what is known before the session; tick the boxes below only when you have seen it)
 - Done on core-up: the counting table loads; the agent is installed from a release (`deploy/core-up/`) and one run as `ratelmeter` read the table and exited 0. The agent is **not** started or enabled.
 - Done by the network lead on 2026-10-22: the core is IPv4 only (SMF pool, UPF pool, `ogstun`, both lab subscribers). On 2026-10-23: a stray `10.45.0.0/16` route on `ogstun2` was removed. RatelLink writes the internet session as type 1.
+- Done by the network lead on 2026-10-23: MongoDB authentication is on (a dedicated `open5gs_app` user for the core's services). A phone attach test after the change is still pending, so the MongoDB prerequisite below is not ticked. RatelLink still needs its own `ratel_link` user.
 - Not done: the path from core-up to RatelLink, the RatelMeter API on bss-app, a phone counted on `ogstun`.
 
 ## Before the session (all must be ticked, otherwise it is not scheduled)
