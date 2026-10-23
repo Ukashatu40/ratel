@@ -106,13 +106,18 @@ install with `pip install --no-index --find-links wheels`.
 
 Edit `/etc/ratel-link/ratel-link.env`: put the generated MongoDB password into `MONGO_URI`, and set
 `RATEL_LINK_UE_POOL` once the range is agreed. Then, as the service user (the settings are loaded
-the same way the unit loads them):
+the same way the unit loads them). Define the small function once in your shell; it is a function, not a
+variable, because a variable holding a quoted command is split into words and breaks (found 2026-10-23):
 
 ```
-RUN="sudo -u ratellink env PYTHONPATH=/opt/ratel-link/current/services bash -c 'set -a; . /etc/ratel-link/ratel-link.env; set +a; exec \"\$@\"' _"
-$RUN /opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli key generate --out /etc/ratel-link/ratel_link.key
-$RUN /opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli init-db
-$RUN /opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli api-key create --id bss-app --name RatelBSS
+admin_cli() {
+  sudo -u ratellink env PYTHONPATH=/opt/ratel-link/current/services \
+    bash -c 'set -a; . /etc/ratel-link/ratel-link.env; set +a; exec "$@"' _ \
+    /opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli "$@"
+}
+admin_cli key generate --out /etc/ratel-link/ratel_link.key
+admin_cli init-db
+admin_cli api-key create --id bss-app --name RatelBSS
 ```
 
 - **Back up the key file offline, and never with the database backups, before importing any real
