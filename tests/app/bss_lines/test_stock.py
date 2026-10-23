@@ -46,9 +46,7 @@ def test_take_sim_marks_it_in_use(db: Database) -> None:
         taken = take_sim(s, ICCID)
     assert taken.iccid == ICCID
     with Session(db.engine) as s:
-        state = s.execute(
-            text("SELECT state FROM sim WHERE iccid = :c"), {"c": ICCID}
-        ).scalar_one()
+        state = s.execute(text("SELECT state FROM sim WHERE iccid = :c"), {"c": ICCID}).scalar_one()
     assert state == "in_use"
 
 
