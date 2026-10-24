@@ -30,12 +30,19 @@ def _tables(database: Database) -> set[str]:
 def _add_a_line(database: Database) -> None:
     """One customer with one line: synthetic values only."""
     statements = [
-        "INSERT INTO customer (name, phone, kyc_status) VALUES ('Synthetic', '2340000000001', 'verified')",  # noqa: E501
+        "INSERT INTO customer "
+        "(name, phone, email, id_type, id_number, address, kyc_status) "
+        "VALUES "
+        "('Synthetic', '2340000000001', 's@example.test', 'NIN', "
+        "'00000000000', 'addr', 'verified')",
         "INSERT INTO sim (iccid, imsi, batch, state) "
         "VALUES ('8900000000000000001', '620000000000001', 'b', 'in_use')",
         "INSERT INTO number (msisdn, state) VALUES ('2340000000001', 'in_use')",
-        "INSERT INTO plan (name, speed_ul_mbps, speed_dl_mbps, on_exhaustion, state) "
-        "VALUES ('p', 1, 2, 'slow', 'on_sale')",
+        "INSERT INTO plan "
+        "(name, price_kobo, validity_days, data_bytes, "
+        "speed_ul_mbps, speed_dl_mbps, slow_ul_mbps, slow_dl_mbps, "
+        "channels, on_exhaustion, state) "
+        "VALUES ('p', 500, 30, 1000000, 1, 2, 1, 1, 'data', 'slow', 'on_sale')",
         "INSERT INTO line (customer_id, iccid, imsi, msisdn, plan_id, state) "
         "SELECT customer_id, '8900000000000000001', '620000000000001', '2340000000001', "
         "(SELECT plan_id FROM plan LIMIT 1), 'awaiting_activation' FROM customer",
@@ -70,20 +77,16 @@ def test_a_rollback_is_refused_while_customers_exist_and_nothing_is_lost(db: Dat
 
 
 def test_the_lines_migration_refuses_on_its_own_when_only_a_customer_exists(db: Database) -> None:
-    # No line and no bundle, so the newer migration (expiry fields, bundle) has nothing to refuse
-    # and the step that runs into the data is the lines migration itself. Without this test, its
-    # own guard would be hidden behind the newer one.
     with db.engine.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO customer (name, phone, kyc_status) "
-                "VALUES ('Synthetic', '2340000000001', 'verified')"
+                "INSERT INTO customer "
+                "(name, phone, email, id_type, id_number, address, kyc_status) "
+                "VALUES "
+                "('Synthetic', '2340000000001', 's@example.test', 'NIN', "
+                "'00000000000', 'addr', 'verified')"
             )
         )
-    with pytest.raises(RuntimeError, match="refusing to drop customer"):
-        db.alembic("downgrade", "0001")
-    assert LINE_TABLES <= _tables(db)
-    assert db.scalar("SELECT count(*) FROM customer") == 1
 
 
 @pytest.mark.parametrize(

@@ -16,6 +16,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -34,14 +35,22 @@ class Customer(Base, TimestampMixin):
     customer_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     phone: Mapped[str] = mapped_column(String(20))
+    email: Mapped[str] = mapped_column(String(120))
+    # TODO(PRD, decision 3): allowed id_type values. Demo value: NIN.
+    id_type: Mapped[str] = mapped_column(String(20))
+    id_number: Mapped[str] = mapped_column(String(20))  # NIN
+    # TODO(PRD, decision 3): address format. Demo value: free text.
+    address: Mapped[str] = mapped_column(String(500))
     # pending | verified | rejected
     kyc_status: Mapped[str] = mapped_column(String(20))
+    blocked: Mapped[bool] = mapped_column(Boolean, server_default="false")
 
     lines: Mapped[list[Line]] = relationship(back_populates="customer")
 
 
 class Sim(Base, TimestampMixin):
     __tablename__ = "sim"
+
     iccid: Mapped[str] = mapped_column(String(20), primary_key=True)
     imsi: Mapped[str] = mapped_column(String(15), unique=True)
     batch: Mapped[str] = mapped_column(String(40))
@@ -62,11 +71,17 @@ class Plan(Base, TimestampMixin):
 
     plan_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
+    price_kobo: Mapped[int] = mapped_column(BigInteger)
+    validity_days: Mapped[int] = mapped_column(Integer)
+    data_bytes: Mapped[int] = mapped_column(BigInteger)
     speed_ul_mbps: Mapped[float] = mapped_column()
     speed_dl_mbps: Mapped[float] = mapped_column()
-    # slow | stop
+    slow_ul_mbps: Mapped[float] = mapped_column()
+    slow_dl_mbps: Mapped[float] = mapped_column()
+    # TODO(PRD): how `channels` is represented (a list, a separate table, or
+    # a comma-separated string). String for now, matching bundle.channels.
+    channels: Mapped[str] = mapped_column(String(40))
     on_exhaustion: Mapped[str] = mapped_column(String(10))
-    # on_sale | retired
     state: Mapped[str] = mapped_column(String(20))
 
 
@@ -88,12 +103,11 @@ class Line(Base, TimestampMixin):
     plan_id: Mapped[int] = mapped_column(ForeignKey("plan.plan_id", ondelete="RESTRICT"))
     # a LineState value from domain.py
     state: Mapped[str] = mapped_column(String(30))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    state_before_suspension: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     customer: Mapped[Customer] = relationship(back_populates="lines")
     plan: Mapped[Plan] = relationship()
-
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    state_before_suspension: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
 class LineAudit(Base, TimestampMixin):
@@ -116,6 +130,7 @@ class Bundle(Base, TimestampMixin):
         CheckConstraint("validity_days > 0", name="ck_bundle_validity_days_positive"),
         CheckConstraint("data_bytes >= 0", name="ck_bundle_data_bytes_non_negative"),
     )
+
     bundle_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
     price_kobo: Mapped[int] = mapped_column(BigInteger)
