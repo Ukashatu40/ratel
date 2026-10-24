@@ -77,9 +77,11 @@ def test_every_kobo_column_is_bigint_in_the_real_database(db: Database) -> None:
         ).all()
     # The money tables must be there, and EVERY kobo column anywhere (a bundle's price too) is
     # bigint. Not an exact list: a new money column in another module must not break this test.
-    assert {("wallet", "balance_kobo"), ("ledger_entry", "amount_kobo")} <= {
-        (r[0], r[1]) for r in rows
-    }
+    assert {
+        ("wallet", "balance_kobo"),
+        ("ledger_entry", "amount_kobo"),
+        ("bundle", "price_kobo"),
+    } <= {(r[0], r[1]) for r in rows}
     assert {r[2] for r in rows} == {"bigint"}
 
 
