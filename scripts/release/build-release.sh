@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Build a release that carries its own dependencies, so installing it needs no internet on the
-# host (deploy/core-up/README.md and deploy/bss-app/README.md).
+# host (deploy/core-up/, deploy/bss-app/ and deploy/core-cp/ READMEs).
 #
-#   scripts/release/build-release.sh <meter|app> [commit] [output-folder]
+#   scripts/release/build-release.sh <meter|app|link> [commit] [output-folder]
 #
 # meter  the RatelMeter agent for core-up  (ratel-meter-<commit>.tar.gz)
 # app    RatelBSS and the RatelMeter API for bss-app  (ratel-app-<commit>.tar.gz)
+# link   RatelLink for core-cp  (ratel-link-<commit>.tar.gz)
 #
 # The code comes from `git archive` of a commit that is already on the reviewed branch, never from a
 # working tree. The dependencies are downloaded here, on the developer machine, as prebuilt Linux
@@ -17,7 +18,7 @@
 #   RATEL_RELEASE_BRANCH  the branch a release must come from (default: origin/main)
 set -euo pipefail
 
-component="${1:?usage: build-release.sh <meter|app> [commit] [output-folder]}"
+component="${1:?usage: build-release.sh <meter|app|link> [commit] [output-folder]}"
 ref="${2:-HEAD}"
 out_dir="${3:-.}"
 pip="${RATEL_PIP:-pip}"
@@ -34,8 +35,13 @@ case "$component" in
     requirements="app.txt"
     paths=(services/app services/common requirements)
     ;;
+  link)
+    prefix="ratel-link"
+    requirements="link.txt"
+    paths=(services/ratel_link services/common requirements)
+    ;;
   *)
-    echo "Unknown component '$component': use meter or app." >&2
+    echo "Unknown component '$component': use meter, app or link." >&2
     exit 1
     ;;
 esac
