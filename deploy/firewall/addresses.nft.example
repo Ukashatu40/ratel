@@ -1,0 +1,13 @@
+# The addresses the firewall rules use. Copy to /etc/ratel-fw/addresses.nft on each host and put in the
+# real ones (documentation addresses here, never commit the real ones). Root-owned, mode 0644.
+# Each host reads only the names its own rules use; unused names are harmless.
+
+# The radios (eNodeBs) that connect to the core.
+define radios = { 192.0.2.37, 192.0.2.38, 192.0.2.39 }
+
+# The other core host. core-cp's rules use core_up, core-up's rules use core_cp.
+define core_up = 192.0.2.43
+define core_cp = 192.0.2.42
+
+# The bss-app VM, for the TLS proxy rule that is commented out in core-cp.nft.
+define bss_app = 192.0.2.50
