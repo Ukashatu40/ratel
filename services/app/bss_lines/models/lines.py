@@ -35,7 +35,9 @@ class Customer(Base, TimestampMixin):
     customer_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     phone: Mapped[str] = mapped_column(String(20))
-    email: Mapped[str] = mapped_column(String(120))
+    # Optional: receipts and notifications, not identity. The migration creates the column
+    # nullable; see e3b80975b879.
+    email: Mapped[str | None] = mapped_column(String(120), nullable=True)
     # TODO(PRD, decision 3): allowed id_type values. Demo value: NIN.
     id_type: Mapped[str] = mapped_column(String(20))
     id_number: Mapped[str] = mapped_column(String(20))  # NIN

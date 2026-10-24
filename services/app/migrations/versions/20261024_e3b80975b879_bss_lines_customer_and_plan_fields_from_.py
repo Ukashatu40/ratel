@@ -15,13 +15,19 @@ other customer columns are required, so they get a placeholder value first, then
 NOT NULL. The placeholder values are explicitly labelled below: a real deployment
 must replace them before the pilot.
 
+The migration refuses to run while any existing plan has on_exhaustion = 'slow' with
+no slow speeds: it is about to add the slow speeds as NULL, and a CHECK that requires
+them for slow plans. Rather than invent speeds, it stops and names the offending
+plans. A plan with on_exhaustion = 'stop' is fine, because it correctly has no slow
+speeds.
+
 Reviewer checklist: see docs/DATABASE_AND_MIGRATIONS.md.
 
 Rollback: downgrade() drops the six new plan columns (with their CHECK constraints),
-the five new customer columns (with their CHECK constraint), and the three plan
-CHECK constraints. It REFUSES while `customer` or `plan` holds any row: the columns
-carry real data, and dropping them silently destroys it. With real data, restore
-from a backup instead. Take a backup before any downgrade outside a test.
+the five new customer columns, and the three plan CHECK constraints. It REFUSES while
+`customer` or `plan` holds any row: the columns carry real data, and dropping them
+silently destroys it. With real data, restore from a backup instead. Take a backup
+before any downgrade outside a test.
 
 TODO(PRD, decision 3): `id_type` allowed values and `address` format are still open.
 The placeholder values here ('NIN', '00000000000', 'unknown') are demo values, not
@@ -50,6 +56,26 @@ _BACKFILL_ADDRESS = "unknown"
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+
+    # Refuse to add the slow-speed CHECK over rows that would violate it. A slow plan
+    # must have both slow speeds; the columns do not exist yet, so any existing slow
+    # plan will end up with NULL slow speeds and the CHECK will fail. Do not invent
+    # speeds: name the offending plans and stop.
+    offenders = (
+        bind.execute(sa.text("SELECT plan_id FROM plan WHERE on_exhaustion = 'slow'"))
+        .scalars()
+        .all()
+    )
+    if offenders:
+        raise RuntimeError(
+            "refusing to upgrade: plan(s) "
+            f"{sorted(offenders)} have on_exhaustion = 'slow' and no slow speeds yet; "
+            "the migration would add the slow speeds as NULL and then the CHECK would "
+            "fail. Set the slow speeds for those plans, or set on_exhaustion = 'stop', "
+            "before upgrading"
+        )
+
     # --- customer: email is nullable, the other three are required ---
     op.add_column("customer", sa.Column("email", sa.String(length=120), nullable=True))
 
@@ -80,11 +106,7 @@ def upgrade() -> None:
     op.add_column("plan", sa.Column("price_kobo", sa.BigInteger(), nullable=True))
     op.add_column("plan", sa.Column("validity_days", sa.Integer(), nullable=True))
     op.add_column("plan", sa.Column("data_bytes", sa.BigInteger(), nullable=True))
-    op.execute(
-        sa.text(
-            "UPDATE plan SET price_kobo = 0, validity_days = 1, data_bytes = 0"
-        )
-    )
+    op.execute(sa.text("UPDATE plan SET price_kobo = 0, validity_days = 1, data_bytes = 0"))
     op.alter_column("plan", "price_kobo", nullable=False)
     op.alter_column("plan", "validity_days", nullable=False)
     op.alter_column("plan", "data_bytes", nullable=False)
@@ -106,7 +128,6 @@ def upgrade() -> None:
     op.create_check_constraint(
         op.f("ck_plan_data_bytes_non_negative"), "plan", "data_bytes >= 0"
     )
-    # slow_ul_mbps and slow_dl_mbps are present iff on_exhaustion = 'slow'.
     op.create_check_constraint(
         op.f("ck_plan_slow_speeds_present_only_for_slow"),
         "plan",

@@ -120,8 +120,12 @@ def test_the_customer_and_plan_migration_upgrades_on_a_non_empty_table(
 
     The migration adds NOT NULL customer and plan columns. On a table that already holds
     rows, those must be backfilled first, or the ALTER COLUMN ... SET NOT NULL fails. This
-    test seeds a customer and a plan under the previous schema, upgrades, and checks the
-    backfilled values.
+    test seeds a customer and a *stop* plan under the previous schema, upgrades, and checks
+    the backfilled values.
+
+    A stop plan is used deliberately: a slow plan would violate the CHECK the migration is
+    about to add, and the migration refuses in that case (see
+    test_the_customer_and_plan_migration_refuses_while_a_slow_plan_has_no_slow_speeds).
     """
     db.alembic("downgrade", _BEFORE_CUSTOMER_AND_PLAN_FIELDS)
     with db.engine.begin() as conn:
@@ -136,7 +140,7 @@ def test_the_customer_and_plan_migration_upgrades_on_a_non_empty_table(
             text(
                 "INSERT INTO plan "
                 "(name, speed_ul_mbps, speed_dl_mbps, on_exhaustion, state) "
-                "VALUES ('Synthetic Plan', 10, 20, 'slow', 'on_sale')"
+                "VALUES ('Synthetic Plan', 10, 20, 'stop', 'on_sale')"
             )
         )
 
@@ -161,6 +165,28 @@ def test_the_customer_and_plan_migration_upgrades_on_a_non_empty_table(
     assert validity_days == 1
     assert data_bytes == 0
     assert channels == "data"
+
+
+def test_the_customer_and_plan_migration_refuses_while_a_slow_plan_has_no_slow_speeds(
+    db: Database,
+) -> None:
+    """An existing slow plan with no slow speeds stops the upgrade.
+
+    The migration adds the slow speeds as NULL, then a CHECK that requires them for slow
+    plans. Rather than invent speeds, it refuses and names the plans.
+    """
+    db.alembic("downgrade", _BEFORE_CUSTOMER_AND_PLAN_FIELDS)
+    with db.engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO plan "
+                "(name, speed_ul_mbps, speed_dl_mbps, on_exhaustion, state) "
+                "VALUES ('Existing Slow', 10, 20, 'slow', 'on_sale')"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="refusing to upgrade"):
+        db.alembic("upgrade", "head")
 
 
 def test_the_customer_and_plan_migration_downgrade_refuses_while_rows_exist(
