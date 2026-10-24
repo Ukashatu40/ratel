@@ -1,0 +1,27 @@
+# Loads the host firewall (ratel-fw.nft) at boot and removes it on stop. Install as
+# /etc/systemd/system/ratel-fw.service (deploy/firewall/README.md). It loads one table of its own and
+# leaves every other nftables or iptables rule alone. It starts before the network comes up, so
+# there is no moment in which the host is reachable without it.
+[Unit]
+Description=RatelPlus host firewall (nftables table ratel_fw)
+Wants=network-pre.target
+Before=network-pre.target
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/ratel-fw/ratel-fw.nft
+ExecStop=/usr/sbin/nft delete table inet ratel_fw
+
+# Hardening: only the network-admin capability, nothing else.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target
