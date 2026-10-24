@@ -19,7 +19,7 @@ cyclonedx-python-lib==11.12.0
 defusedxml==0.7.1
 dnspython==2.8.0
 fastapi==0.142.2
-filelock==4.0.12
+filelock==4.2.1
 graphql-core==3.2.13
 h11==0.16.0
 harfile==0.5.0
