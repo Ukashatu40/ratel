@@ -148,3 +148,10 @@ def test_the_proxy_template_never_logs_the_request_path() -> None:
     for variable in ("$request ", "$request_uri", "$uri", "$http_authorization"):
         assert variable not in log_format + " ", variable
     assert "deny  all;" in conf and "client_max_body_size" in conf and "limit_req " in conf
+
+
+def test_the_core_cp_readme_runs_the_admin_cli_through_a_function_not_a_variable() -> None:
+    # `RUN="... bash -c '...' _"` then `$RUN cmd` is split into words and fails in bash.
+    text = (ROOT / "deploy/core-cp/README.md").read_text()
+    assert "$RUN" not in text and "RUN=" not in text
+    assert "admin_cli() {" in text and "admin_cli key generate" in text

@@ -8,9 +8,9 @@
 # rollback is "point current at the previous release, then restart" (deploy/core-cp/README.md).
 # This script never restarts the service and never deletes an old release.
 #
-# The tarball is built from a reviewed commit on a developer machine:
-#   git archive --format=tar.gz --prefix=ratel-link-$(git rev-parse --short HEAD)/ \
-#     -o ratel-link-$(git rev-parse --short HEAD).tar.gz HEAD services/ratel_link services/common requirements
+# The tarball is built from a reviewed commit on a developer machine, with its dependencies inside
+# (scripts/release/build-release.sh link). A tarball without a wheels/ folder still works: pip then
+# downloads the dependencies, which needs this host to resolve names.
 set -euo pipefail
 
 BASE="${RATEL_LINK_BASE:-/opt/ratel-link}"
@@ -75,8 +75,15 @@ for required in services/ratel_link/main.py services/common requirements/link.tx
 done
 
 "$python" -m venv "$release/venv"
-"$release/venv/bin/pip" install --quiet --no-cache-dir --disable-pip-version-check \
-  -c "$release/requirements/constraints.txt" -r "$release/requirements/link.txt"
+pip_args=(--quiet --no-cache-dir --disable-pip-version-check
+  -c "$release/requirements/constraints.txt" -r "$release/requirements/link.txt")
+if [ -d "$release/wheels" ]; then
+  # A release built by scripts/release/build-release.sh link carries its dependencies: no network.
+  echo "Installing dependencies from the release's own wheels (no network used)."
+  "$release/venv/bin/pip" install "${pip_args[@]}" --no-index --find-links "$release/wheels"
+else
+  "$release/venv/bin/pip" install "${pip_args[@]}"
+fi
 
 # Code is owned by root and cannot be written by the service.
 chown -R root:root "$release"
