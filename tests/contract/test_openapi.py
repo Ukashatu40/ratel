@@ -14,7 +14,7 @@ from openapi_spec_validator import validate
 
 from tests.contract.helpers import load_contract, operations, resolve
 
-TAGS = {"RatelLink", "RatelMeter"}
+TAGS = {"RatelBSS", "RatelLink", "RatelMeter"}
 EPOCH_FIELDS = {"period_start", "period_end", "started_at", "answered_at", "ended_at", "from", "to"}
 SECRET_FIELDS = {"ki", "opc"}
 
