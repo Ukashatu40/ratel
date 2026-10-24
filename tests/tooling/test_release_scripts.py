@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BASH = shutil.which("bash") or "bash"
 GIT = shutil.which("git") or "git"
 BUILD = ROOT / "scripts/release/build-meter-release.sh"
+BUILD_ANY = ROOT / "scripts/release/build-release.sh"
 INSTALL = ROOT / "deploy/core-up/install-release.sh"
 
 # A pip that downloads nothing: it records its arguments and writes one fake wheel.
@@ -89,6 +90,49 @@ def test_the_release_holds_the_code_and_prebuilt_linux_wheels_and_nothing_else(
     assert "manylinux" in args and "x86_64" in args
 
 
+def test_the_app_release_holds_the_app_and_installs_from_the_app_requirements(
+    tmp_path: Path, fake_pip: tuple[Path, Path]
+) -> None:
+    pip, args_file = fake_pip
+    out = tmp_path / "out"
+    result = subprocess.run(  # noqa: S603  (our own script and fixed arguments)
+        [BASH, str(BUILD_ANY), "app", "HEAD", str(out)],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "RATEL_PIP": str(pip),
+            "FAKE_PIP_ARGS": str(args_file),
+            "RATEL_RELEASE_BRANCH": "HEAD",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    [tarball] = out.glob("ratel-app-*.tar.gz")
+    with tarfile.open(tarball) as tar:
+        names = tar.getnames()
+    name = tarball.name.removesuffix(".tar.gz")
+    assert f"{name}/services/app/main.py" in names
+    assert f"{name}/services/app/alembic.ini" in names
+    assert not any(n.startswith(f"{name}/services/meter_agent") for n in names)
+    assert f"{name}/wheels/example-1.0-py3-none-any.whl" in names
+    assert "requirements/app.txt" in args_file.read_text()
+
+
+def test_the_builder_refuses_an_unknown_component(tmp_path: Path) -> None:
+    result = subprocess.run(  # noqa: S603  (our own script and fixed arguments)
+        [BASH, str(BUILD_ANY), "ledger", "HEAD", str(tmp_path / "out")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "Unknown component" in result.stderr
+    assert not (tmp_path / "out").exists()
+
+
 def test_the_builder_refuses_code_that_is_not_on_the_reviewed_branch(
     tmp_path: Path, fake_pip: tuple[Path, Path]
 ) -> None:
@@ -121,7 +165,7 @@ def test_the_install_script_uses_the_wheels_without_the_network_when_the_release
 
 
 def test_the_release_scripts_hold_no_secret_or_real_address() -> None:
-    for script in (BUILD, INSTALL):
+    for script in (BUILD, BUILD_ANY, INSTALL, ROOT / "deploy/bss-app/install-release.sh"):
         text = script.read_text()
         assert script.stat().st_mode & 0o100, f"{script.name} must be executable"
         for pattern in (r"102\.214\.", r"172\.22\.", r"BEGIN [A-Z ]*PRIVATE KEY"):
