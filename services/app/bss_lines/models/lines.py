@@ -68,6 +68,16 @@ class Number(Base, TimestampMixin):
 
 class Plan(Base, TimestampMixin):
     __tablename__ = "plan"
+    __table_args__ = (
+        CheckConstraint("price_kobo >= 0", name="ck_plan_price_kobo_non_negative"),
+        CheckConstraint("validity_days > 0", name="ck_plan_validity_days_positive"),
+        CheckConstraint("data_bytes >= 0", name="ck_plan_data_bytes_non_negative"),
+        CheckConstraint(
+            "(on_exhaustion = 'slow' AND slow_ul_mbps IS NOT NULL AND slow_dl_mbps IS NOT NULL) "
+            "OR (on_exhaustion <> 'slow' AND slow_ul_mbps IS NULL AND slow_dl_mbps IS NULL)",
+            name="ck_plan_slow_speeds_present_only_for_slow",
+        ),
+    )
 
     plan_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
@@ -76,8 +86,9 @@ class Plan(Base, TimestampMixin):
     data_bytes: Mapped[int] = mapped_column(BigInteger)
     speed_ul_mbps: Mapped[float] = mapped_column()
     speed_dl_mbps: Mapped[float] = mapped_column()
-    slow_ul_mbps: Mapped[float] = mapped_column()
-    slow_dl_mbps: Mapped[float] = mapped_column()
+    # Present iff on_exhaustion = 'slow' (ck_plan_slow_speeds_present_only_for_slow).
+    slow_ul_mbps: Mapped[float | None] = mapped_column(nullable=True)
+    slow_dl_mbps: Mapped[float | None] = mapped_column(nullable=True)
     # TODO(PRD): how `channels` is represented (a list, a separate table, or
     # a comma-separated string). String for now, matching bundle.channels.
     channels: Mapped[str] = mapped_column(String(40))
