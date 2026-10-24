@@ -1,0 +1,41 @@
+# Inbound firewall for core-up. Install as /etc/ratel-fw/ratel-fw.nft; ratel-fw.service loads it at
+# boot (deploy/firewall/README.md). The addresses are not in this file: it reads them from
+# /etc/ratel-fw/addresses.nft on the host (see addresses.nft.example), because the repository is public.
+#
+# Policy is drop. What is let in: replies to connections the host started, loopback, ping, SSH, GTP-U
+# from the radios, and PFCP from core-cp. Only traffic addressed to the host itself is filtered.
+# The phones' internet traffic is forwarded through the host, not delivered to it, so this table
+# does not touch it, the NAT table or the RatelMeter counting table (ratel_meter). A reload
+# replaces this table instead of stacking a second copy.
+#
+# Check the syntax without applying it:   sudo nft -c -f /etc/ratel-fw/ratel-fw.nft
+include "/etc/ratel-fw/addresses.nft"
+
+table inet ratel_fw
+delete table inet ratel_fw
+
+table inet ratel_fw {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        ct state established,related accept
+        ct state invalid drop
+        iifname "lo" accept
+        meta l4proto { icmp, ipv6-icmp } accept
+
+        # SSH is key-only (PasswordAuthentication no), so it stays open to any address, but one
+        # address cannot open more than 10 new connections a minute.
+        tcp dport 22 ct state new meter ssh_new4 { ip saddr timeout 1m limit rate over 10/minute burst 10 packets } drop
+        tcp dport 22 ct state new meter ssh_new6 { ip6 saddr timeout 1m limit rate over 10/minute burst 10 packets } drop
+        tcp dport 22 accept
+
+        # The radios' user traffic to the SGW-U.
+        ip saddr $radios udp dport 2152 accept
+
+        # PFCP: the SGW-C and the SMF on core-cp control the SGW-U and the UPF.
+        ip saddr $core_cp udp dport { 8805, 8806 } accept
+
+        # Not a verdict: it counts what the policy then drops (sudo nft list chain inet ratel_fw input).
+        counter
+    }
+}
