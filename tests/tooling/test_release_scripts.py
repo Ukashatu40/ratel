@@ -120,6 +120,42 @@ def test_the_app_release_holds_the_app_and_installs_from_the_app_requirements(
     assert "requirements/app.txt" in args_file.read_text()
 
 
+def test_the_link_release_holds_ratellink_and_its_requirements(
+    tmp_path: Path, fake_pip: tuple[Path, Path]
+) -> None:
+    pip, args_file = fake_pip
+    out = tmp_path / "out"
+    result = subprocess.run(  # noqa: S603  (our own script and fixed arguments)
+        [BASH, str(BUILD_ANY), "link", "HEAD", str(out)],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "RATEL_PIP": str(pip),
+            "FAKE_PIP_ARGS": str(args_file),
+            "RATEL_RELEASE_BRANCH": "HEAD",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    [tarball] = out.glob("ratel-link-*.tar.gz")
+    with tarfile.open(tarball) as tar:
+        names = tar.getnames()
+    name = tarball.name.removesuffix(".tar.gz")
+    assert f"{name}/services/ratel_link/main.py" in names
+    assert f"{name}/wheels/example-1.0-py3-none-any.whl" in names
+    assert not any(n.startswith(f"{name}/services/meter_agent") for n in names)
+    assert "requirements/link.txt" in args_file.read_text()
+
+
+def test_the_core_cp_install_script_uses_the_wheels_without_the_network() -> None:
+    text = (ROOT / "deploy/core-cp/install-release.sh").read_text()
+    assert 'if [ -d "$release/wheels" ]; then' in text
+    assert '--no-index --find-links "$release/wheels"' in text
+    assert text.count('-c "$release/requirements/constraints.txt"') == 1
+
+
 def test_the_builder_refuses_an_unknown_component(tmp_path: Path) -> None:
     result = subprocess.run(  # noqa: S603  (our own script and fixed arguments)
         [BASH, str(BUILD_ANY), "ledger", "HEAD", str(tmp_path / "out")],
@@ -165,7 +201,13 @@ def test_the_install_script_uses_the_wheels_without_the_network_when_the_release
 
 
 def test_the_release_scripts_hold_no_secret_or_real_address() -> None:
-    for script in (BUILD, BUILD_ANY, INSTALL, ROOT / "deploy/bss-app/install-release.sh"):
+    for script in (
+        BUILD,
+        BUILD_ANY,
+        INSTALL,
+        ROOT / "deploy/bss-app/install-release.sh",
+        ROOT / "deploy/core-cp/install-release.sh",
+    ):
         text = script.read_text()
         assert script.stat().st_mode & 0o100, f"{script.name} must be executable"
         for pattern in (r"102\.214\.", r"172\.22\.", r"BEGIN [A-Z ]*PRIVATE KEY"):
