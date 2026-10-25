@@ -10,10 +10,13 @@ slow_dl_mbps, channels), plus the database-level CHECK constraints the plan need
 
 New NOT NULL columns need a value for every existing row. `customer` may already
 have rows on a real deployment, and `plan` certainly does (plans exist before this
-migration). `email` is nullable: receipts and notifications are optional. The three
-other customer columns are required, so they get a placeholder value first, then
-NOT NULL. The placeholder values are explicitly labelled below: a real deployment
-must replace them before the pilot.
+migration). All four customer columns (email, id_type, id_number, address) are
+required, matching the Customer schema in contracts/openapi.yaml, so they get a
+placeholder value first, then NOT NULL.
+
+The placeholder backfill must not be used on a database with real customers. A
+real deployment must replace these values before the pilot; they exist only so the
+migration can run on a table that already has rows.
 
 The migration refuses to run while any existing plan has on_exhaustion = 'slow' with
 no slow speeds: it is about to add the slow speeds as NULL, and a CHECK that requires
@@ -30,8 +33,8 @@ silently destroys it. With real data, restore from a backup instead. Take a back
 before any downgrade outside a test.
 
 TODO(PRD, decision 3): `id_type` allowed values and `address` format are still open.
-The placeholder values here ('NIN', '00000000000', 'unknown') are demo values, not
-product decisions.
+The placeholder values here ('NIN', '00000000000', 'unknown', 'unknown@example.invalid')
+are demo values, not product decisions.
 """
 
 from alembic import op
@@ -44,12 +47,15 @@ branch_labels = None
 depends_on = None
 
 
-# --- Placeholder values for backfilling the three required customer columns ---
+# --- Placeholder values for backfilling the four required customer columns ---
 # These exist so the migration can run on a `customer` table that already has rows.
-# A real deployment must replace them before the pilot; they are not product decisions.
-#   id_type     -> 'NIN'           (the demo value from PRODUCT_RULES.md)
-#   id_number   -> '00000000000'   (an obvious placeholder, not a real NIN)
-#   address     -> 'unknown'       (PRODUCT_RULES.md leaves the format open)
+# The placeholder backfill must not be used on a database with real customers: a real
+# deployment must replace them before the pilot; they are not product decisions.
+#   email       -> 'unknown@example.invalid'  (an obvious placeholder, not a real address)
+#   id_type     -> 'NIN'                     (the demo value from PRODUCT_RULES.md)
+#   id_number   -> '00000000000'             (an obvious placeholder, not a real NIN)
+#   address     -> 'unknown'                 (PRODUCT_RULES.md leaves the format open)
+_BACKFILL_EMAIL = "unknown@example.invalid"
 _BACKFILL_ID_TYPE = "NIN"
 _BACKFILL_ID_NUMBER = "00000000000"
 _BACKFILL_ADDRESS = "unknown"
@@ -76,22 +82,24 @@ def upgrade() -> None:
             "before upgrading"
         )
 
-    # --- customer: email is nullable, the other three are required ---
+    # --- customer: all four columns are required, matching the Customer schema ---
     op.add_column("customer", sa.Column("email", sa.String(length=120), nullable=True))
-
     op.add_column("customer", sa.Column("id_type", sa.String(length=20), nullable=True))
     op.add_column("customer", sa.Column("id_number", sa.String(length=20), nullable=True))
     op.add_column("customer", sa.Column("address", sa.String(length=500), nullable=True))
     op.execute(
         sa.text(
             "UPDATE customer "
-            "SET id_type = :id_type, id_number = :id_number, address = :address"
+            "SET email = :email, id_type = :id_type, id_number = :id_number, "
+            "address = :address"
         ).bindparams(
+            email=_BACKFILL_EMAIL,
             id_type=_BACKFILL_ID_TYPE,
             id_number=_BACKFILL_ID_NUMBER,
             address=_BACKFILL_ADDRESS,
         )
     )
+    op.alter_column("customer", "email", nullable=False)
     op.alter_column("customer", "id_type", nullable=False)
     op.alter_column("customer", "id_number", nullable=False)
     op.alter_column("customer", "address", nullable=False)

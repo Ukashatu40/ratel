@@ -154,7 +154,7 @@ def test_the_customer_and_plan_migration_upgrades_on_a_non_empty_table(
     assert id_type == "NIN"
     assert id_number == "00000000000"
     assert address == "unknown"
-    assert email is None
+    assert email == "unknown@example.invalid"
     assert blocked is False
 
     price_kobo = db.scalar("SELECT price_kobo FROM plan LIMIT 1")

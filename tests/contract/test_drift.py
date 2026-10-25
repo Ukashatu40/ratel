@@ -21,10 +21,17 @@ from tests.route_walk import effective_routes
 # Routes that exist on our services but are intentionally not in the
 # cross-system contract. The contract covers only RatelLink, RatelMeter and
 # RatelBSS's own API; operational endpoints are out of scope by design.
+#
+# The three lifecycle routes (/suspend, /reinstate, /terminate) and /activate are internal
+# helpers today. Their contract versions (bss_suspend_line, bss_reinstate_line,
+# bss_activate_line) are documented under RatelBSS in M-02 and implemented in M-26.
 OPERATIONAL = {
     ("GET", "/healthz"),
     ("GET", "/readyz"),
-    ("POST", "/v1/lines/activate"),  # internal sell-to-activate; external is bss_activate_line
+    ("POST", "/v1/lines/activate"),
+    ("POST", "/v1/lines/suspend"),
+    ("POST", "/v1/lines/reinstate"),
+    ("POST", "/v1/lines/terminate"),
 }
 
 # Service -> primary tag, used by test_service_exposes_no_undocumented_routes so each service

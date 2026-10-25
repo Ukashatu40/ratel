@@ -1,7 +1,7 @@
 """In-memory RatelLinkClient for tests.
 
 Records every call so we can assert "exactly one /activate".
-A repeat with the same key does not record a second call (mirrors what
+A repeat with the same key AND endpoint does not record a second call (mirrors what
 RatelLink promises by body, in the contract).
 Can be told to fail, for error-path tests.
 
@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class RecordedActivate:
+    endpoint: str
     imsi: str
     msisdn: str
     speed_ul_mbps: float
@@ -27,10 +28,33 @@ class RecordedActivate:
 
 
 @dataclass
+class RecordedDeactivate:
+    endpoint: str
+    imsi: str
+    reason: str
+    idempotency_key: str
+
+
+@dataclass
+class RecordedData:
+    endpoint: str
+    imsi: str
+    mode: str
+    speed_ul_mbps: float | None
+    speed_dl_mbps: float | None
+    idempotency_key: str
+
+
+Recorded = RecordedActivate | RecordedDeactivate | RecordedData
+
+
+@dataclass
 class FakeRatelLinkClient:
-    calls: list[RecordedActivate] = field(default_factory=list)
-    _by_key: dict[str, RecordedActivate] = field(default_factory=dict)
+    calls: list[Recorded] = field(default_factory=list)
+    _by_key: dict[tuple[str, str], Recorded] = field(default_factory=dict)
     fail_on_activate: Exception | None = None
+    fail_on_deactivate: Exception | None = None
+    fail_on_data: Exception | None = None
 
     def activate(
         self,
@@ -44,9 +68,11 @@ class FakeRatelLinkClient:
     ) -> None:
         if self.fail_on_activate is not None:
             raise self.fail_on_activate
-        if idempotency_key in self._by_key:
+        key = ("/activate", idempotency_key)
+        if key in self._by_key:
             return
         call = RecordedActivate(
+            endpoint="/activate",
             imsi=imsi,
             msisdn=msisdn,
             speed_ul_mbps=speed_ul_mbps,
@@ -55,7 +81,53 @@ class FakeRatelLinkClient:
             idempotency_key=idempotency_key,
         )
         self.calls.append(call)
-        self._by_key[idempotency_key] = call
+        self._by_key[key] = call
 
-    def get_line(self, imsi: str) -> dict:
+    def deactivate(
+        self,
+        imsi: str,
+        *,
+        reason: str,
+        idempotency_key: str,
+    ) -> None:
+        if self.fail_on_deactivate is not None:
+            raise self.fail_on_deactivate
+        key = ("/deactivate", idempotency_key)
+        if key in self._by_key:
+            return
+        call = RecordedDeactivate(
+            endpoint="/deactivate",
+            imsi=imsi,
+            reason=reason,
+            idempotency_key=idempotency_key,
+        )
+        self.calls.append(call)
+        self._by_key[key] = call
+
+    def data(
+        self,
+        imsi: str,
+        *,
+        mode: str,
+        speed_ul_mbps: float | None,
+        speed_dl_mbps: float | None,
+        idempotency_key: str,
+    ) -> None:
+        if self.fail_on_data is not None:
+            raise self.fail_on_data
+        key = ("/data", idempotency_key)
+        if key in self._by_key:
+            return
+        call = RecordedData(
+            endpoint="/data",
+            imsi=imsi,
+            mode=mode,
+            speed_ul_mbps=speed_ul_mbps,
+            speed_dl_mbps=speed_dl_mbps,
+            idempotency_key=idempotency_key,
+        )
+        self.calls.append(call)
+        self._by_key[key] = call
+
+    def get_line(self, imsi: str) -> dict[str, object]:
         return {"status": "active", "imsi": imsi}
