@@ -50,17 +50,22 @@ Do **not** use `/etc/nftables.conf` or `nftables.service` for this. The stock fi
    sudo nft -c -f /etc/ratel-fw/ratel-fw.nft && echo syntax ok
    ```
 4. **Arm the rollback**, then load the rules. If anything goes wrong, the timer removes the firewall
-   after two minutes by itself:
+   after ten minutes by itself (typing an SSH passphrase for the test takes minutes, and a shorter
+   timer has already expired under the person doing this once):
    ```
-   sudo systemd-run --on-active=120 --unit=ratel-fw-rollback /usr/sbin/nft delete table inet ratel_fw
+   sudo systemd-run --on-active=600 --unit=ratel-fw-rollback /usr/sbin/nft delete table inet ratel_fw
    sudo nft -f /etc/ratel-fw/ratel-fw.nft
    ```
 5. **Test with a new SSH connection from a second terminal.** Your current session survives the rules
-   whether or not they are right, so it proves nothing. If the new one connects, cancel the rollback:
+   whether or not they are right, so it proves nothing. First check the firewall is still loaded, then
+   try the new connection. If it connects, cancel the rollback:
    ```
+   sudo nft list tables | grep ratel_fw
    sudo systemctl stop ratel-fw-rollback.timer
    ```
-   If it does not connect, do nothing: the rollback runs within two minutes.
+   If `ratel_fw` is missing from the list, or the timer is "not loaded", the rollback has already
+   run and the firewall is **off**: your test proved nothing. Load it again (step 4) and redo the test
+   faster. If the new connection does not connect, do nothing: the rollback runs within ten minutes.
 6. **Check the core still works:**
    ```
    sudo ss --sctp -n | head -8
