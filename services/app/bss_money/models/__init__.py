@@ -7,5 +7,6 @@ them. Money is BIGINT kobo.
 
 from app.bss_money.models.allowance import AllowanceBucket
 from app.bss_money.models.ledger import LedgerEntry, Wallet
+from app.bss_money.models.rating import UsageRating
 
-__all__ = ["AllowanceBucket", "LedgerEntry", "Wallet"]
+__all__ = ["AllowanceBucket", "LedgerEntry", "UsageRating", "Wallet"]
