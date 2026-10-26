@@ -51,6 +51,38 @@ If you see one, report it as a security issue.
 | Agents report the API unreachable | Proxy down, certificate expired, or firewall | `systemctl status nginx`; `sudo nginx -t`; check the certificate dates |
 | Service restarts every few seconds | The start limit stops it after four failures in two minutes | `journalctl -u ratel-app.service -e` for the first error |
 
+## The rating job
+
+`python -m app.bss_money.rating_cli` takes each line's new usage records off its allowance and then
+slows, cuts or expires lines that need it (M-17). It is meant to run every five minutes from a timer.
+**There is no timer file yet** (deployment of the job is part of M-27), so until then it runs by hand:
+
+```
+sudo -u ratelbss env PYTHONPATH=/opt/ratel-app/current/services \
+  bash -c 'set -a; . /etc/ratel-app/ratel-app.env; set +a; exec "$@"' _ \
+  /opt/ratel-app/current/venv/bin/python -m app.bss_money.rating_cli; echo "exit $?"
+```
+
+| Exit | Meaning | What to do |
+| ---- | ------- | ---------- |
+| 0 | Finished; every line was handled | Nothing |
+| 1 | Finished, but a line failed (`rating.line_failed` or `rating.line_change_failed` in the log) | Read the log line for the `line_id` and the error type. The next run tries that line again; usage that was not rated is still waiting, never lost |
+| 2 | Could not run: the database did not answer, or `RATEL_LINK_API_KEY` is not set | Fix the cause and run again |
+
+What it does, and does not do:
+
+- Usage is deducted soonest-expiry-first and each record is marked rated (`usage_rating`) in the same
+  transaction, so a crash rates nothing twice. Running it twice in a row changes nothing.
+- A line whose allowance is used up goes `active` to `out_of_data` through the state machine, once. RatelLink gets
+  `/data` (slow speeds or off, as the plan says); calls are not touched. A line whose validity ended with no
+  renewal goes to `expired` (`/deactivate`). If RatelLink is down, the change is tried again on the next run.
+- A line that has **never had an allowance** is rated but never cut, so a line made by hand in the lab does not
+  lose service. A SIM with no line keeps its records unrated until a line exists.
+- It does **not** restore data when a customer tops up: that belongs to the purchase flow (not built yet).
+  A line stays `out_of_data` until then.
+- Never roll the `usage_rating` table back by hand. Those rows are the only record of what has been deducted,
+  and deleting them makes the next run deduct the same usage again. The migration refuses to downgrade while they exist.
+
 ## Recovery
 
 1. `sudo systemctl status postgresql redis-server` and start whichever is down.

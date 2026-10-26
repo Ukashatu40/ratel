@@ -70,8 +70,8 @@ RATEL_LINK = Layering(
 # RatelBSS: money (docs/adr/0008, 0009). `api` joins the rules when the module gets routes.
 BSS_MONEY = Layering(
     package="app.bss_money",
-    root_modules=frozenset({"__init__", "check_cli"}),
-    entry_points=frozenset({"check_cli"}),
+    root_modules=frozenset({"__init__", "check_cli", "rating_cli"}),
+    entry_points=frozenset({"check_cli", "rating_cli"}),
     allowed={
         "domain": frozenset(),
         "models": frozenset(),
