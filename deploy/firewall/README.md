@@ -10,7 +10,7 @@ Read **Apply** in full before you start. A wrong rule can cut your SSH session o
 
 | Host | Let in | Everything else |
 |---|---|---|
-| core-cp | SSH (key-only, 10 new connections a minute per address), S1 (SCTP 36412) from the radios, PFCP (UDP 8805 and 8806) from core-up | dropped |
+| core-cp | SSH (key-only, 10 new connections a minute per address), S1 (SCTP 36412) from the radios, PFCP (UDP 8805 and 8806) from core-up, HTTPS (443) from core-up and bss-app for RatelLink's proxy | dropped |
 | core-up | SSH (as above), GTP-U (UDP 2152) from the radios, PFCP (UDP 8805 and 8806) from core-cp | dropped |
 
 Replies to what the host started, loopback and ping are always let in. Only traffic addressed to the host
@@ -40,7 +40,8 @@ Do **not** use `/etc/nftables.conf` or `nftables.service` for this. The stock fi
    sudo install -m 0644 /tmp/core-cp.nft /etc/ratel-fw/ratel-fw.nft
    sudo install -m 0644 /tmp/ratel-fw.service /etc/systemd/system/ratel-fw.service
    ```
-2. **Write the addresses** (real ones, typed on the host; copy the names from `addresses.nft.example`):
+2. **Write the addresses** (on core-cp this now includes `bss_app`; the rules name it, and a name that is
+   not defined makes the load fail, which leaves the host with no firewall) (real ones, typed on the host; copy the names from `addresses.nft.example`):
    ```
    sudoedit /etc/ratel-fw/addresses.nft
    ```

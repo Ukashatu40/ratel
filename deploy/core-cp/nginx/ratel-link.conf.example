@@ -3,6 +3,7 @@
 # proxy allows only the callers' addresses, terminates TLS and limits request rates.
 # Install as /etc/nginx/conf.d/ratel-link.conf after replacing every <placeholder>.
 # This is a template: the network team may use another proxy, with the same four properties.
+# The certificate is made by ./make-self-signed-cert.sh (see deploy/core-cp/README.md).
 
 limit_req_zone $binary_remote_addr zone=ratel_link:1m rate=20r/s;
 
