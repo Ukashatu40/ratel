@@ -19,11 +19,12 @@ from tests.contract.helpers import not_implemented, operations
 from tests.route_walk import effective_routes
 
 # Routes that exist on our services but are intentionally not in the
-# cross-system contract. The contract covers only RatelLink and RatelMeter;
-# RatelBSS's own API is out of scope (see contracts/openapi.yaml, info.description).
+# cross-system contract. The contract covers RatelLink, RatelMeter and RatelPay;
+# RatelBSS's API for RatelDesk is not in it yet (see contracts/openapi.yaml, info.description).
 OPERATIONAL = {("GET", "/healthz"), ("GET", "/readyz"), ("POST", "/v1/lines/activate")}
 
-TAG_FOR_SERVICE = {"ratel_link": "RatelLink", "app": "RatelMeter"}
+# RatelPay's operations are served by RatelBSS, which runs in the `app` service.
+TAGS_FOR_SERVICE = {"ratel_link": {"RatelLink"}, "app": {"RatelMeter", "RatelPay"}}
 
 
 def _services() -> dict[str, FastAPI]:
@@ -35,10 +36,10 @@ def _routes(app: FastAPI) -> set[tuple[str, str]]:
     return {(m, r.path) for r in effective_routes(app) if r.is_api_route for m in r.methods}
 
 
-@pytest.mark.parametrize("service", sorted(TAG_FOR_SERVICE))
+@pytest.mark.parametrize("service", sorted(TAGS_FOR_SERVICE))
 def test_service_exposes_no_undocumented_routes(service: str) -> None:
-    tag = TAG_FOR_SERVICE[service]
-    documented = {(o.method, o.path) for o in operations() if o.tag == tag}
+    tags = TAGS_FOR_SERVICE[service]
+    documented = {(o.method, o.path) for o in operations() if o.tag in tags}
     extra = _routes(_services()[service]) - OPERATIONAL - documented
     assert not extra, f"{service} has routes missing from contracts/openapi.yaml: {sorted(extra)}"
 
@@ -53,7 +54,7 @@ def test_not_implemented_list_has_no_unknown_ids() -> None:
 def test_implemented_matches_not_implemented_list() -> None:
     services = _services()
     routes = {name: _routes(app) for name, app in services.items()}
-    owner = {tag: svc for svc, tag in TAG_FOR_SERVICE.items()}
+    owner = {tag: svc for svc, tags in TAGS_FOR_SERVICE.items() for tag in tags}
     skip = not_implemented()
     problems = []
     for o in operations():

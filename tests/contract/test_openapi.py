@@ -14,9 +14,23 @@ from openapi_spec_validator import validate
 
 from tests.contract.helpers import load_contract, operations, resolve
 
-TAGS = {"RatelLink", "RatelMeter"}
-EPOCH_FIELDS = {"period_start", "period_end", "started_at", "answered_at", "ended_at", "from", "to"}
-SECRET_FIELDS = {"ki", "opc"}
+TAGS = {"RatelLink", "RatelMeter", "RatelPay"}
+EPOCH_FIELDS = {
+    "period_start",
+    "period_end",
+    "started_at",
+    "answered_at",
+    "ended_at",
+    "from",
+    "to",
+    "redeemed_at",
+}
+SECRET_FIELDS = {"ki", "opc", "pin"}
+# RatelPay is public by design (ARCHITECTURE.md): no API key, rate-limited, nothing personal
+# (TOP-2). Only these operations may drop the API key; every other one still needs it.
+PUBLIC_OPERATIONS = frozenset(
+    {"pay_redeem_voucher", "pay_list_bundles", "pay_start_payment", "pay_get_payment"}
+)
 
 
 def check_unique_ids_and_tags(spec: dict[str, Any]) -> list[str]:
@@ -33,9 +47,15 @@ def check_auth_everywhere(spec: dict[str, Any]) -> list[str]:
     problems = []
     if spec.get("security") != [{"ApiKeyAuth": []}]:
         problems.append("global security must be ApiKeyAuth")
-    for o in operations(spec):
-        if "security" in o.raw and o.raw["security"] != [{"ApiKeyAuth": []}]:
+    ops = operations(spec)
+    for o in ops:
+        if o.op_id in PUBLIC_OPERATIONS:
+            if o.raw.get("security") != []:
+                problems.append(f"{o.op_id}: public operation must declare security: []")
+        elif "security" in o.raw and o.raw["security"] != [{"ApiKeyAuth": []}]:
             problems.append(f"{o.op_id}: overrides global API-key auth")
+    stale = PUBLIC_OPERATIONS - {o.op_id for o in ops}
+    problems += [f"{i}: listed as public but not in the contract" for i in sorted(stale)]
     scheme = spec["components"]["securitySchemes"]["ApiKeyAuth"]
     if (scheme.get("type"), scheme.get("scheme")) != ("http", "bearer"):
         problems.append("ApiKeyAuth must be an http bearer scheme (Authorization: Bearer <key>)")
@@ -169,6 +189,18 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
     def basic_auth(s: dict[str, Any]) -> None:
         s["components"]["securitySchemes"]["ApiKeyAuth"] = {"type": "http", "scheme": "basic"}
 
+    def public_op_with_key(s: dict[str, Any]) -> None:
+        s["paths"]["/v1/pay/vouchers/redeem"]["post"]["security"] = [{"ApiKeyAuth": []}]
+
+    def stale_public_list(s: dict[str, Any]) -> None:
+        del s["paths"]["/v1/pay/bundles"]
+
+    def leak_pin(s: dict[str, Any]) -> None:
+        s["components"]["schemas"]["RedeemResult"]["properties"]["pin"] = {"type": "string"}
+
+    def float_redeemed_at(s: dict[str, Any]) -> None:
+        s["components"]["schemas"]["RedeemResult"]["properties"]["redeemed_at"] = {"type": "number"}
+
     return {
         "drop_idempotency": (drop_idempotency, check_idempotency_on_state_changes),
         "leak_ki": (leak_ki, check_no_secrets_in_responses),
@@ -177,6 +209,10 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
         "open_endpoint": (open_endpoint, check_auth_everywhere),
         "old_api_key_header": (old_api_key_header, check_auth_everywhere),
         "basic_auth": (basic_auth, check_auth_everywhere),
+        "public_op_with_key": (public_op_with_key, check_auth_everywhere),
+        "stale_public_list": (stale_public_list, check_auth_everywhere),
+        "leak_pin": (leak_pin, check_no_secrets_in_responses),
+        "float_redeemed_at": (float_redeemed_at, check_epoch_fields_are_integers),
     }
 
 

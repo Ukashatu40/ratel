@@ -6,3 +6,7 @@
 #   - scripts/ci/run_schemathesis.sh runs Schemathesis only against operations NOT listed here.
 # Remove a line in the same PR that implements the operation.
 meter_get_calls
+pay_redeem_voucher
+pay_list_bundles
+pay_start_payment
+pay_get_payment

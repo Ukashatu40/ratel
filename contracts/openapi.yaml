@@ -4,27 +4,34 @@ info:
   version: 0.1.0-draft
   description: |
     The two seams where RatelBSS touches the network (Build Plan, "The two contracts to freeze on
-    day one"). This file is the source of truth. If code and this file disagree, the code is wrong.
+    day one"), and the part of RatelBSS's own API that RatelPay calls (M-02). This file is the
+    source of truth. If code and this file disagree, the code is wrong.
 
     - Contract 1: RatelLink (tag `RatelLink`), runs on core-cp.
-    - Contract 2: RatelMeter (tag `RatelMeter`), API runs on bss-app.
+    - Contract 2: RatelMeter (tag `RatelMeter`), API runs on bss-app. It includes the meter
+      agent's ingest call (`POST /v1/usage`).
+    - RatelPay (tag `RatelPay`): served by RatelBSS on bss-app for the public top-up page. Every
+      path starts with `/v1/pay/`, so the reverse proxy can expose those paths and nothing else.
 
     Conventions from the Build Plan:
     - Plain REST, standard HTTP status codes, JSON bodies.
     - Errors: `{"error": {"code": "...", "message": "..."}}`.
     - Every call carries an API key in the `Authorization` header, one key per calling system.
+      The exception is RatelPay, which is public by design (ARCHITECTURE.md): its operations
+      declare `security: []`, are rate-limited (429), and return nothing personal about a line's
+      owner (TOP-2).
     - Every call that changes something accepts an `Idempotency-Key` header. Repeating a call with
       the same key returns the first result.
     - Times are Unix epoch seconds in UTC, sent as integers. Usage is in bytes.
     - Until RatelLink's live changes land, every change takes effect at the line's next attach.
-    - Ki and OPc are write-only. No response in this file may contain them.
+    - Ki, OPc and voucher PINs are write-only. No response in this file may contain them.
 
     Anything the Build Plan does not specify is marked `TODO(contract)` in a description or with
     the `x-todo` extension. Do not fill those in by guessing. Agree them with the owners, then
     update this file in the same commit as the code.
 
-    Not covered here on purpose: RatelBSS's own API for RatelDesk/RatelPay, and the internal
-    ingest call from the meter agent to the RatelMeter API. TODO(contract): decide where those live.
+    Not covered here yet: RatelBSS's API for RatelDesk (M-02, needs the PRD), and the payment
+    gateway's webhook (M-19, the provider is not chosen). TODO(contract): add them here.
   x-todo:
     - Operational endpoints (/healthz) are deliberately not in this contract.
 servers:
@@ -37,6 +44,10 @@ tags:
     description: Contract 1. Provisioning. Only writer to RatelCore's subscriber database.
   - name: RatelMeter
     description: Contract 2. Usage and call records for billing.
+  - name: RatelPay
+    description: |
+      Served by RatelBSS (`app` on bss-app) for the RatelPay top-up page. Public: no API key,
+      rate-limited, and nothing personal about a line's owner in any response (TOP-2).
 paths:
   /v1/sims:
     post:
@@ -317,6 +328,136 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/vouchers/redeem:
+    post:
+      tags: [RatelPay]
+      operationId: pay_redeem_voucher
+      summary: Credit a voucher to a line's wallet. Public, no API key.
+      description: |
+        Credits the voucher's value to the wallet of the line with this number. A voucher credits
+        exactly once, however many times it is redeemed (PRODUCT_RULES, Vouchers).
+        Every refusal gets the same 400: a wrong PIN, a PIN that fails its Luhn check, a voucher
+        that is used, expired, locked or unknown, and a number that is not a line that can be
+        credited. The answer never says which it was, or whether a line or a voucher exists.
+        A request of the wrong shape gets 422.
+        Failed attempts are limited (at most 5 per hour, PRODUCT_RULES) and answered with 429.
+        Attempts are counted whether or not the voucher exists, so 429 is not a clue either.
+        Idempotency-Key is required: a retry after a lost response returns the first result,
+        instead of the 400 a used voucher would get.
+        No response contains the PIN or anything about the line's owner (TOP-2).
+      x-todo:
+        - Voucher lookup and the rate-limit key need the M-18 owner's decision. PRODUCT_RULES stores PINs hashed and counts failed attempts per card number, but this request has no card number.
+        - Which line states can be credited (a suspended line, for example) is not specified.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/BssIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemRequest"
+      responses:
+        "200":
+          description: The voucher was credited.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedeemResult"
+        "400":
+          $ref: "#/components/responses/RedeemFailed"
+        "422":
+          $ref: "#/components/responses/PayValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/bundles:
+    get:
+      tags: [RatelPay]
+      operationId: pay_list_bundles
+      summary: Bundles on sale. Public, no API key.
+      description: |
+        Every bundle in the `on_sale` state. Retired bundles are never listed. Not paged: the list
+        of bundles on sale is short. RatelPay cannot buy a bundle yet; there is no operation for it.
+      security: []
+      responses:
+        "200":
+          description: Bundles on sale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayBundleList"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/payments:
+    post:
+      tags: [RatelPay]
+      operationId: pay_start_payment
+      summary: "DRAFT: start a payment through the gateway. Public, no API key."
+      description: |
+        DRAFT. TODO(contract): the payment provider is not chosen (PRODUCT_RULES decision 6), so
+        this operation's fields will change. Do not build against it yet.
+        Starts a payment of `amount_kobo` for the line with this number. Nothing is credited here:
+        the wallet is credited only after the provider's webhook is verified and the transaction
+        is re-queried with the provider (PRODUCT_RULES, Payments).
+      x-todo:
+        - What the page needs to send the customer to the provider (a checkout link or similar) depends on the provider.
+        - Lowest and highest amount.
+        - The error when the provider cannot be reached.
+        - Idempotency-Key is required here as on redeem (a retried payment must not start twice); confirm with the M-19 owner.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/BssIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentStartRequest"
+      responses:
+        "200":
+          description: The payment was started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "422":
+          $ref: "#/components/responses/PayValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/payments/{payment_id}:
+    get:
+      tags: [RatelPay]
+      operationId: pay_get_payment
+      summary: "DRAFT: a payment's status. Public, no API key."
+      description: |
+        DRAFT. TODO(contract): the payment provider is not chosen (PRODUCT_RULES decision 6), so
+        this operation's fields will change. Do not build against it yet.
+        Anyone who has the `payment_id` can call this, so the response holds nothing about the
+        line or its owner, and the id must be impossible to guess.
+      x-todo:
+        - The status values depend on the provider.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+      responses:
+        "200":
+          description: The payment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "404":
+          $ref: "#/components/responses/PaymentNotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -339,6 +480,25 @@ components:
       schema:
         type: string
         minLength: 1
+    BssIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        RatelBSS stores the key (in Redis, M-26) with the first result. Repeating a call with the
+        same key returns that first result and changes nothing.
+        TODO(contract): key format and length, and how long a key is kept. Owner: RatelBSS lines.
+      schema:
+        type: string
+        minLength: 1
+    PaymentId:
+      name: payment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      x-todo: Format not specified. It must be impossible to guess (the operation is public).
     Imsi:
       name: imsi
       in: path
@@ -428,6 +588,47 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: {code: unavailable, message: "Voice cannot be switched on right now."}
+    RedeemFailed:
+      description: |
+        The voucher was not credited. One answer for every reason (wrong PIN, failed Luhn check,
+        voucher used, expired, locked or unknown, number not a line that can be credited), so it
+        reveals nothing. The attempt counts towards the limit.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: redeem_failed, message: "This voucher cannot be used."}
+    PayValidationError:
+      description: |
+        The request has the wrong shape: a missing field, or a number or PIN of the wrong length
+        or with characters other than digits. The message names the fields, never their values.
+        A PIN of the right shape that fails its Luhn check is not this error: it gets 400.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: validation_error, message: "Invalid request. Fields: body.pin"}
+    TooManyRequests:
+      description: |
+        Too many requests. Try again later. Redeem answers this after too many failed attempts
+        (at most 5 per hour, PRODUCT_RULES); every RatelPay operation is rate-limited.
+        TODO(contract): the limits other than redemption's, and whether a Retry-After header is sent.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: too_many_attempts, message: "Too many attempts. Try again later."}
+    PaymentNotFound:
+      description: Unknown payment.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: not_found, message: "Unknown payment."}
     UnexpectedError:
       description: Any other failure, in the standard error shape.
       content:
@@ -679,3 +880,136 @@ components:
             $ref: "#/components/schemas/CallRecord"
         next_cursor:
           type: [string, "null"]
+    PayMsisdn:
+      type: string
+      pattern: "^234[0-9]{10}$"
+      description: |
+        The line's number in the stored form: 234 and ten digits, no plus sign (as in
+        ActivateRequest). The page converts what the customer types.
+      examples: ["2340000000001"]
+    KoboAmount:
+      type: integer
+      minimum: 1
+      description: Whole kobo.
+    RedeemRequest:
+      type: object
+      required: [msisdn, pin]
+      additionalProperties: false
+      properties:
+        msisdn:
+          $ref: "#/components/schemas/PayMsisdn"
+        pin:
+          type: string
+          pattern: "^[0-9]{14}$"
+          writeOnly: true
+          description: |
+            Secret. Write-only. 13 digits plus one Luhn check digit. Never returned, never in a
+            URL, and in logs only masked to its last four digits.
+    RedeemResult:
+      type: object
+      required: [reference, amount_kobo, redeemed_at]
+      additionalProperties: false
+      description: |
+        Nothing about the line's owner (TOP-2), and never the PIN.
+        The example is made up for the mock (make mock). It is not a product value.
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          description: Identifies this redemption, for the customer to quote. Not the PIN.
+          x-todo: Format not specified.
+        amount_kobo:
+          $ref: "#/components/schemas/KoboAmount"
+        redeemed_at:
+          type: integer
+          minimum: 0
+          description: Unix epoch seconds, UTC.
+      # Example only, for the mock. Not a product value.
+      examples:
+        - reference: "EXAMPLE-REDEEM-0001"
+          amount_kobo: 50000
+          redeemed_at: 1791820800
+    PayBundle:
+      type: object
+      required: [bundle_id, name, price_kobo, data_bytes, validity_days]
+      additionalProperties: false
+      properties:
+        bundle_id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+        price_kobo:
+          type: integer
+          minimum: 0
+          description: Whole kobo.
+        data_bytes:
+          type: integer
+          minimum: 1
+        validity_days:
+          type: integer
+          minimum: 1
+    PayBundleList:
+      type: object
+      required: [bundles]
+      additionalProperties: false
+      description: |
+        The example bundles are made up for the mock (make mock). They are not product values:
+        the real bundles, names and prices are TODO(PRD).
+      properties:
+        bundles:
+          type: array
+          items:
+            $ref: "#/components/schemas/PayBundle"
+      # Examples only, for the mock. Not product values.
+      examples:
+        - bundles:
+            - bundle_id: 1
+              name: "Weekly 2GB"
+              price_kobo: 100000
+              data_bytes: 2147483648
+              validity_days: 7
+            - bundle_id: 2
+              name: "Daily 500MB"
+              price_kobo: 20000
+              data_bytes: 524288000
+              validity_days: 1
+            - bundle_id: 3
+              name: "Monthly 10GB"
+              price_kobo: 350000
+              data_bytes: 10737418240
+              validity_days: 30
+    PaymentStartRequest:
+      type: object
+      required: [msisdn, amount_kobo]
+      additionalProperties: false
+      description: "DRAFT. TODO(contract): depends on the payment provider."
+      properties:
+        msisdn:
+          $ref: "#/components/schemas/PayMsisdn"
+        amount_kobo:
+          $ref: "#/components/schemas/KoboAmount"
+    Payment:
+      type: object
+      required: [payment_id, status, amount_kobo]
+      additionalProperties: false
+      description: |
+        DRAFT. TODO(contract): depends on the payment provider. Holds nothing about the line or
+        its owner, because anyone with the payment_id can read it.
+        The example is made up for the mock (make mock). It is not a product value, and `pending`
+        is not a decided status value.
+      properties:
+        payment_id:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          x-todo: Values depend on the payment provider.
+        amount_kobo:
+          $ref: "#/components/schemas/KoboAmount"
+      # Example only, for the mock. Not a product value.
+      examples:
+        - payment_id: "EXAMPLE-PAYMENT-0001"
+          status: "pending"
+          amount_kobo: 100000
