@@ -16,6 +16,13 @@ from sqlalchemy.orm import Session
 
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.activation import ActivationError, activate_line
+from app.bss_lines.services.lifecycle import (
+    LifecycleError,
+    LifecycleResult,
+    reinstate_line,
+    suspend_line,
+    terminate_line,
+)
 from app.bss_lines.services.ratel_link_client import RatelLinkClient, RatelLinkError
 from app.config import Settings
 
@@ -114,3 +121,114 @@ def post_activate(
         line_id=result.line_id,
         state=result.to_state.value,
     )
+
+
+class LifecycleBody(BaseModel):
+    """Request payload for suspend, reinstate and terminate."""
+
+    line_id: int
+    actor: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=120)
+    reason: str = Field(min_length=1, max_length=40)
+    reason_text: str | None = Field(default=None, max_length=200)
+
+
+class LifecycleResponse(BaseModel):
+    """Response returned after a lifecycle change."""
+
+    line_id: int
+    from_state: str
+    to_state: str
+
+
+def _lifecycle_response(result: LifecycleResult) -> LifecycleResponse:
+    return LifecycleResponse(
+        line_id=result.line_id,
+        from_state=result.from_state.value,
+        to_state=result.to_state.value,
+    )
+
+
+@router.post("/lines/suspend", response_model=LifecycleResponse)
+def post_suspend(
+    payload: LifecycleBody,
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+    client: Annotated[RatelLinkClient, Depends(get_client)],
+) -> LifecycleResponse:
+    """Suspend a line with a reason.
+
+    TODO(auth, M-26): same caveat as activation. The ``actor`` comes from the
+    body; staff authentication arrives with M-26.
+    """
+    try:
+        result = suspend_line(
+            lines,
+            client,
+            payload.line_id,
+            actor=payload.actor,
+            reason=payload.reason,
+            reason_text=payload.reason_text,
+            idempotency_key=payload.idempotency_key,
+        )
+    except LifecycleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RatelLinkError as exc:
+        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+
+    return _lifecycle_response(result)
+
+
+@router.post("/lines/reinstate", response_model=LifecycleResponse)
+def post_reinstate(
+    payload: LifecycleBody,
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+    client: Annotated[RatelLinkClient, Depends(get_client)],
+) -> LifecycleResponse:
+    """Reinstate a suspended line.
+
+    TODO(auth, M-26): same caveat as activation.
+    """
+    try:
+        result = reinstate_line(
+            lines,
+            client,
+            payload.line_id,
+            actor=payload.actor,
+            reason=payload.reason,
+            reason_text=payload.reason_text,
+            idempotency_key=payload.idempotency_key,
+        )
+    except LifecycleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RatelLinkError as exc:
+        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+
+    return _lifecycle_response(result)
+
+
+@router.post("/lines/terminate", response_model=LifecycleResponse)
+def post_terminate(
+    payload: LifecycleBody,
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+    client: Annotated[RatelLinkClient, Depends(get_client)],
+) -> LifecycleResponse:
+    """Terminate a line.
+
+    TODO(auth, M-26): same caveat as activation.
+    """
+    try:
+        result = terminate_line(
+            lines,
+            client,
+            payload.line_id,
+            actor=payload.actor,
+            reason=payload.reason,
+            reason_text=payload.reason_text,
+            idempotency_key=payload.idempotency_key,
+        )
+    except LifecycleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RatelLinkError as exc:
+        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+
+    return _lifecycle_response(result)

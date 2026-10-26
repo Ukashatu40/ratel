@@ -20,6 +20,10 @@ class LinesRepository(Protocol):
         """Persist the line's current state (set by the state machine)."""
         ...
 
+    def retire_sim(self, iccid: str) -> None:
+        """Mark the SIM with this ICCID retired. Used when a line is terminated."""
+        ...
+
     def add_audit(
         self,
         *,

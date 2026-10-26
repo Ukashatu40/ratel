@@ -29,7 +29,15 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
     factory = sessionmaker(engine, expire_on_commit=False)
 
     with factory() as s:
-        customer = Customer(name="Alice", phone="2348000000001", kyc_status="verified")
+        customer = Customer(
+            name="Alice",
+            phone="2348000000001",
+            email="alice@example.test",
+            id_type="NIN",
+            id_number="00000000000",
+            address="addr",
+            kyc_status="verified",
+        )
         sim = Sim(
             iccid="8923400000000000001",
             imsi="621000000000001",
@@ -39,8 +47,14 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
         number = Number(msisdn="2348000000001", state="in_use")
         plan = Plan(
             name="Basic",
+            price_kobo=500,
+            validity_days=30,
+            data_bytes=1_000_000,
             speed_ul_mbps=10,
             speed_dl_mbps=20,
+            slow_ul_mbps=1,
+            slow_dl_mbps=1,
+            channels="data",
             on_exhaustion="slow",
             state="on_sale",
         )

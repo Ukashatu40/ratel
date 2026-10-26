@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.bss_lines.models.lines import Line, LineAudit
+from app.bss_lines.models.lines import Line, LineAudit, Sim
 
 
 class SqlLinesRepository:
@@ -20,6 +20,12 @@ class SqlLinesRepository:
 
     def save(self, line: Line) -> None:
         self._session.add(line)
+
+    def retire_sim(self, iccid: str) -> None:
+        """Mark a SIM retired. Used when a line is terminated."""
+        sim = self._session.get(Sim, iccid)
+        if sim is not None:
+            sim.state = "retired"
 
     def add_audit(
         self,
