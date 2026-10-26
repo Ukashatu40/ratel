@@ -1,8 +1,17 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, cast
 
 from fastapi import FastAPI, Request, Response
 
 from app.bss_lines.api.lines import router as bss_lines_router
+from app.bss_money.api.vouchers import router as bss_money_router
+from app.bss_money.repositories.ports import RedemptionRepositories
+from app.bss_money.repositories.sql import (
+    SqlLedgerRepository,
+    SqlLineLookup,
+    SqlVoucherRepository,
+)
 from app.config import Settings
 from app.db import make_engine, session_factory
 from app.meter_api.api import router as meter_api_router
@@ -39,6 +48,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.session_factory = session_factory(engine)
 
+    @contextmanager
+    def redemption_scope() -> Iterator[RedemptionRepositories]:
+        # One transaction per redemption, committed even when the card is refused: the failed
+        # attempt must stay on record (services/vouchers.py).
+        with app.state.session_factory() as session, session.begin():
+            yield RedemptionRepositories(
+                vouchers=SqlVoucherRepository(session),
+                ledger=SqlLedgerRepository(session),
+                lines=SqlLineLookup(session),
+            )
+
+    app.state.redemption_scope = redemption_scope
+
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
         # Liveness only. TODO: readiness check (PostgreSQL, Redis) once models exist.
@@ -50,10 +72,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return Response(status_code=200, headers={"Allow": "GET, POST, OPTIONS"})
         return cast(Response, await call_next(request))
 
-    # TODO: mount bss_money router as it is built.
     # Network access rules (RatelDesk and API only over the WireGuard VPN; RatelPay and the
     # payment webhook are the only public paths) are enforced at the reverse proxy and
     # documented in deploy/bss-app/README.md.
     app.include_router(bss_lines_router)
+    app.include_router(bss_money_router)
     app.include_router(meter_api_router)
     return app

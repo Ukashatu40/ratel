@@ -35,6 +35,7 @@ from app.bss_money.domain.vouchers import (
     VoucherState,
     check_transition,
     is_card_number,
+    is_msisdn,
     is_pin,
     new_card_number,
     new_pin,
@@ -42,6 +43,7 @@ from app.bss_money.domain.vouchers import (
 from app.bss_money.repositories.ports import (
     LedgerRepository,
     NewVoucher,
+    RedemptionScope,
     VoucherNotRedeemable,
     VoucherRepository,
 )
@@ -64,6 +66,7 @@ class Refusal(StrEnum):
     """Why a redemption was refused. For the log only, never for the caller."""
 
     NO_SUCH_CARD = "no_such_card"
+    NO_SUCH_LINE = "no_such_line"
     WRONG_PIN = "wrong_pin"
     NOT_ON_SALE = "not_on_sale"
     EXPIRED = "expired"
@@ -81,12 +84,16 @@ def redeem_voucher(
     vouchers: VoucherRepository,
     ledger: LedgerRepository,
     *,
-    line_id: int,
+    line_id: int | None,
     card_number: str,
     pin: str,
     now: datetime,
 ) -> RedeemResult:
-    """Credit the card's face value to the line's wallet, once, if the number and PIN are right."""
+    """Credit the card's face value to the line's wallet, once, if the number and PIN are right.
+
+    `line_id` is None when the phone number the customer gave belongs to no line. That is refused
+    like every other failure, and only after the PIN has been checked, so it costs the same time.
+    """
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware (UTC)")
     if not is_card_number(card_number) or not is_pin(pin):
@@ -105,6 +112,8 @@ def redeem_voucher(
         refusal = Refusal.NO_SUCH_CARD
     elif not pin_ok:
         refusal = Refusal.WRONG_PIN
+    elif line_id is None:
+        refusal = Refusal.NO_SUCH_LINE
     elif card.state is VoucherState.USED and card.used_by_line_id == line_id:
         balance = ledger.balance(line_id) or 0
         log_event(log, logging.INFO, "voucher.replayed", line_id=line_id)
@@ -113,7 +122,7 @@ def redeem_voucher(
         refusal = Refusal.NOT_ON_SALE
     elif card.expires_at is not None and card.expires_at <= now:
         refusal = Refusal.EXPIRED
-    if refusal is not None or card is None:
+    if refusal is not None or card is None or line_id is None:
         vouchers.record_failed_attempt(card_number, now)
         log_event(
             log,
@@ -200,3 +209,26 @@ def set_card_state(vouchers: VoucherRepository, voucher_id: int, target: Voucher
     check_transition(current, target)
     vouchers.set_state(voucher_id, target)
     log_event(log, logging.INFO, "voucher.card_state", voucher_id=voucher_id, to_state=target.value)
+
+
+def redeem_for_number(
+    scope: RedemptionScope, *, msisdn: str, card_number: str, pin: str, now: datetime
+) -> RedeemResult:
+    """Redeem a card for the line that has this phone number, in one transaction.
+
+    The transaction is committed when this returns, refusals included: a failed attempt must
+    stay on record. Typos are answered before any transaction is opened.
+    """
+    if not is_msisdn(msisdn):
+        return RedeemResult(RedeemStatus.MALFORMED)
+    if not is_card_number(card_number) or not is_pin(pin):
+        return RedeemResult(RedeemStatus.MALFORMED)
+    with scope() as repositories:
+        return redeem_voucher(
+            repositories.vouchers,
+            repositories.ledger,
+            line_id=repositories.lines.line_id_for_msisdn(msisdn),
+            card_number=card_number,
+            pin=pin,
+            now=now,
+        )

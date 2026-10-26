@@ -83,6 +83,43 @@ What it does, and does not do:
 - Never roll the `usage_rating` table back by hand. Those rows are the only record of what has been deducted,
   and deleting them makes the next run deduct the same usage again. The migration refuses to downgrade while they exist.
 
+## Vouchers
+
+Prepaid cards are made and moved along by `python -m app.bss_money.voucher_cli`, run by a person on bss-app, and
+redeemed by customers through the public route `POST /v1/pay/vouchers/redeem` (called by the RatelPay page).
+Use the same `sudo -u ratelbss ... bash -c 'set -a; . /etc/ratel-app/ratel-app.env; ...'` wrapper as for the rating
+job, with `-m app.bss_money.voucher_cli`.
+
+| Task | Command (after `voucher_cli`) |
+| ---- | ----------------------------- |
+| Make a batch | `create-batch --batch nov-1 --count 100 --value-kobo 50000 --out /root/nov-1.csv` |
+| Move a batch on | `set-state --batch nov-1 --to approved` (then `sent_to_printer`, `in_stock`, `on_sale`, in that order) |
+| Stop a lost or stolen card | `lock --voucher-id 123` |
+
+- **The output file of `create-batch` holds every PIN, and is the only place they exist.** It is created for you
+  alone (mode 0600) and never overwritten. Hand it to the printer, then delete it (`shred -u`). A PIN cannot be
+  recovered from the database, which keeps only a salted hash. Never copy the file into a ticket or a chat.
+- A card can be redeemed only while it is `on_sale`. A batch moves as a whole: one card that cannot make the move
+  stops the whole batch from moving.
+- Face values and expiry are TODO(PRD): nothing here chooses them. `--value-kobo` is whatever you were told.
+
+What a customer sees, and why it is so plain:
+
+- Every failure (a wrong number or PIN, an unknown phone number, a used, locked, expired or not-yet-on-sale card)
+  gives the same answer, `400 voucher_refused`, so a guesser learns nothing. Only two answers differ: `422` for
+  digits that are not well formed (a typo; not counted) and `429` after 5 failed attempts on one card number in
+  an hour (the PIN is not even checked). Wait the hour: there is no way to lift it early, by design.
+- A customer who redeemed and retries (a lost reply) gets the success again and is not charged twice or counted.
+- The route has **no API key**. It is protected by the limit above and by the proxy's per-address limit
+  (`ratel_redeem` zone in the nginx template). If you see a flood in the proxy log (`429` from nginx), that is the
+  proxy doing its job; the log holds no card number, PIN or path.
+
+| Symptom | Likely cause | What to do |
+| ------- | ------------ | ---------- |
+| A customer says "card not accepted" and the card looks right | It was already used (by this or another line), is not `on_sale` yet, is locked, or the phone number is not the line's stored form | Look at the card's state and `used_by_line_id` in PostgreSQL (`voucher` table, by `voucher_id`; never print `pin_hash`). Check the logs for `voucher.refused` with its `reason` (the reason is for you, never shown to the customer) |
+| A customer is told to wait | 5 failed attempts on the number in the last hour | Nothing to fix. A real customer mistyping 5 times waits an hour; if it is an attack you will see the same card number failing repeatedly in `voucher.locked_out` events |
+| `voucher.refused` with `no_such_line` in the log | The phone number the customer typed is not on a line, or the line is terminated | Ask the customer for the number on the SIM, in the international form without a plus sign |
+
 ## Recovery
 
 1. `sudo systemctl status postgresql redis-server` and start whichever is down.

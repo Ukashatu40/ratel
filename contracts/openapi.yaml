@@ -14,6 +14,7 @@ info:
     - Plain REST, standard HTTP status codes, JSON bodies.
     - Errors: `{"error": {"code": "...", "message": "..."}}`.
     - Every call carries an API key in the `Authorization` header, one key per calling system.
+      The one exception is `bss_redeem_voucher`, which RatelPay calls from a browser (see it).
     - Every call that changes something accepts an `Idempotency-Key` header. Repeating a call with
       the same key returns the first result.
     - Times are Unix epoch seconds in UTC, sent as integers. Usage is in bytes.
@@ -638,6 +639,52 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/vouchers/redeem:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_redeem_voucher
+      summary: Redeem a prepaid card for the line with this phone number. Public, for RatelPay.
+      description: |
+        Credits the card's face value to the wallet of the line that has `msisdn`, once. This is the
+        one RatelBSS call that carries **no API key** (`security: []`): RatelPay is a static page in
+        a browser and could not keep a key secret. The protection is at the reverse proxy (a
+        per-address rate limit) and in the service: at most 5 failed attempts per card number per
+        hour (PRODUCT_RULES.md, Vouchers), counted for numbers that do not exist as well.
+        What the caller learns is deliberately little. A wrong number, a wrong PIN, an unknown
+        phone number, a card that was used, locked, not yet on sale or expired all answer the same
+        `400`. Only two answers differ, and neither says anything about any card: `422` when the
+        digits are not well formed (a typo, caught by the PIN's Luhn check digit; not counted), and
+        `429` when the number has had 5 failures in the last hour (the PIN is not even looked at).
+        A repeat by the same line, after the card was redeemed, answers `200` again with the same
+        amounts and credits nothing more, so a retry after a lost reply is safe.
+        `msisdn` is the stored form: digits only, international format without a plus sign.
+        TODO(PRD): how RatelPay turns what a customer types into that form, and the screen wording.
+        The answer is sent with `Cache-Control: no-store`. The card number and PIN are never
+        logged, and never in an answer.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemVoucherRequest"
+      responses:
+        "200":
+          description: Redeemed (or already redeemed by this line).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedeemVoucherResponse"
+        "400":
+          $ref: "#/components/responses/VoucherRefused"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -765,6 +812,35 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: {code: unavailable, message: "Voice cannot be switched on right now."}
+    VoucherRefused:
+      description: |
+        The card cannot be used. One answer for every reason (a wrong number or PIN, an unknown
+        phone number, a card already used, locked, not on sale or expired), so that it gives a
+        guesser nothing to work from. The attempt counts towards 5 per card number per hour.
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: voucher_refused, message: "This card cannot be used."}
+    RateLimited:
+      description: |
+        This card number has had 5 failed attempts in the last hour. Nothing was checked.
+        Try again after the time in `Retry-After`.
+      headers:
+        Retry-After:
+          schema: {type: string, enum: ["3600"]}
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: rate_limited, message: "Too many attempts. Try again later."}
     UnexpectedError:
       description: Any other failure, in the standard error shape.
       content:
@@ -1239,6 +1315,38 @@ components:
         reason_text:
           type: string
           maxLength: 200
+    RedeemVoucherRequest:
+      type: object
+      required: [msisdn, card_number, pin]
+      additionalProperties: false
+      properties:
+        msisdn:
+          type: string
+          pattern: "^[0-9]{10,15}$"
+          description: The phone number of the line to credit, as stored (digits, international form).
+        card_number:
+          type: string
+          pattern: "^[0-9]{20}$"
+          description: The 20 digit number printed on the card. Never logged.
+        pin:
+          type: string
+          pattern: "^[0-9]{14}$"
+          writeOnly: true
+          description: |
+            The 13 digit PIN and its Luhn check digit, as printed. Write-only: it appears in no
+            response and in no log. TODO(PRD): confirm the check digit belongs to the PIN.
+    RedeemVoucherResponse:
+      type: object
+      required: [amount_kobo, balance_kobo]
+      additionalProperties: false
+      properties:
+        amount_kobo:
+          type: integer
+          minimum: 1
+          description: The card's face value, in whole kobo.
+        balance_kobo:
+          type: integer
+          description: The line's wallet balance after this redemption, in whole kobo.
     Line:
       type: object
       required: [line_id, customer_id, iccid, imsi, msisdn, plan_id, state]

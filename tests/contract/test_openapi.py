@@ -29,13 +29,23 @@ def check_unique_ids_and_tags(spec: dict[str, Any]) -> list[str]:
     return problems
 
 
+# The only operations that may be called without an API key, each by decision of the project lead.
+# bss_redeem_voucher: RatelPay is a static page in a browser and cannot keep a key secret; the
+# route is protected by the 5-failures-per-card-per-hour limit and a per-address limit at the
+# reverse proxy (PRODUCT_RULES.md, Vouchers). Adding a name here is a security decision.
+PUBLIC_OPERATIONS = {"bss_redeem_voucher"}
+
+
 def check_auth_everywhere(spec: dict[str, Any]) -> list[str]:
     problems = []
     if spec.get("security") != [{"ApiKeyAuth": []}]:
         problems.append("global security must be ApiKeyAuth")
     for o in operations(spec):
-        if "security" in o.raw and o.raw["security"] != [{"ApiKeyAuth": []}]:
-            problems.append(f"{o.op_id}: overrides global API-key auth")
+        if "security" not in o.raw or o.raw["security"] == [{"ApiKeyAuth": []}]:
+            continue
+        if o.op_id in PUBLIC_OPERATIONS and o.raw["security"] == []:
+            continue  # explicitly public, and only in exactly that way
+        problems.append(f"{o.op_id}: overrides global API-key auth")
     scheme = spec["components"]["securitySchemes"]["ApiKeyAuth"]
     if (scheme.get("type"), scheme.get("scheme")) != ("http", "bearer"):
         problems.append("ApiKeyAuth must be an http bearer scheme (Authorization: Bearer <key>)")
@@ -159,6 +169,9 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
     def open_endpoint(s: dict[str, Any]) -> None:
         s["paths"]["/v1/assignments"]["get"]["security"] = []
 
+    def redeem_with_another_scheme(s: dict[str, Any]) -> None:
+        s["paths"]["/v1/pay/vouchers/redeem"]["post"]["security"] = [{"Other": []}]
+
     def old_api_key_header(s: dict[str, Any]) -> None:
         s["components"]["securitySchemes"]["ApiKeyAuth"] = {
             "type": "apiKey",
@@ -175,6 +188,7 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
         "float_time": (float_time, check_epoch_fields_are_integers),
         "bad_error": (bad_error, check_error_shape),
         "open_endpoint": (open_endpoint, check_auth_everywhere),
+        "redeem_with_another_scheme": (redeem_with_another_scheme, check_auth_everywhere),
         "old_api_key_header": (old_api_key_header, check_auth_everywhere),
         "basic_auth": (basic_auth, check_auth_everywhere),
     }

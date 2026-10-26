@@ -116,9 +116,13 @@ def test_the_database_roles_hold_no_password_and_the_service_role_cannot_change_
 
 def test_the_proxy_template_denies_by_default_and_never_logs_a_path() -> None:
     text = NGINX.read_text()
-    locations = re.findall(r"location [^{]+\{(.*?)\n    \}", text, re.S)
-    for block in locations:
-        if "return 404" in block:
+    locations = re.findall(r"location ([^{]+)\{(.*?)\n    \}", text, re.S)
+    public = [
+        name.strip() for name, _ in locations if "deny  all;" not in _ and "return 404" not in _
+    ]
+    assert public == ["= /v1/pay/vouchers/redeem"]  # the one public path, an exact match
+    for _name, block in locations:
+        if "return 404" in block or "= /v1/pay/vouchers/redeem" in _name:
             continue
         assert "deny  all;" in block, block
     assert "log_format ratel_app_privacy" in text
@@ -140,3 +144,18 @@ def test_no_file_in_bss_app_holds_a_secret_or_real_address() -> None:
         text = path.read_text()
         for pattern in forbidden:
             assert not re.search(pattern, text), f"{path.relative_to(ROOT)} matches {pattern}"
+
+
+def test_the_public_redeem_path_has_its_own_limit_a_tiny_body_and_nothing_else_public() -> None:
+    text = NGINX.read_text()
+    block = re.search(r"location = /v1/pay/vouchers/redeem \{(.*?)\n    \}", text, re.S)
+    assert block is not None
+    body = block.group(1)
+    assert "limit_req zone=ratel_redeem" in body
+    assert "limit_req_zone $binary_remote_addr zone=ratel_redeem" in text
+    assert "limit_req_status 429" in body
+    assert re.search(r"client_max_body_size 1k;", body)
+    assert "allow" not in body.replace(
+        "# ", ""
+    )  # it is public: no address list to forget to fill in
+    assert not re.search(r"location\s+(~\*?\s+)?/v1/pay", text)  # no wider public prefix
