@@ -1,7 +1,7 @@
 """money: voucher and voucher_attempt, the prepaid cards and their failed redemptions
 
 Revision ID: e75e719550b6
-Revises: e3b80975b879
+Revises: 81e645a0ee0a
 Create Date: 2026-10-26 10:41:48.711605+00:00
 
 `voucher` holds each card's number, a salted scrypt hash of its PIN (never the PIN), its face value
@@ -21,7 +21,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "e75e719550b6"
-down_revision = "e3b80975b879"
+down_revision = "81e645a0ee0a"
 branch_labels = None
 depends_on = None
 

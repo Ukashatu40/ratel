@@ -131,13 +131,13 @@ def test_downgrade_refuses_while_cards_exist_and_works_when_empty(db: Database) 
     _issue(db)
 
     with pytest.raises(RuntimeError, match="refusing to drop voucher"):
-        db.alembic("downgrade", "e3b80975b879")
+        db.alembic("downgrade", "81e645a0ee0a")
     assert db.scalar("SELECT count(*) FROM voucher") == 1  # nothing was lost
 
     with Session(db.engine) as session, session.begin():
         session.execute(VoucherAttempt.__table__.delete())
         session.execute(Voucher.__table__.delete())
-    db.alembic("downgrade", "e3b80975b879")
+    db.alembic("downgrade", "81e645a0ee0a")
     assert db.scalar("SELECT to_regclass('voucher')") is None
     db.alembic("upgrade", "head")
     assert db.scalar("SELECT to_regclass('voucher')") is not None
