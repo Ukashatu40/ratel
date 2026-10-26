@@ -71,6 +71,65 @@ class RatelLinkClient:
             status=response.status_code,
         )
 
+    def deactivate(self, imsi: str, *, reason: str, idempotency_key: str) -> None:
+        """Send POST /v1/lines/{imsi}/deactivate. Raise RatelLinkError on failure."""
+        url = f"{self._base}/v1/lines/{imsi}/deactivate"
+        body = {"reason": reason}
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Idempotency-Key": idempotency_key,
+        }
+        try:
+            response = httpx.post(url, json=body, headers=headers, timeout=self._timeout)
+        except httpx.HTTPError as exc:
+            raise RatelLinkError(f"deactivate request failed: {exc}") from exc
+        if response.status_code == 200:
+            return
+        if response.status_code in (401, 404, 422):
+            raise RatelLinkError(
+                f"RatelLink refused deactivation ({response.status_code})",
+                status=response.status_code,
+            )
+        raise RatelLinkError(
+            f"RatelLink returned unexpected status {response.status_code}",
+            status=response.status_code,
+        )
+
+    def data(
+        self,
+        imsi: str,
+        *,
+        mode: str,
+        speed_ul_mbps: float | None,
+        speed_dl_mbps: float | None,
+        idempotency_key: str,
+    ) -> None:
+        """Send POST /v1/lines/{imsi}/data. Raise RatelLinkError on failure."""
+        url = f"{self._base}/v1/lines/{imsi}/data"
+        body: dict[str, object] = {"mode": mode}
+        if speed_ul_mbps is not None and speed_dl_mbps is not None:
+            body["speed_ul_mbps"] = speed_ul_mbps
+            body["speed_dl_mbps"] = speed_dl_mbps
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Idempotency-Key": idempotency_key,
+        }
+        try:
+            response = httpx.post(url, json=body, headers=headers, timeout=self._timeout)
+        except httpx.HTTPError as exc:
+            raise RatelLinkError(f"data request failed: {exc}") from exc
+        if response.status_code == 200:
+            return
+        if response.status_code in (401, 404, 409, 422):
+            raise RatelLinkError(
+                f"RatelLink refused data change ({response.status_code})",
+                status=response.status_code,
+            )
+        raise RatelLinkError(
+            f"RatelLink returned unexpected status {response.status_code}",
+            status=response.status_code,
+        )
+
     def get_line(self, imsi: str) -> dict[str, Any]:
         url = f"{self._base}/v1/lines/{imsi}"
         headers = {"Authorization": f"Bearer {self._api_key}"}
