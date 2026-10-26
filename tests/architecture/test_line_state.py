@@ -1,9 +1,13 @@
 """A line's state changes only through the state machine (Build Plan, RatelBSS: lines; M-14).
 
-Every place in `app/bss_lines` that writes a line's state must first ask `validate_transition`
-whether the move is allowed, in the same function. Four ways of writing a state are recognised:
-assigning `.state`, `setattr(x, "state", ...)`, `.values(state=...)`, and a bulk `update(Line)` or a
-raw `UPDATE line` statement (those two can never be checked, so they are always refused).
+Every place in `app/bss_lines` that writes a **line's** state must first ask `validate_transition`
+whether the move is allowed, in the same function. Four ways of writing a line's state are
+recognised: assigning `line.state`, `setattr(line, "state", ...)`, `.values(state=...)`, and a
+bulk `update(Line)` or a raw `UPDATE line` statement (those two can never be checked, so they are
+always refused).
+
+Assignments to `.state` on any other object (a SIM's `.state`, a Number's `.state`) are not the
+line state machine's business and are not flagged. See `_state_writes` for the receiver check.
 
 The test reads the source with `ast`, so it needs no running service, and each rule is proven able
 to fail on a small fake tree.
@@ -34,20 +38,37 @@ def _calls(node: ast.AST, name: str) -> list[int]:
 
 
 def _state_writes(node: ast.AST) -> list[tuple[int, str]]:
-    """(line, how) for every way `node` writes a `state` that can be checked against the guard."""
+    """(line, how) for every way `node` writes a **line's** state.
+
+    Only attributes on an object named `line` count. A SIM's or a Number's `.state` is a
+    different field on a different table, and is not the line state machine's business.
+    `.values(state=...)` is flagged regardless of receiver, because it is the shape SQLAlchemy
+    uses for a bulk update and the checker cannot tell which table it targets.
+    """
     writes: list[tuple[int, str]] = []
     for child in ast.walk(node):
         if isinstance(child, ast.Assign | ast.AnnAssign | ast.AugAssign):
             targets = child.targets if isinstance(child, ast.Assign) else [child.target]
             for target in targets:
-                if isinstance(target, ast.Attribute) and target.attr == "state":
-                    writes.append((child.lineno, "assigns .state"))
+                if (
+                    isinstance(target, ast.Attribute)
+                    and target.attr == "state"
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "line"
+                ):
+                    writes.append((child.lineno, "assigns line.state"))
         elif isinstance(child, ast.Call):
             func = child.func
             if isinstance(func, ast.Name) and func.id == "setattr" and len(child.args) >= 2:
+                obj = child.args[0]
                 key = child.args[1]
-                if isinstance(key, ast.Constant) and key.value == "state":
-                    writes.append((child.lineno, "calls setattr(..., 'state', ...)"))
+                if (
+                    isinstance(obj, ast.Name)
+                    and obj.id == "line"
+                    and isinstance(key, ast.Constant)
+                    and key.value == "state"
+                ):
+                    writes.append((child.lineno, "calls setattr(line, 'state', ...)"))
             if isinstance(func, ast.Attribute) and func.attr == "values":
                 names = {kw.arg for kw in child.keywords}
                 keys = {
@@ -134,7 +155,7 @@ def test_a_write_after_the_guard_is_allowed(tmp_path: Path) -> None:
 def test_a_write_with_no_guard_is_flagged(tmp_path: Path) -> None:
     root = _tree(tmp_path, {"services/bad.py": "def go(line):\n    line.state = 'active'\n"})
     assert any(
-        "assigns .state without calling validate_transition" in p
+        "assigns line.state without calling validate_transition" in p
         for p in line_state_violations(root)
     )
 
@@ -208,5 +229,15 @@ def test_other_tables_state_columns_are_not_mistaken_for_a_write(tmp_path: Path)
     # A column declaration is not an assignment to an attribute.
     root = _tree(
         tmp_path, {"models/ok.py": "class Sim:\n    state: str = mapped_column(String(20))\n"}
+    )
+    assert line_state_violations(root) == []
+
+
+def test_a_sims_state_assignment_is_not_a_line_write(tmp_path: Path) -> None:
+    # The checker flags line.state, not any .state. Setting a SIM's state is a different
+    # field on a different table, and is not the line state machine's business.
+    root = _tree(
+        tmp_path,
+        {"repositories/ok.py": ("def retire(sim):\n    sim.state = 'retired'\n")},
     )
     assert line_state_violations(root) == []
