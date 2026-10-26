@@ -110,12 +110,15 @@ What a customer sees, and why it is so plain:
   digits that are not well formed (a typo; not counted) and `429` after 5 failed attempts on one card number in
   an hour (the PIN is not even checked). Wait the hour: there is no way to lift it early, by design.
 - A customer who redeemed and retries (a lost reply) gets the success again and is not charged twice or counted.
-- The route has **no API key**. It is protected by the limit above and by the proxy's per-address limit
-  (`ratel_redeem` zone in the nginx template). If you see a flood in the proxy log (`429` from nginx), that is the
+- The page sends **no key**: the proxy adds the redemption key (`PAY_API_KEY`) to this one route and replaces
+  anything the browser sent. A `401` from this route means the proxy's key file and `PAY_API_KEY` differ. The key is
+  not what stops guessing (anyone can call the proxy); the limit above and the proxy's per-address limit
+  (`ratel_redeem` zone in the nginx template) are. If you see a flood in the proxy log (`429` from nginx), that is the
   proxy doing its job; the log holds no card number, PIN or path.
 
 | Symptom | Likely cause | What to do |
 | ------- | ------------ | ---------- |
+| `401` from the redeem route, for every customer | The key in `/etc/nginx/ratel-pay-key.conf` and `PAY_API_KEY` in the app's env file differ, or one is `CHANGE_ME` | Make them the same (README step 8), `sudo nginx -t`, reload nginx, restart the app |
 | A customer says "card not accepted" and the card looks right | It was already used (by this or another line), is not `on_sale` yet, is locked, or the phone number is not the line's stored form | Look at the card's state and `used_by_line_id` in PostgreSQL (`voucher` table, by `voucher_id`; never print `pin_hash`). Check the logs for `voucher.refused` with its `reason` (the reason is for you, never shown to the customer) |
 | A customer is told to wait | 5 failed attempts on the number in the last hour | Nothing to fix. A real customer mistyping 5 times waits an hour; if it is an attack you will see the same card number failing repeatedly in `voucher.locked_out` events |
 | `voucher.refused` with `no_such_line` in the log | The phone number the customer typed is not on a line, or the line is terminated | Ask the customer for the number on the SIM, in the international form without a plus sign |

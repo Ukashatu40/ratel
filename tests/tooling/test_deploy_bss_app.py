@@ -155,6 +155,8 @@ def test_the_public_redeem_path_has_its_own_limit_a_tiny_body_and_nothing_else_p
     assert "limit_req_zone $binary_remote_addr zone=ratel_redeem" in text
     assert "limit_req_status 429" in body
     assert re.search(r"client_max_body_size 1k;", body)
+    assert "include /etc/nginx/ratel-pay-key.conf;" in body  # the key is added here and only here
+    assert text.count("include /etc/nginx/ratel-pay-key.conf;") == 1  # in no other location
     assert "allow" not in body.replace(
         "# ", ""
     )  # it is public: no address list to forget to fill in

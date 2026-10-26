@@ -41,14 +41,18 @@ server {
         proxy_read_timeout 30s;
     }
 
-    # PUBLIC: the RatelPay page redeems a prepaid card here, without an API key (the page is a static
-    # file in a browser). An exact match, so nothing else under /v1/pay is public. A small body
-    # (the request is under 150 bytes), its own limit, and no body in any log (the log format above
-    # has none). The card number and PIN travel only in this request, over TLS.
+    # PUBLIC PATH: the RatelPay page redeems a prepaid card here. An exact match, so nothing else
+    # under /v1/pay is public. The page is a static file in a browser and cannot keep a key secret,
+    # so it sends none: the included file adds the redemption key (PAY_API_KEY) and REPLACES any
+    # Authorization header the browser sent. That keeps the app's rule that every call has a key; it
+    # does not stop someone who calls this proxy, and is not meant to. What stops guessing is the
+    # app's 5 failed attempts per card number per hour, and the limit below. A small body (the
+    # request is under 150 bytes), and no body in any log (the log format above has none).
     location = /v1/pay/vouchers/redeem {
         limit_req zone=ratel_redeem burst=10 nodelay;
         limit_req_status 429;
         client_max_body_size 1k;
+        include /etc/nginx/ratel-pay-key.conf;  # proxy_set_header Authorization "Bearer <key>";
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;

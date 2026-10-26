@@ -23,6 +23,8 @@ from tests.app.bss_money.rating_data import seed_line
 from tests.app.bss_money.vouchers_data import FACE, issue, wrong_pin
 
 URL = "/v1/pay/vouchers/redeem"
+KEY = "test-pay-key-not-a-real-key"
+AUTH = {"Authorization": f"Bearer {KEY}"}  # what the reverse proxy adds
 
 
 class Shop:
@@ -37,7 +39,9 @@ class Shop:
         self.msisdn_two = "23480000" + "00002"
 
     def redeem(self, msisdn: str, card: str, pin: str) -> tuple[int, dict, dict]:  # type: ignore[type-arg]
-        response = self.client.post(URL, json={"msisdn": msisdn, "card_number": card, "pin": pin})
+        response = self.client.post(
+            URL, json={"msisdn": msisdn, "card_number": card, "pin": pin}, headers=AUTH
+        )
         return response.status_code, response.json(), dict(response.headers)
 
     def scalar(self, statement):  # type: ignore[no-untyped-def]
@@ -47,7 +51,10 @@ class Shop:
 
 @pytest.fixture
 def shop(tmp_path: Path) -> Iterator[Shop]:
-    settings = Settings(database_url=f"sqlite:///{tmp_path / 'bss.db'}")  # type: ignore[arg-type]
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'bss.db'}",  # type: ignore[arg-type]
+        pay_api_key=KEY,  # type: ignore[arg-type]
+    )
     app = create_app(settings)
     Base.metadata.create_all(app.state.engine)
     with TestClient(app) as client:
@@ -58,7 +65,7 @@ def _card(shop: Shop, n: int = 0) -> IssuedCard:
     return shop.cards[n]
 
 
-def test_a_card_is_redeemed_with_no_api_key_and_credits_the_wallet(shop: Shop) -> None:
+def test_a_card_is_redeemed_and_credits_the_wallet(shop: Shop) -> None:
     card = _card(shop)
 
     status, body, headers = shop.redeem(shop.msisdn_one, card.card_number, card.pin)
@@ -139,7 +146,7 @@ def test_the_sixth_attempt_is_stopped_with_a_429_and_the_failures_were_kept(shop
 def test_badly_formed_requests_are_a_422_and_not_counted(
     shop: Shop, payload: dict[str, object]
 ) -> None:
-    response = shop.client.post(URL, json=payload)
+    response = shop.client.post(URL, json=payload, headers=AUTH)
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"
@@ -160,7 +167,9 @@ def test_a_pin_with_a_wrong_check_digit_is_a_422_and_not_counted(shop: Shop) -> 
 def test_a_rejected_request_never_echoes_what_was_sent(shop: Shop) -> None:
     card = _card(shop)
     response = shop.client.post(
-        URL, json={"msisdn": "2348000000001", "card_number": card.card_number, "pin": card.pin[:-1]}
+        URL,
+        json={"msisdn": "2348000000001", "card_number": card.card_number, "pin": card.pin[:-1]},
+        headers=AUTH,
     )
 
     assert response.status_code == 422
@@ -188,12 +197,70 @@ def test_neither_the_answers_nor_the_logs_hold_a_card_number_or_pin(
 
 
 def test_only_post_is_allowed(shop: Shop) -> None:
-    assert shop.client.get(URL).status_code == 405
+    assert shop.client.get(URL, headers=AUTH).status_code == 405
 
 
-def test_the_route_is_described_in_the_contract_as_public() -> None:
+def test_the_route_is_in_the_contract_under_the_ordinary_api_key_rule() -> None:
     from tests.contract.helpers import operations
 
     [op] = [o for o in operations() if o.op_id == "bss_redeem_voucher"]
     assert (op.method, op.path) == ("POST", "/v1/pay/vouchers/redeem")
-    assert op.raw["security"] == []
+    assert "security" not in op.raw  # the global API-key rule applies, like every other call
+
+
+BODY = {"msisdn": "2348000000001", "card_number": "1" * 20, "pin": "12345678901231"}
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},  # what a browser sends: the page has no key
+        {"Authorization": "Bearer wrong-key"},
+        {"Authorization": f"Basic {KEY}"},
+        {"Authorization": "Bearer "},
+        {"Authorization": KEY},
+    ],
+)
+def test_without_the_right_key_nothing_is_looked_at_or_counted(
+    shop: Shop, headers: dict[str, str]
+) -> None:
+    card = _card(shop)
+    response = shop.client.post(
+        URL,
+        json={"msisdn": shop.msisdn_one, "card_number": card.card_number, "pin": card.pin},
+        headers=headers,
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert shop.scalar(select(func.count(LedgerEntry.entry_id))) == 0
+    assert shop.scalar(select(func.count(VoucherAttempt.attempt_id))) == 0
+    assert shop.redeem(shop.msisdn_one, card.card_number, card.pin)[0] == 200  # still unused
+
+
+def test_the_meter_key_does_not_open_the_redeem_route(tmp_path: Path) -> None:
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'k.db'}",  # type: ignore[arg-type]
+        pay_api_key=KEY,  # type: ignore[arg-type]
+        meter_api_key="the-meter-key",  # type: ignore[arg-type]
+    )
+    app = create_app(settings)
+    Base.metadata.create_all(app.state.engine)
+    with TestClient(app) as client:
+        response = client.post(URL, json=BODY, headers={"Authorization": "Bearer the-meter-key"})
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("configured", [None, "", "CHANGE_ME"])
+def test_with_no_key_configured_no_caller_is_right(tmp_path: Path, configured: str | None) -> None:
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'n.db'}",  # type: ignore[arg-type]
+        pay_api_key=configured,  # type: ignore[arg-type]
+    )
+    app = create_app(settings)
+    with TestClient(app) as client:
+        for token in ("", "CHANGE_ME", KEY):
+            response = client.post(URL, json=BODY, headers={"Authorization": f"Bearer {token}"})
+            assert response.status_code == 401

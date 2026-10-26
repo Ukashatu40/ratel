@@ -14,7 +14,6 @@ info:
     - Plain REST, standard HTTP status codes, JSON bodies.
     - Errors: `{"error": {"code": "...", "message": "..."}}`.
     - Every call carries an API key in the `Authorization` header, one key per calling system.
-      The one exception is `bss_redeem_voucher`, which RatelPay calls from a browser (see it).
     - Every call that changes something accepts an `Idempotency-Key` header. Repeating a call with
       the same key returns the first result.
     - Times are Unix epoch seconds in UTC, sent as integers. Usage is in bytes.
@@ -643,13 +642,16 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_redeem_voucher
-      summary: Redeem a prepaid card for the line with this phone number. Public, for RatelPay.
+      summary: Redeem a prepaid card for the line with this phone number. Called for RatelPay.
       description: |
-        Credits the card's face value to the wallet of the line that has `msisdn`, once. This is the
-        one RatelBSS call that carries **no API key** (`security: []`): RatelPay is a static page in
-        a browser and could not keep a key secret. The protection is at the reverse proxy (a
-        per-address rate limit) and in the service: at most 5 failed attempts per card number per
-        hour (PRODUCT_RULES.md, Vouchers), counted for numbers that do not exist as well.
+        Credits the card's face value to the wallet of the line that has `msisdn`, once.
+        The caller is the reverse proxy in front of RatelPay's page, with a key of its own
+        (`PAY_API_KEY`). The page is a static file in a browser and cannot keep a key secret, so it
+        sends none: the proxy adds the key to this one route and replaces anything the browser sent.
+        That keeps the rule that every call carries a key. It does not stop someone who calls the
+        proxy directly, and is not meant to: the protection against guessing is that there are at
+        most 5 failed attempts per card number per hour (PRODUCT_RULES.md, Vouchers), counted for
+        numbers that do not exist as well, and a per-address rate limit at the proxy.
         What the caller learns is deliberately little. A wrong number, a wrong PIN, an unknown
         phone number, a card that was used, locked, not yet on sale or expired all answer the same
         `400`. Only two answers differ, and neither says anything about any card: `422` when the
@@ -661,7 +663,6 @@ paths:
         TODO(PRD): how RatelPay turns what a customer types into that form, and the screen wording.
         The answer is sent with `Cache-Control: no-store`. The card number and PIN are never
         logged, and never in an answer.
-      security: []
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -679,6 +680,8 @@ paths:
                 $ref: "#/components/schemas/RedeemVoucherResponse"
         "400":
           $ref: "#/components/responses/VoucherRefused"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "422":
           $ref: "#/components/responses/ValidationError"
         "429":
