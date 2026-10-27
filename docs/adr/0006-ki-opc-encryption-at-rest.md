@@ -129,7 +129,8 @@ network team. The contract is not changed for it. `amf` is not stored (another o
 2. **The key file lives on the same host as MongoDB.** Anyone with root on core-cp can read both.
    A KMS later reduces this. It does not exist today.
 3. **Losing the key file loses every stored ciphertext.** The key needs a separate, secure, offline
-   backup that is never stored with database backups. Procedure and owner: TODO for the project lead.
+   backup that is never stored with database backups. Procedure and owners: decided 2026-10-26 and written in the
+   [RatelLink runbook](../runbooks/ratel-link.md#the-encryption-key-file) (two encrypted offline copies, two named holders).
 
 ## Data implications
 

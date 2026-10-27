@@ -73,9 +73,41 @@ IMSIs. The unit file starts it with `--no-access-log`, and RatelLink's own reque
   file and prints nothing secret.
 - **Never** create a second key file "to try" in the same place, copy it into a ticket, or run
   `cat` on it in a shared terminal.
-- **Backup: TODO(owner).** Losing this file loses every stored Ki and OPc ciphertext. It needs its
-  own secure, offline backup that is **never stored with database backups**. The project lead
-  decides the procedure and the owner. Do not import a real SIM key until this exists.
+- **Backup: done (decision of 2026-10-26, DECISIONS_PENDING 17).** Losing this file loses every stored Ki
+  and OPc ciphertext, so it has two **offline encrypted copies**, never stored with database backups and
+  never sent in a ticket or chat. Do not import a real SIM key if either copy is missing.
+  - **Owner of the key and of the first copy:** the project lead (@Ukashatu40), on an offline flash drive.
+  - **Second copy:** the network lead (@CaptRaven), on his own drive, off his laptop. Handed over in person on
+    2026-10-27, with the passphrase given by word of mouth. Each holder keeps the passphrase in their own
+    password manager, **apart from the file**.
+  - **What the copy is:** `ratel_link-20261026.key.gpg`, the key encrypted with `gpg --symmetric`
+    (AES-256, a long random passphrase). The SHA-256 of that encrypted file is
+    `934856e68f5e0ae6bbc79441afb8071b34943095ba094045b5f6ede5b94aef54`: a holder can check their copy has not
+    been corrupted with `shasum -a 256`. The key's own fingerprint, to prove a restore got the same key, is the
+    first 16 characters of its SHA-256: `8bd6904f6d42968a`. Both are safe to write down; neither reveals the key.
+  - **When it must be redone:** the key has no rotation tool, so it should never change. If it ever does (a
+    new key file, a re-encryption), make both copies again before anything else and replace the values above.
+  - **Make a backup** (on core-cp; the passphrase is typed at the prompt, never on a command line):
+    ```
+    sudo sha256sum /etc/ratel-link/ratel_link.key | cut -c1-16        # the fingerprint to record
+    sudo gpg --pinentry-mode loopback --symmetric --cipher-algo AES256 \
+      --s2k-digest-algo SHA512 --s2k-count 65011712 \
+      --output /tmp/ratel_link-<date>.key.gpg /etc/ratel-link/ratel_link.key
+    sudo chown "$USER" /tmp/ratel_link-<date>.key.gpg
+    ```
+    then copy it off with `scp`, and `sudo shred -u` the copy on core-cp.
+  - **Restore** (the key file is lost or damaged; do **not** run `key generate`, a new key cannot read the
+    old ciphertext). Copy the holder's file to `/tmp` on core-cp, then:
+    ```
+    sudo gpg --pinentry-mode loopback --decrypt --output /etc/ratel-link/ratel_link.key /tmp/ratel_link-<date>.key.gpg
+    sudo chown ratellink:ratellink /etc/ratel-link/ratel_link.key && sudo chmod 600 /etc/ratel-link/ratel_link.key
+    sudo sha256sum /etc/ratel-link/ratel_link.key | cut -c1-16        # must equal the fingerprint above
+    sudo base64 -d /etc/ratel-link/ratel_link.key | wc -c             # must print 32
+    sudo shred -u /tmp/ratel_link-<date>.key.gpg && sudo systemctl restart ratel-link
+    ```
+  - **Rehearsed:** on 2026-10-26 with a throwaway key (made, encrypted, wiped, decrypted: same fingerprint,
+    32 bytes), and the real backup file was decrypted on core-cp the same day and gave `8bd6904f6d42968a`. A
+    restore onto a clean host has not been done.
 
 ## API keys
 
