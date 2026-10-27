@@ -33,12 +33,16 @@ class NoControl:
     def __init__(self) -> None:
         self.out_of_data: list[int] = []
         self.expired: list[int] = []
+        self.restored: list[int] = []
 
     def mark_out_of_data(self, line_id: int, idempotency_key: str) -> None:
         self.out_of_data.append(line_id)
 
     def expire(self, line_id: int, idempotency_key: str) -> None:
         self.expired.append(line_id)
+
+    def restore(self, line_id: int, idempotency_key: str) -> None:
+        self.restored.append(line_id)
 
 
 def _scope(db: Database):  # type: ignore[no-untyped-def]

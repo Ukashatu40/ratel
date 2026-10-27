@@ -166,3 +166,48 @@ def test_the_public_redeem_path_has_its_own_limit_a_tiny_body_and_nothing_else_p
         "# ", ""
     )  # it is public: no address list to forget to fill in
     assert not re.search(r"location\s+(~\*?\s+)?/v1/pay", text)  # no wider public prefix
+
+
+JOBS = {
+    "ratel-rating": "app.bss_money.rating_cli",
+    "ratel-ledger-check": "app.bss_money.check_cli",
+}
+
+
+def test_the_job_units_run_the_installed_code_as_the_service_user_with_the_same_hardening() -> None:
+    app_unit = UNIT.read_text()
+    hardening = [
+        line for line in app_unit.splitlines() if re.match(r"^(Protect|Restrict|Private)\w+=", line)
+    ]
+    assert hardening  # the app unit does carry hardening to compare against
+    for name, module in JOBS.items():
+        service = (DEPLOY / f"{name}.service").read_text()
+        assert "\nType=oneshot\n" in service
+        assert "\nUser=ratelbss\n" in service and "\nGroup=ratelbss\n" in service
+        assert "EnvironmentFile=/etc/ratel-app/ratel-app.env" in service
+        assert f"ExecStart=/opt/ratel-app/current/venv/bin/python -m {module}\n" in service
+        assert "\nCapabilityBoundingSet=\n" in service and "\nAmbientCapabilities=\n" in service
+        assert "ReadOnlyPaths=/opt/ratel-app /etc/ratel-app" in service
+        assert "After=network-online.target postgresql.service" in service
+        for line in hardening:
+            assert line in service, (name, line)
+        module_file = ROOT / "services" / (module.replace(".", "/") + ".py")
+        assert module_file.exists(), module  # the unit points at a module that exists
+
+
+def test_the_timers_start_their_service_and_catch_up_after_a_power_cut() -> None:
+    rating = (DEPLOY / "ratel-rating.timer").read_text()
+    ledger = (DEPLOY / "ratel-ledger-check.timer").read_text()
+    assert "Unit=ratel-rating.service" in rating and "Unit=ratel-ledger-check.service" in ledger
+    assert "OnCalendar=*:02/5" in rating  # two minutes after each agent interval ends
+    assert "OnCalendar=daily" in ledger
+    for timer in (rating, ledger):
+        assert "\nPersistent=true\n" in timer  # the servers lose power every night
+        assert "WantedBy=timers.target" in timer
+
+
+def test_the_readme_installs_and_enables_the_timers() -> None:
+    readme = (DEPLOY / "README.md").read_text()
+    for name in ("ratel-rating", "ratel-ledger-check"):
+        assert f"{name}.service" in readme and f"{name}.timer" in readme
+    assert "systemctl enable --now ratel-rating.timer ratel-ledger-check.timer" in readme
