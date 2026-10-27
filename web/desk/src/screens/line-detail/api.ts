@@ -7,7 +7,7 @@ import type { CallRecord, HistoryEntry, LineDetail, UsagePage } from "./types";
 //   GET /v1/lines/{imsi}/usage?page=&pageSize= -> { items, total }   (5-minute records from RatelMeter, plus "rated")
 //   GET /v1/lines/{imsi}/calls                -> CallRecord[]         (qci1Bearer is NOT in the Contract 2 call record; it needs RatelVoice data)
 //   GET /v1/lines/{imsi}/history              -> HistoryEntry[]       (the append-only audit trail, ACC-3)
-const isMock = () => import.meta.env.VITE_USE_MOCK === "true";
+const isMock = () => import.meta.env.MODE === "test" || import.meta.env.VITE_USE_MOCK === "true";
 
 export const getLine = (imsi: string): Promise<LineDetail> => (isMock() ? mockGetLine(imsi) : apiGet<LineDetail>(`/v1/lines/${imsi}`));
 export const getUsage = (imsi: string, page: number, pageSize: number): Promise<UsagePage> =>

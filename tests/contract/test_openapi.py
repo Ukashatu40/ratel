@@ -16,7 +16,7 @@ from tests.contract.helpers import load_contract, operations, resolve
 
 TAGS = {"RatelBSS", "RatelLink", "RatelMeter"}
 EPOCH_FIELDS = {"period_start", "period_end", "started_at", "answered_at", "ended_at", "from", "to"}
-SECRET_FIELDS = {"ki", "opc"}
+SECRET_FIELDS = {"ki", "opc", "pin"}
 
 
 def check_unique_ids_and_tags(spec: dict[str, Any]) -> list[str]:
@@ -169,6 +169,10 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
     def basic_auth(s: dict[str, Any]) -> None:
         s["components"]["securitySchemes"]["ApiKeyAuth"] = {"type": "http", "scheme": "basic"}
 
+    def leak_pin(s: dict[str, Any]) -> None:
+        response = s["components"]["schemas"]["RedeemVoucherResponse"]
+        response["properties"]["pin"] = {"type": "string"}
+
     return {
         "drop_idempotency": (drop_idempotency, check_idempotency_on_state_changes),
         "leak_ki": (leak_ki, check_no_secrets_in_responses),
@@ -177,6 +181,7 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
         "open_endpoint": (open_endpoint, check_auth_everywhere),
         "old_api_key_header": (old_api_key_header, check_auth_everywhere),
         "basic_auth": (basic_auth, check_auth_everywhere),
+        "leak_pin": (leak_pin, check_no_secrets_in_responses),
     }
 
 

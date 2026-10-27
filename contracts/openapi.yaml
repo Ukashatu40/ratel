@@ -8,18 +8,22 @@ info:
 
     - Contract 1: RatelLink (tag `RatelLink`), runs on core-cp.
     - Contract 2: RatelMeter (tag `RatelMeter`), API runs on bss-app.
-    - RatelBSS's own API for RatelDesk and RatelPay (tag `RatelBSS`), M-02.
+    - RatelBSS's own API for RatelDesk and RatelPay (tag `RatelBSS`), M-02. RatelPay's
+      operations all start with `/v1/pay/`.
 
     Conventions from the Build Plan:
     - Plain REST, standard HTTP status codes, JSON bodies.
     - Errors: `{"error": {"code": "...", "message": "..."}}`.
     - Every call carries an API key in the `Authorization` header, one key per calling system.
+      RatelPay's public paths keep this rule. The page is a static file in a browser and cannot
+      keep a key secret, so it sends none: the reverse proxy adds the key on each public path and
+      replaces anything the browser sent.
     - Every call that changes something accepts an `Idempotency-Key` header. Repeating a call with
       the same key returns the first result.
     - Times are Unix epoch seconds in UTC, sent as integers. Usage is in bytes.
     - Money is whole kobo, sent as integers. Never a decimal.
     - Until RatelLink's live changes land, every change takes effect at the line's next attach.
-    - Ki and OPc are write-only. No response in this file may contain them.
+    - Ki, OPc and voucher PINs are write-only. No response in this file may contain them.
 
     Anything the Build Plan or the PRD (`docs/PRODUCT_RULES.md`) does not specify is marked
     `TODO(contract)` in a description or with the `x-todo` extension. Do not fill those in by
@@ -29,6 +33,9 @@ info:
     (PRODUCT_RULES.md, Demo journeys). Self-care and dealer apps are out of scope (Build Plan,
     "What not to build yet"). The meter agent's ingest call is `meter_ingest_usage`; its
     authentication scheme and batch size are still TODO(contract).
+
+    Not covered here yet: the payment gateway's webhook (M-19, the provider is not chosen).
+    TODO(contract): add it here.
   x-todo:
     - Operational endpoints (/healthz, /readyz) are deliberately not in this contract.
     - RatelLink's internal sell-to-activate endpoint (/v1/lines/activate with body line_id) is
@@ -688,6 +695,97 @@ paths:
           $ref: "#/components/responses/RateLimited"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/bundles:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_bundles
+      summary: Bundles on sale, for RatelPay.
+      description: |
+        Every bundle in the `on_sale` state. Retired bundles are never listed. Not paged: the list
+        of bundles on sale is short. RatelPay cannot buy a bundle yet: buying needs the purchase
+        flow, which is not built, so there is no operation for it.
+        Called for RatelPay through the reverse proxy, which adds the key (see info.description).
+      x-todo:
+        - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
+      responses:
+        "200":
+          description: Bundles on sale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BundleList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/payments:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_start_payment
+      summary: "DRAFT: start a payment through the gateway, for RatelPay."
+      description: |
+        DRAFT. TODO(contract): the payment provider is not chosen (PRODUCT_RULES decision 6), so
+        this operation's fields will change. Do not build against it yet.
+        Starts a payment of `amount_kobo` for the line with this number. Nothing is credited here:
+        the wallet is credited only after the provider's webhook is verified and the transaction
+        is re-queried with the provider (PRODUCT_RULES, Payments).
+        Called for RatelPay through the reverse proxy, which adds the key (see info.description).
+      x-todo:
+        - What the page needs to send the customer to the provider (a checkout link or similar) depends on the provider.
+        - Lowest and highest amount.
+        - The error when the provider cannot be reached.
+        - Whether Idempotency-Key must be required here (a retried payment must not start twice); confirm with the M-19 owner.
+        - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentStartRequest"
+      responses:
+        "200":
+          description: The payment was started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/payments/{payment_id}:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_payment
+      summary: "DRAFT: a payment's status, for RatelPay."
+      description: |
+        DRAFT. TODO(contract): the payment provider is not chosen (PRODUCT_RULES decision 6), so
+        this operation's fields will change. Do not build against it yet.
+        Anyone who reaches the page and has the `payment_id` can call this, so the response holds
+        nothing about the line or its owner (TOP-2), and the id must be impossible to guess.
+        Called for RatelPay through the reverse proxy, which adds the key (see info.description).
+      x-todo:
+        - The status values depend on the provider.
+        - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+      responses:
+        "200":
+          description: The payment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -711,6 +809,14 @@ components:
       schema:
         type: string
         minLength: 1
+    PaymentId:
+      name: payment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      x-todo: Format not specified. It must be impossible to guess.
     Imsi:
       name: imsi
       in: path
@@ -787,7 +893,7 @@ components:
           example:
             error: {code: conflict, message: "The network has no record for this line. Activate it again."}
     NotFound:
-      description: Unknown line, customer, SIM, number or plan.
+      description: Unknown line, customer, SIM, number, plan or payment.
       content:
         application/json:
           schema:
@@ -1350,6 +1456,95 @@ components:
         balance_kobo:
           type: integer
           description: The line's wallet balance after this redemption, in whole kobo.
+    Bundle:
+      type: object
+      required: [bundle_id, name, price_kobo, data_bytes, validity_days]
+      additionalProperties: false
+      properties:
+        bundle_id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+        price_kobo:
+          type: integer
+          minimum: 0
+          description: Whole kobo, never a decimal.
+        data_bytes:
+          type: integer
+          minimum: 1
+        validity_days:
+          type: integer
+          minimum: 1
+    BundleList:
+      type: object
+      required: [bundles]
+      additionalProperties: false
+      description: |
+        The example bundles are made up for the mock (make mock). They are not product values:
+        the real bundles, names and prices are TODO(PRD).
+      properties:
+        bundles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Bundle"
+      # Examples only, for the mock. Not product values.
+      examples:
+        - bundles:
+            - bundle_id: 1
+              name: "Weekly 2GB"
+              price_kobo: 100000
+              data_bytes: 2147483648
+              validity_days: 7
+            - bundle_id: 2
+              name: "Daily 500MB"
+              price_kobo: 20000
+              data_bytes: 524288000
+              validity_days: 1
+            - bundle_id: 3
+              name: "Monthly 10GB"
+              price_kobo: 350000
+              data_bytes: 10737418240
+              validity_days: 30
+    PaymentStartRequest:
+      type: object
+      required: [msisdn, amount_kobo]
+      additionalProperties: false
+      description: "DRAFT. TODO(contract): depends on the payment provider."
+      properties:
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        amount_kobo:
+          type: integer
+          minimum: 1
+          description: Whole kobo, never a decimal.
+    Payment:
+      type: object
+      required: [payment_id, status, amount_kobo]
+      additionalProperties: false
+      description: |
+        DRAFT. TODO(contract): depends on the payment provider. Holds nothing about the line or
+        its owner, because anyone with the payment_id can read it.
+        The example is made up for the mock (make mock). It is not a product value, and `pending`
+        is not a decided status value.
+      properties:
+        payment_id:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          x-todo: Values depend on the payment provider.
+        amount_kobo:
+          type: integer
+          minimum: 1
+          description: Whole kobo, never a decimal.
+      # Example only, for the mock. Not a product value.
+      examples:
+        - payment_id: "EXAMPLE-PAYMENT-0001"
+          status: "pending"
+          amount_kobo: 100000
     Line:
       type: object
       required: [line_id, customer_id, iccid, imsi, msisdn, plan_id, state]
