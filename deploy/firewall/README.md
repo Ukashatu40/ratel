@@ -1,4 +1,4 @@
-# Host firewall for core-cp and core-up
+# Host firewall for core-cp, core-up, the voice VM and bss-app
 
 Until this existed, neither host filtered inbound traffic: SSH, the radios' S1 port, PFCP and GTP-U were
 open to any address that could reach them (R-16). The firewall was also never saved to disk, and the
@@ -10,8 +10,10 @@ Read **Apply** in full before you start. A wrong rule can cut your SSH session o
 
 | Host | Let in | Everything else |
 |---|---|---|
-| core-cp | SSH (key-only, 10 new connections a minute per address), S1 (SCTP 36412) from the radios, PFCP (UDP 8805 and 8806) from core-up | dropped |
+| core-cp | SSH (key-only, 10 new connections a minute per address), S1 (SCTP 36412) from the radios, PFCP (UDP 8805 and 8806) from core-up, HTTPS (443) from core-up and bss-app for RatelLink's proxy | dropped |
 | core-up | SSH (as above), GTP-U (UDP 2152) from the radios, PFCP (UDP 8805 and 8806) from core-cp | dropped |
+| voice VM | SSH (as above). Calls and the containers' own traffic are routed through the VM and not touched. Docker's published port for PyHSS (8080) is dropped for anyone not in `pyhss_clients` | input dropped; the rest routed as before |
+| bss-app | SSH (as above), HTTPS (443) from any address, because RatelPay and the payment webhook are public; nginx decides which path each caller may use | dropped |
 
 Replies to what the host started, loopback and ping are always let in. Only traffic addressed to the host
 is filtered. The phones' internet traffic is forwarded through core-up and is not touched, and neither
@@ -22,7 +24,7 @@ The files hold no addresses (the repository is public). The addresses live on ea
 
 | File | Goes to |
 |---|---|
-| `core-cp.nft` or `core-up.nft` | `/etc/ratel-fw/ratel-fw.nft` (the one for that host) |
+| `core-cp.nft`, `core-up.nft`, `voice.nft` or `bss-app.nft` | `/etc/ratel-fw/ratel-fw.nft` (the one for that host) |
 | `addresses.nft.example` | `/etc/ratel-fw/addresses.nft`, with the real addresses |
 | `ratel-fw.service` | `/etc/systemd/system/ratel-fw.service` |
 
@@ -40,7 +42,8 @@ Do **not** use `/etc/nftables.conf` or `nftables.service` for this. The stock fi
    sudo install -m 0644 /tmp/core-cp.nft /etc/ratel-fw/ratel-fw.nft
    sudo install -m 0644 /tmp/ratel-fw.service /etc/systemd/system/ratel-fw.service
    ```
-2. **Write the addresses** (real ones, typed on the host; copy the names from `addresses.nft.example`):
+2. **Write the addresses** (on core-cp this now includes `bss_app`; the rules name it, and a name that is
+   not defined makes the load fail, which leaves the host with no firewall) (real ones, typed on the host; copy the names from `addresses.nft.example`):
    ```
    sudoedit /etc/ratel-fw/addresses.nft
    ```
@@ -103,3 +106,18 @@ sudo systemctl disable --now ratel-fw.service
 - The S1 rule is tested only for syntax in a container; the lab run (a radio attaching through it) is
   still needed. PFCP, SSH, the rate limit and the other tables were exercised in two network
   namespaces on nftables 1.0.2, the version on core-up.
+
+## Two hosts that run more than the host
+
+- **The voice VM** runs the voice stack in Docker. A port Docker publishes (PyHSS's API on 8080) is rewritten to
+  the container and forwarded, so the input chain never sees it: `voice.nft` has a second chain, in the
+  forward path, for that port. It lets only `pyhss_clients` through (define it in the host's
+  `addresses.nft`; `{ 127.0.0.1 }` blocks everyone outside the VM, which is right if the API is only used by
+  an SSH tunnel). The rule assumes the compose file publishes `8080` to the container's `8080`: change them
+  together. Docker's own tables stay as they are, and this one is separate.
+- **bss-app** has no Docker. Nothing besides SSH and HTTPS is open, and the app's own port (8000) is reachable
+  only from the host itself, through nginx.
+
+On both, the address names the file uses must all be in the host's `addresses.nft` **before** you load it
+(`pyhss_clients` on the voice VM). A missing name makes the load fail and leaves the host with no firewall:
+always run the syntax check (step 3) first.

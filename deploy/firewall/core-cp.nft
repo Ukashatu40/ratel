@@ -34,8 +34,10 @@ table inet ratel_fw {
         # PFCP: the SGW-C and the SMF talk to the SGW-U and the UPF on core-up.
         ip saddr $core_up udp dport { 8805, 8806 } accept
 
-        # RatelLink's TLS proxy, when it exists (deploy/core-cp/README.md):
-        # ip saddr $bss_app tcp dport 443 accept
+        # RatelLink's TLS proxy (deploy/core-cp/nginx): the two callers, HTTPS only. The proxy itself
+        # also admits only these two addresses. Both names must be in /etc/ratel-fw/addresses.nft
+        # BEFORE this file is loaded, or the load fails and the host has no firewall.
+        ip saddr { $core_up, $bss_app } tcp dport 443 accept
 
         # Not a verdict: it counts what the policy then drops (sudo nft list chain inet ratel_fw input).
         counter

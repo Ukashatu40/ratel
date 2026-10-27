@@ -36,9 +36,14 @@ def _sql(path: Path) -> str:
     )
 
 
+# Variables the app's Python reads that are not its own settings: where to find the certificates it
+# trusts, for RatelLink's self-signed proxy (deploy/core-cp/README.md).
+NOT_SETTINGS = {"SSL_CERT_FILE"}
+
+
 def test_every_setting_is_in_the_env_template() -> None:
     wanted = {name.upper() for name in Settings.model_fields}
-    assert wanted == _env_names(ENV_EXAMPLE)
+    assert wanted | NOT_SETTINGS == _env_names(ENV_EXAMPLE)
 
 
 def test_the_env_template_holds_placeholders_only() -> None:
