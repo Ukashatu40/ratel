@@ -7,6 +7,12 @@ import LineDetailScreen from "../src/screens/line-detail/LineDetailScreen";
 
 const MOCK_IMSI = "621000000000100";
 
+console.log("=== DIAGNOSTIC ===");
+console.log("MODE:", import.meta.env.MODE);
+console.log("VITE_USE_MOCK:", import.meta.env.VITE_USE_MOCK);
+console.log("NODE:", typeof process !== "undefined" ? process.version : "no process");
+console.log("=== END DIAGNOSTIC ===");
+
 function renderLineDetail(imsi = MOCK_IMSI) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
