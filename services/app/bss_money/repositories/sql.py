@@ -29,14 +29,17 @@ from app.bss_money.domain.vouchers import VoucherState
 from app.bss_money.domain.wallets import WalletMismatch
 from app.bss_money.models.allowance import AllowanceBucket
 from app.bss_money.models.ledger import LedgerEntry, Wallet
+from app.bss_money.models.payments import Payment
 from app.bss_money.models.rating import UsageRating
 from app.bss_money.models.vouchers import Voucher, VoucherAttempt
 from app.bss_money.repositories.ports import (
     BalanceOutOfRange,
     DuplicateEntry,
+    DuplicateKey,
     NewVoucher,
     RatedLine,
     StoredEntry,
+    StoredPayment,
     StoredVoucher,
     VoucherNotRedeemable,
 )
@@ -355,3 +358,97 @@ class SqlLineLookup:
                 Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value
             )
         )
+
+
+def _stored_payment(row: Payment) -> StoredPayment:
+    return StoredPayment(
+        payment_id=row.payment_id,
+        public_id=row.public_id,
+        line_id=row.line_id,
+        provider=row.provider,
+        provider_ref=row.provider_ref,
+        amount_kobo=row.amount_kobo,
+        status=row.status,
+        checkout_url=row.checkout_url,
+        created_at=_utc(row.created_at),
+    )
+
+
+class SqlPaymentRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(
+        self,
+        *,
+        public_id: str,
+        line_id: int,
+        provider: str,
+        provider_ref: str,
+        idempotency_key: str,
+        amount_kobo: int,
+    ) -> StoredPayment:
+        row = Payment(
+            public_id=public_id,
+            line_id=line_id,
+            provider=provider,
+            provider_ref=provider_ref,
+            idempotency_key=idempotency_key,
+            amount_kobo=amount_kobo,
+            status="pending",
+        )
+        try:
+            # A savepoint: if the key is already used, only this insert is undone.
+            with self._session.begin_nested():
+                self._session.add(row)
+                self._session.flush()
+        except IntegrityError as exc:
+            if self.by_idempotency_key(idempotency_key) is None:
+                raise  # some other rule failed: do not call it a retry
+            raise DuplicateKey from exc
+        self._session.refresh(row)  # the database's created_at
+        return _stored_payment(row)
+
+    def _one(self, *conditions: object, lock: bool = False) -> StoredPayment | None:
+        statement = select(Payment).where(*conditions)  # type: ignore[arg-type]
+        if lock:
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        row = self._session.execute(statement).scalar_one_or_none()
+        return None if row is None else _stored_payment(row)
+
+    def by_idempotency_key(self, key: str) -> StoredPayment | None:
+        return self._one(Payment.idempotency_key == key)
+
+    def by_public_id(self, public_id: str) -> StoredPayment | None:
+        return self._one(Payment.public_id == public_id)
+
+    def by_reference(self, provider_ref: str, *, lock: bool = False) -> StoredPayment | None:
+        return self._one(Payment.provider_ref == provider_ref, lock=lock)
+
+    def set_checkout(self, payment_id: int, url: str) -> None:
+        self._session.execute(
+            update(Payment).where(Payment.payment_id == payment_id).values(checkout_url=url)
+        )
+
+    def mark_succeeded(self, payment_id: int, provider_txn_id: str | None, at: datetime) -> None:
+        self._session.execute(
+            update(Payment)
+            .where(Payment.payment_id == payment_id)
+            .values(status="succeeded", provider_txn_id=provider_txn_id, credited_at=at)
+        )
+
+    def mark_failed(self, payment_id: int, provider_txn_id: str | None) -> None:
+        self._session.execute(
+            update(Payment)
+            .where(Payment.payment_id == payment_id, Payment.status == "pending")
+            .values(status="failed", provider_txn_id=provider_txn_id)
+        )
+
+    def pending_references(self, older_than: datetime, limit: int) -> list[str]:
+        rows = self._session.execute(
+            select(Payment.provider_ref)
+            .where(Payment.status == "pending", Payment.created_at < older_than)
+            .order_by(Payment.created_at)
+            .limit(limit)
+        )
+        return list(rows.scalars())

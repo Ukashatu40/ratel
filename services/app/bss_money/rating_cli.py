@@ -21,9 +21,16 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.ratel_link_client import RatelLinkClient
-from app.bss_money.repositories.ports import RatingRepository
-from app.bss_money.repositories.sql import SqlRatingRepository
+from app.bss_money.gateways.paystack import PaystackGateway
+from app.bss_money.repositories.ports import PaymentRepositories, RatingRepository
+from app.bss_money.repositories.sql import (
+    SqlLedgerRepository,
+    SqlLineLookup,
+    SqlPaymentRepository,
+    SqlRatingRepository,
+)
 from app.bss_money.services.line_control import LifecycleLineControl
+from app.bss_money.services.payments import settle_pending
 from app.bss_money.services.rating_job import run_rating
 from app.config import Settings
 from app.db import make_engine, session_factory
@@ -52,9 +59,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         with sessions() as session:
             yield SqlLinesRepository(session)
 
+    @contextmanager
+    def payment_scope() -> Iterator[PaymentRepositories]:
+        with sessions() as session, session.begin():
+            yield PaymentRepositories(
+                payments=SqlPaymentRepository(session),
+                ledger=SqlLedgerRepository(session),
+                lines=SqlLineLookup(session),
+            )
+
+    now = datetime.now(UTC)
+    paystack_key = settings.paystack_secret_key_value
+    gateway = (
+        PaystackGateway(paystack_key, base_url=settings.paystack_base_url) if paystack_key else None
+    )
+
+    def settle() -> int:
+        assert gateway is not None
+        return settle_pending(payment_scope, gateway, now)
+
     client = RatelLinkClient(settings.ratel_link_base_url, key.get_secret_value())
     try:
-        run = run_rating(scope, LifecycleLineControl(lines_scope, client), now=datetime.now(UTC))
+        run = run_rating(
+            scope,
+            LifecycleLineControl(lines_scope, client),
+            now=now,
+            settle=settle if gateway is not None else None,
+        )
     except SQLAlchemyError as exc:
         # Type only: a driver message can carry the database host and user.
         log_event(log, logging.ERROR, "rating.failed", exc_type=type(exc).__name__)

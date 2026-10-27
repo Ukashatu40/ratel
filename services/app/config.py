@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,19 @@ class Settings(BaseSettings):
     # The key the reverse proxy adds to the public voucher redemption route, which RatelPay's page
     # calls without one (a browser cannot keep a secret). Same rules as meter_api_key.
     pay_api_key: SecretStr | None = None
+    # Paystack, the first payment gateway (decision 6; OPay after the demo). Payments stay switched
+    # off, and their routes answer 503, until the key, the page to return to and the email domain
+    # are all set. The key is a secret: only ever in the env file, never in Git or a log.
+    paystack_secret_key: SecretStr | None = None
+    paystack_base_url: str = "https://api.paystack.co"
+    # Where Paystack sends the customer after paying: the RatelPay page.
+    payment_callback_url: str | None = None
+    # Paystack requires an email for every payment, and RatelPay shows nothing personal (TOP-2), so
+    # each payment uses pay@<this domain> instead of the customer's own. TODO(PRD).
+    payment_email_domain: str | None = None
+    # TODO(PRD): sanity bounds, not product values.
+    payment_min_kobo: int = Field(default=10_000, ge=1)
+    payment_max_kobo: int = Field(default=100_000_000, ge=1)
 
     @property
     def meter_api_key_value(self) -> str | None:
@@ -37,3 +50,23 @@ class Settings(BaseSettings):
             return None
         value = self.pay_api_key.get_secret_value().strip()
         return None if value in ("", "CHANGE_ME") else value
+
+    @property
+    def paystack_secret_key_value(self) -> str | None:
+        """The Paystack key, or None when it is unset, empty or the placeholder."""
+        if self.paystack_secret_key is None:
+            return None
+        value = self.paystack_secret_key.get_secret_value().strip()
+        return None if value in ("", "CHANGE_ME") else value
+
+    @property
+    def payments_enabled(self) -> bool:
+        return bool(
+            self.paystack_secret_key_value
+            and self.payment_callback_url
+            and self.payment_email_domain
+        )
+
+    @property
+    def payment_payer_email(self) -> str:
+        return f"pay@{self.payment_email_domain}"

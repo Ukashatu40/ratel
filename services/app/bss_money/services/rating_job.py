@@ -7,7 +7,9 @@ Run every five minutes by a timer on bss-app (`python -m app.bss_money.rating_cl
    `rate()`), store the new bucket totals and mark every record rated. All or nothing, so a crash
    rates nothing twice and loses nothing: the records are still unrated and the next run takes them.
    One line failing is logged and counted and does not stop the others.
-2. Act. For every active or out-of-data line that holds an allowance, judge it (`action_for()`):
+2. Settle (only when a payment gateway is configured). Payments still pending with the gateway are
+   asked about and, if they went through, credited once, so the system works without a webhook.
+3. Act. For every active or out-of-data line that holds an allowance, judge it (`action_for()`):
    used up -> `out_of_data`, validity ended -> `expired`, both through the state machine. This pass
    does not depend on step 1 having had records, so a change that failed last time (RatelLink was
    down) is tried again now. A line already moved is judged NONE, so it is moved once.
@@ -34,6 +36,9 @@ log = logging.getLogger("ratel.bss.money.rating")
 # At most this many records per line per run; a bigger backlog is taken over the next runs.
 BATCH_SIZE = 5000
 
+Settle = Callable[[], int]
+"""Settles payments still pending with the gateway; returns how many it credited."""
+
 Scope = Callable[[], AbstractContextManager[RatingRepository]]
 """Opens one transaction and yields the repository inside it: commit on exit, rollback on error."""
 
@@ -54,11 +59,17 @@ class RatingRun:
     bytes_uncovered: int = 0
     lines_out_of_data: int = 0
     lines_expired: int = 0
+    payments_credited: int = 0
     failures: int = 0
 
 
 def run_rating(
-    scope: Scope, control: LineControl, *, now: datetime, batch_size: int = BATCH_SIZE
+    scope: Scope,
+    control: LineControl,
+    *,
+    now: datetime,
+    batch_size: int = BATCH_SIZE,
+    settle: Settle | None = None,
 ) -> RatingRun:
     """One pass of the job at `now`. Never raises for one line's failure; see `failures`."""
     if now.tzinfo is None:
@@ -78,6 +89,14 @@ def run_rating(
                 line_id=line_id,
                 exc_type=type(exc).__name__,
             )
+    if settle is not None:
+        # Payments that went through but whose notification never came are credited here, so a
+        # top-up reaches the wallet before the line is judged below.
+        try:
+            run.payments_credited += settle()
+        except Exception as exc:
+            run.failures += 1
+            log_event(log, logging.ERROR, "rating.settle_failed", exc_type=type(exc).__name__)
     with scope() as repository:
         to_judge = repository.lines_with_allowance()
     for line_id in to_judge:
@@ -102,6 +121,7 @@ def run_rating(
         bytes_uncovered=result.bytes_uncovered,
         lines_out_of_data=result.lines_out_of_data,
         lines_expired=result.lines_expired,
+        payments_credited=result.payments_credited,
         failures=result.failures,
     )
     return result
@@ -115,6 +135,7 @@ class _RunCounts:
     bytes_uncovered: int = 0
     lines_out_of_data: int = 0
     lines_expired: int = 0
+    payments_credited: int = 0
     failures: int = 0
 
     def freeze(self) -> RatingRun:

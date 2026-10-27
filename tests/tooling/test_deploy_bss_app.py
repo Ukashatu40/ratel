@@ -125,9 +125,13 @@ def test_the_proxy_template_denies_by_default_and_never_logs_a_path() -> None:
     public = [
         name.strip() for name, _ in locations if "deny  all;" not in _ and "return 404" not in _
     ]
-    assert public == ["= /v1/pay/vouchers/redeem"]  # the one public path, an exact match
+    assert sorted(public) == [  # the public paths, each an exact match or one anchored pattern
+        "= /v1/pay/payments",
+        "= /v1/pay/vouchers/redeem",
+        "~ ^/v1/pay/payments/[A-Za-z0-9_-]+$",
+    ]
     for _name, block in locations:
-        if "return 404" in block or "= /v1/pay/vouchers/redeem" in _name:
+        if "return 404" in block or ("/v1/pay/" in _name and "deny  all;" not in block):
             continue
         assert "deny  all;" in block, block
     assert "log_format ratel_app_privacy" in text
@@ -161,8 +165,24 @@ def test_the_public_redeem_path_has_its_own_limit_a_tiny_body_and_nothing_else_p
     assert "limit_req_status 429" in body
     assert re.search(r"client_max_body_size 1k;", body)
     assert "include /etc/nginx/ratel-pay-key.conf;" in body  # the key is added here and only here
-    assert text.count("include /etc/nginx/ratel-pay-key.conf;") == 1  # in no other location
     assert "allow" not in body.replace(
         "# ", ""
     )  # it is public: no address list to forget to fill in
     assert not re.search(r"location\s+(~\*?\s+)?/v1/pay", text)  # no wider public prefix
+
+
+def test_the_payment_paths_are_limited_and_carry_the_proxy_key_and_the_webhook_is_walled() -> None:
+    text = NGINX.read_text()
+    for name in ("= /v1/pay/payments", "~ ^/v1/pay/payments/[A-Za-z0-9_-]+$"):
+        block = re.search(rf"location {re.escape(name)} \{{(.*?)\n    \}}", text, re.S)
+        assert block is not None, name
+        assert "limit_req zone=ratel_pay" in block.group(1)
+        assert "include /etc/nginx/ratel-pay-key.conf;" in block.group(1)
+        assert "allow" not in block.group(1).replace("# ", "")
+    hook = re.search(r"location = /v1/pay/webhooks/paystack \{(.*?)\n    \}", text, re.S)
+    assert hook is not None
+    body = hook.group(1)
+    assert "deny  all;" in body and "allow <paystack-address-1>;" in body
+    assert "limit_req zone=ratel_webhook" in body
+    assert "include /etc/nginx/ratel-pay-key.conf;" in body
+    assert text.count("include /etc/nginx/ratel-pay-key.conf;") == 4  # redeem, two payment, webhook
