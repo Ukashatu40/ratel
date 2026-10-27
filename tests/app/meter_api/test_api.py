@@ -223,9 +223,22 @@ def test_a_deployed_app_with_a_key_starts(env: str) -> None:
             ratel_env=env,  # type: ignore[arg-type]
             database_url=SecretStr("sqlite:///:memory:"),
             meter_api_key=SecretStr(TEST_KEY),
+            pay_api_key=SecretStr(TEST_KEY),
         )
     )
     assert app is not None
+
+
+@pytest.mark.parametrize("env", ["lab", "staging", "production"])
+def test_a_deployed_app_without_the_redemption_key_refuses_to_start(env: str) -> None:
+    with pytest.raises(RuntimeError, match="PAY_API_KEY"):
+        create_app(
+            Settings(
+                ratel_env=env,  # type: ignore[arg-type]
+                database_url=SecretStr("sqlite:///:memory:"),
+                meter_api_key=SecretStr(TEST_KEY),
+            )
+        )
 
 
 def test_the_same_interval_twice_in_one_batch_is_accepted_and_the_last_one_kept(

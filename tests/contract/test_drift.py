@@ -32,6 +32,11 @@ OPERATIONAL = {
     ("POST", "/v1/lines/suspend"),
     ("POST", "/v1/lines/reinstate"),
     ("POST", "/v1/lines/terminate"),
+    # Internal lookup, promoted to the contract as bss_get_line in M-26.
+    # It lives at /v1/lines/lookup... so the paths do not collide with the
+    # contract's GET /v1/lines/{line_id}.
+    ("GET", "/v1/lines/lookup"),
+    ("GET", "/v1/lines/lookup/{line_id}"),
 }
 
 # Service -> primary tag, used by test_service_exposes_no_undocumented_routes so each service
@@ -55,8 +60,8 @@ def _routes(app: FastAPI) -> set[tuple[str, str]]:
 
 @pytest.mark.parametrize("service", sorted(TAG_FOR_SERVICE))
 def test_service_exposes_no_undocumented_routes(service: str) -> None:
-    tag = TAG_FOR_SERVICE[service]
-    documented = {(o.method, o.path) for o in operations() if o.tag == tag}
+    tags = {TAG_FOR_SERVICE[service], *(["RatelBSS"] if service == "app" else [])}
+    documented = {(o.method, o.path) for o in operations() if o.tag in tags}
     extra = _routes(_services()[service]) - OPERATIONAL - documented
     assert not extra, f"{service} has routes missing from contracts/openapi.yaml: {sorted(extra)}"
 

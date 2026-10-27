@@ -85,6 +85,15 @@ def is_card_number(value: str) -> bool:
     return len(value) == CARD_NUMBER_LENGTH and value.isascii() and value.isdigit()
 
 
+def is_msisdn(value: str) -> bool:
+    """A phone number as stored: digits only, in the international form without a plus sign.
+
+    TODO(PRD): how a customer's typing ("0803...", "+234803...") becomes this. RatelPay's page
+    owns that for now, so the API accepts only the stored form.
+    """
+    return 10 <= len(value) <= 15 and value.isascii() and value.isdigit()
+
+
 def is_pin(value: str) -> bool:
     """Well formed: 14 digits with a right check digit. Says nothing about being the right PIN."""
     return len(value) == PIN_LENGTH and is_luhn_valid(value)

@@ -343,3 +343,15 @@ class SqlRatingRepository:
                 )
             )
         self._session.flush()
+
+
+class SqlLineLookup:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def line_id_for_msisdn(self, msisdn: str) -> int | None:
+        return self._session.scalar(
+            select(Line.line_id).where(
+                Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value
+            )
+        )
