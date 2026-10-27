@@ -51,6 +51,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.session_factory = session_factory(engine)
 
+    @contextmanager
+    def redemption_scope() -> Iterator[RedemptionRepositories]:
+        # One transaction per redemption, committed even when the card is refused: the failed
+        # attempt must stay on record (services/vouchers.py).
+        with app.state.session_factory() as session, session.begin():
+            yield RedemptionRepositories(
+                vouchers=SqlVoucherRepository(session),
+                ledger=SqlLedgerRepository(session),
+                lines=SqlLineLookup(session),
+            )
+
+    app.state.redemption_scope = redemption_scope
+
     # Idempotency-Key store (M-26). In local and test a per-process dict is
     # enough; everywhere else it must be Redis, so a restart does not turn a
     # repeat into a new operation.
