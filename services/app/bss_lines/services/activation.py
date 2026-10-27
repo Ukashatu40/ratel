@@ -17,7 +17,11 @@ from app.bss_lines.domain.state_machine import (
     LineState,
     validate_transition,
 )
-from app.bss_lines.repositories.idempotency import IdempotencyStore, StoredResult
+from app.bss_lines.repositories.idempotency import (
+    IdempotencyConflictError,
+    IdempotencyStore,
+    StoredResult,
+)
 from app.bss_lines.repositories.ports import LinesRepository
 
 
@@ -47,6 +51,24 @@ class ActivationResult:
     to_state: LineState
 
 
+def _check_replay(
+    idempotency: IdempotencyStore,
+    endpoint: str,
+    idempotency_key: str,
+    line_id: int,
+) -> ActivationResult | None:
+    saved = idempotency.get(endpoint, idempotency_key)
+    if saved is None:
+        return None
+    if saved.line_id != line_id:
+        raise IdempotencyConflictError("this Idempotency-Key was used for another line")
+    return ActivationResult(
+        line_id=saved.line_id,
+        from_state=LineState(saved.from_state),
+        to_state=LineState(saved.to_state),
+    )
+
+
 def activate_line(
     lines: LinesRepository,
     client: RatelLinkClientProto,
@@ -58,22 +80,17 @@ def activate_line(
 ) -> ActivationResult:
     """Run the sell-to-activate flow for one line.
 
-    A repeat with the same Idempotency-Key returns the first result and changes
-    nothing (M-26). Otherwise:
-      1. Load the line.
-      2. Refuse if KYC is not verified.
-      3. Ask the state machine (must be awaiting_activation -> active).
-      4. Execute the RatelLink call.
-      5. Set state, write audit, commit.
-      6. Save the result under the key.
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result and changes nothing (M-26). A repeat for a *different* line raises
+    IdempotencyConflictError: a key names one operation, not a template.
+
+    Two simultaneous requests with the same key can both run; the second fails
+    at the state machine (active -> active is refused). SET ... NX would reserve
+    the key first; until then the state machine is what stops the double effect.
     """
-    saved = idempotency.get("/activate", idempotency_key)
-    if saved is not None:
-        return ActivationResult(
-            line_id=saved.line_id,
-            from_state=LineState(saved.from_state),
-            to_state=LineState(saved.to_state),
-        )
+    replayed = _check_replay(idempotency, "/activate", idempotency_key, line_id)
+    if replayed is not None:
+        return replayed
 
     line = lines.get(line_id)
     if line is None:

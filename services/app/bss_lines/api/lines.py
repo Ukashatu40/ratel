@@ -15,7 +15,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.bss_lines.models.lines import Line
-from app.bss_lines.repositories.idempotency import IdempotencyStore
+from app.bss_lines.repositories.idempotency import (
+    IdempotencyConflictError,
+    IdempotencyStore,
+)
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.activation import ActivationError, activate_line
 from app.bss_lines.services.lifecycle import (
@@ -102,8 +105,8 @@ def post_activate(
 ) -> ActivateResponse:
     """Activate a line through the RatelLink client.
 
-    A repeat with the same Idempotency-Key returns the first result and changes
-    nothing (M-26).
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result and changes nothing (M-26). A repeat for a different line is 409.
 
     TODO(auth, M-26): this route has no authentication and takes the audit
     ``actor`` from the request body. That must not be deployed before M-26 adds
@@ -123,6 +126,8 @@ def post_activate(
         )
     except ActivationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RatelLinkError as exc:
         raise HTTPException(
             status_code=502,
@@ -170,8 +175,8 @@ def post_suspend(
 ) -> LifecycleResponse:
     """Suspend a line with a reason.
 
-    A repeat with the same Idempotency-Key returns the first result and changes
-    nothing.
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result. A repeat for a different line is 409.
 
     TODO(auth, M-26): same caveat as activation.
     """
@@ -188,6 +193,8 @@ def post_suspend(
         )
     except LifecycleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RatelLinkError as exc:
         raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
 
@@ -203,8 +210,8 @@ def post_reinstate(
 ) -> LifecycleResponse:
     """Reinstate a suspended line.
 
-    A repeat with the same Idempotency-Key returns the first result and changes
-    nothing.
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result. A repeat for a different line is 409.
 
     TODO(auth, M-26): same caveat as activation.
     """
@@ -221,6 +228,8 @@ def post_reinstate(
         )
     except LifecycleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RatelLinkError as exc:
         raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
 
@@ -236,8 +245,8 @@ def post_terminate(
 ) -> LifecycleResponse:
     """Terminate a line.
 
-    A repeat with the same Idempotency-Key returns the first result and changes
-    nothing.
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result. A repeat for a different line is 409.
 
     TODO(auth, M-26): same caveat as activation.
     """
@@ -254,6 +263,8 @@ def post_terminate(
         )
     except LifecycleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RatelLinkError as exc:
         raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
 
@@ -300,7 +311,7 @@ def get_line_by_identifier(
 
     TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
 
-    Answers 422  if zero or more than one identifier is given, 404 if no line
+    Answers 422 if zero or more than one identifier is given, 404 if no line
     matches. The indexes on line.msisdn, line.iccid and line.imsi make each
     lookup one indexed read, so the under-a-second criterion holds with
     100,000 rows in the table.

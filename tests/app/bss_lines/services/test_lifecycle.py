@@ -8,7 +8,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.bss_lines.domain.state_machine import LineState
 from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
-from app.bss_lines.repositories.idempotency import InMemoryIdempotencyStore
+from app.bss_lines.repositories.idempotency import (
+    IdempotencyConflictError,
+    InMemoryIdempotencyStore,
+)
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.lifecycle import (
     LifecycleError,
@@ -50,23 +53,24 @@ def _make_line(
     state: str = "active",
     state_before_suspension: str | None = None,
     on_exhaustion: str = "slow",
+    tag: int = 1,
 ) -> Line:
     customer = Customer(
-        name="Alice",
-        phone="2348000000001",
-        email="alice@example.test",
+        name=f"Alice {tag}",
+        phone=f"2348000{tag:05d}",
+        email=f"alice{tag}@example.test",
         id_type="NIN",
-        id_number="00000000000",
+        id_number=f"{tag:011d}",
         address="addr",
         kyc_status="verified",
     )
     sim = Sim(
-        iccid="8923400000000000001",
-        imsi="621000000000001",
+        iccid=f"892340000000000{tag:04d}",
+        imsi=f"62100000000{tag:04d}",
         batch="batch-1",
         state="in_use",
     )
-    number = Number(msisdn="2348000000001", state="in_use")
+    number = Number(msisdn=f"234800000{tag:04d}", state="in_use")
     plan = Plan(
         name="Basic",
         price_kobo=500,
@@ -373,6 +377,83 @@ def test_a_repeat_terminate_with_the_same_key_returns_the_first_result(
     assert len(client.calls) == 1
 
 
+# --- the same key for another line is 409 ------------------------------------
+
+
+def test_the_same_key_for_a_different_line_is_409_on_suspend(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    first = _make_line(session, state=LineState.ACTIVE.value, tag=1)
+    second = _make_line(session, state=LineState.ACTIVE.value, tag=2)
+    client = FakeRatelLinkClient()
+
+    suspend_line(repo, client, store, first.line_id, actor="a", reason="fraud", idempotency_key="k")
+    assert len(client.calls) == 1
+
+    with pytest.raises(IdempotencyConflictError):
+        suspend_line(
+            repo, client, store, second.line_id, actor="a", reason="fraud", idempotency_key="k"
+        )
+    assert len(client.calls) == 1  # no second RatelLink call
+    session.refresh(second)
+    assert second.state == LineState.ACTIVE.value  # untouched
+
+
+def test_the_same_key_for_a_different_line_is_409_on_reinstate(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    first = _make_line(
+        session,
+        state=LineState.SUSPENDED.value,
+        state_before_suspension=LineState.ACTIVE.value,
+        tag=1,
+    )
+    second = _make_line(
+        session,
+        state=LineState.SUSPENDED.value,
+        state_before_suspension=LineState.ACTIVE.value,
+        tag=2,
+    )
+    client = FakeRatelLinkClient()
+
+    reinstate_line(repo, client, store, first.line_id, actor="a", reason="x", idempotency_key="k")
+    assert len(client.calls) == 1
+
+    with pytest.raises(IdempotencyConflictError):
+        reinstate_line(
+            repo, client, store, second.line_id, actor="a", reason="x", idempotency_key="k"
+        )
+    assert len(client.calls) == 1
+    session.refresh(second)
+    assert second.state == LineState.SUSPENDED.value
+
+
+def test_the_same_key_for_a_different_line_is_409_on_terminate(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    first = _make_line(session, state=LineState.ACTIVE.value, tag=1)
+    second = _make_line(session, state=LineState.ACTIVE.value, tag=2)
+    client = FakeRatelLinkClient()
+
+    terminate_line(
+        repo, client, store, first.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
+    assert len(client.calls) == 1
+
+    with pytest.raises(IdempotencyConflictError):
+        terminate_line(
+            repo, client, store, second.line_id, actor="a", reason="fraud", idempotency_key="k"
+        )
+    assert len(client.calls) == 1
+    session.refresh(second)
+    assert sim_state(session, second) == "in_use"  # the SIM was not retired
+
+
+def sim_state(session: Session, line: Line) -> str | None:
+    sim = session.get(Sim, line.iccid)
+    return None if sim is None else sim.state
+
+
 # --- failure mid-transition leaves the state unchanged -------------------------
 
 
@@ -425,5 +506,4 @@ def test_terminate_that_ratellink_refuses_leaves_the_state_unchanged(
         )
     session.refresh(line)
     assert line.state == LineState.ACTIVE.value
-    sim = session.get(Sim, line.iccid)
-    assert sim is not None and sim.state == "in_use"  # the SIM was not retired
+    assert sim_state(session, line) == "in_use"  # the SIM was not retired

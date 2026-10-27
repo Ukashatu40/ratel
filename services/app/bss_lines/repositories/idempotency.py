@@ -1,8 +1,14 @@
 """The Idempotency-Key store (M-26).
 
-A repeat of a state-changing call with the same key returns the first result
-and changes nothing. The key is scoped per endpoint, so the same string on
-/activate and /data are two different keys.
+A repeat of a state-changing call with the same key and the same line returns
+the first result and changes nothing. A repeat with the same key for a
+*different* line is refused (`IdempotencyConflictError`): a key names one
+operation, not a template.
+
+Concurrency: `get` and `put` are separate calls, so two simultaneous requests
+with the same key can both miss `get`, both run, and the second then fails at
+the state machine (active -> active is refused). SET ... NX would reserve the
+key first; until then, the state machine is what stops the double effect.
 
 In local and test the app uses InMemoryIdempotencyStore (single process, lost
 on restart). Everywhere else create_app uses RedisIdempotencyStore, so a
@@ -16,6 +22,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class IdempotencyConflictError(Exception):
+    """This Idempotency-Key was already used for a different line."""
+
+
 @dataclass(frozen=True)
 class StoredResult:
     """The first result of a state-changing call, saved for replay."""
@@ -26,7 +36,11 @@ class StoredResult:
 
 
 class IdempotencyStore(Protocol):
-    """Storage for the first result of a state-changing call."""
+    """Storage for the first result of a state-changing call.
+
+    Two simultaneous requests with the same key can both run; the second fails
+    at the state machine (SET ... NX would reserve the key first, planned).
+    """
 
     def get(self, endpoint: str, idempotency_key: str) -> StoredResult | None:
         """The saved result, or None if this key has not been used before."""

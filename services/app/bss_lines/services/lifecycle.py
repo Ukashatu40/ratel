@@ -19,7 +19,11 @@ from app.bss_lines.domain.state_machine import (
     validate_transition,
 )
 from app.bss_lines.models.lines import Line
-from app.bss_lines.repositories.idempotency import IdempotencyStore, StoredResult
+from app.bss_lines.repositories.idempotency import (
+    IdempotencyConflictError,
+    IdempotencyStore,
+    StoredResult,
+)
 from app.bss_lines.repositories.ports import LinesRepository
 
 
@@ -66,13 +70,18 @@ class LifecycleResult:
 
 
 def _replay(
-    idempotency: IdempotencyStore | None, endpoint: str, idempotency_key: str
+    idempotency: IdempotencyStore | None,
+    endpoint: str,
+    idempotency_key: str,
+    line_id: int,
 ) -> LifecycleResult | None:
     if idempotency is None:
         return None
     saved = idempotency.get(endpoint, idempotency_key)
     if saved is None:
         return None
+    if saved.line_id != line_id:
+        raise IdempotencyConflictError("this Idempotency-Key was used for another line")
     return LifecycleResult(
         line_id=saved.line_id,
         from_state=LineState(saved.from_state),
@@ -114,11 +123,11 @@ def _run(
     on_exhaustion: OnExhaustion | None = None,
     state_before_suspension: LineState | None = None,
 ) -> LifecycleResult:
-    """Replay if the key was seen (and a store was given); otherwise do the move.
+    """Replay if the key was seen for this line; otherwise do the move.
 
     On the first call: load, validate, call RatelLink, save, audit, commit.
     """
-    replayed = _replay(idempotency, endpoint, idempotency_key)
+    replayed = _replay(idempotency, endpoint, idempotency_key, line_id)
     if replayed is not None:
         return replayed
 
@@ -233,7 +242,11 @@ def suspend_line(
     reason_text: str | None = None,
     idempotency_key: str,
 ) -> LifecycleResult:
-    """active or out_of_data -> suspended. Calls RatelLink /deactivate."""
+    """active or out_of_data -> suspended. Calls RatelLink /deactivate.
+
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result. A repeat for a different line raises IdempotencyConflictError.
+    """
     return _run(
         lines,
         client,
@@ -260,7 +273,7 @@ def reinstate_line(
     idempotency_key: str,
 ) -> LifecycleResult:
     """suspended -> the state it had before. Calls /activate, then /data if it was out_of_data."""
-    replayed = _replay(idempotency, "/reinstate", idempotency_key)
+    replayed = _replay(idempotency, "/reinstate", idempotency_key, line_id)
     if replayed is not None:
         return replayed
 
@@ -317,8 +330,7 @@ def terminate_line(
     """Any state except terminated -> terminated. Calls /deactivate.
 
     The SIM is retired and the line's number left in_use. Quarantine of the number
-    after termination is compliance's call (PRODUCT_RULES.md, decision 4); the
-    period is undecided, so this function does not touch the number's state.
+    after termination is compliance's call (PRODUCT_RULES.md, decision 4).
     """
     result = _run(
         lines,
@@ -333,7 +345,6 @@ def terminate_line(
         idempotency_key=idempotency_key,
     )
 
-    # Retire the SIM now that the line is terminated, unless we replayed a previous move.
     line = lines.get(line_id)
     if line is not None and line.state == LineState.TERMINATED.value:
         lines.retire_sim(line.iccid)
@@ -352,8 +363,7 @@ def mark_out_of_data(
 ) -> LifecycleResult:
     """active -> out_of_data, the allowance is used up. Calls /data with the plan's mode.
 
-    The `idempotency` store is optional: the rating job does not pass one (a fresh
-    key per run means replay never applies), and any other caller may.
+    The `idempotency` store is optional: the rating job does not pass one.
     """
     line = lines.get(line_id)
     if line is None:
