@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # No default. Unset (or empty, or the CHANGE_ME placeholder) means the usage API refuses every
     # request, and outside local and test the app refuses to start (see app/main.py).
     meter_api_key: SecretStr | None = None
+    # The key the reverse proxy adds to the public voucher redemption route, which RatelPay's page
+    # calls without one (a browser cannot keep a secret). Same rules as meter_api_key.
+    pay_api_key: SecretStr | None = None
 
     @property
     def meter_api_key_value(self) -> str | None:
@@ -25,4 +28,12 @@ class Settings(BaseSettings):
         if self.meter_api_key is None:
             return None
         value = self.meter_api_key.get_secret_value().strip()
+        return None if value in ("", "CHANGE_ME") else value
+
+    @property
+    def pay_api_key_value(self) -> str | None:
+        """The configured redemption key, or None when it is unset, empty or the placeholder."""
+        if self.pay_api_key is None:
+            return None
+        value = self.pay_api_key.get_secret_value().strip()
         return None if value in ("", "CHANGE_ME") else value

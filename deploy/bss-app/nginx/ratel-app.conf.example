@@ -3,10 +3,14 @@
 #
 # Who may reach what (docs/ARCHITECTURE.md): RatelPay and the payment webhook are the only public
 # paths. Everything else is for the office network and the VPN, plus the meter agents' addresses on
-# the usage ingest path. RatelPay and the webhook do not exist yet, so they are not listed here.
-# TODO(RatelPay, M-19): add them with their own rate limits when they are built.
+# the usage ingest path. The one public path that exists so far is the voucher redemption the
+# RatelPay page calls; the page itself and the payment webhook do not exist yet.
+# TODO(RatelPay, M-19): add the page and the webhook, each with its own rate limit.
 
 limit_req_zone $binary_remote_addr zone=ratel_app:1m rate=20r/s;
+# Redeeming a card. Many customers share one address on a mobile network, so this is generous; the
+# real limit is the app's 5 failed attempts per card number per hour.
+limit_req_zone $binary_remote_addr zone=ratel_redeem:1m rate=30r/m;
 
 # The access log records who called and the result, never the path: paths contain IMSIs.
 log_format ratel_app_privacy '$time_iso8601 $remote_addr "$request_method" $status $request_length $request_time';
@@ -35,6 +39,24 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_read_timeout 30s;
+    }
+
+    # PUBLIC PATH: the RatelPay page redeems a prepaid card here. An exact match, so nothing else
+    # under /v1/pay is public. The page is a static file in a browser and cannot keep a key secret,
+    # so it sends none: the included file adds the redemption key (PAY_API_KEY) and REPLACES any
+    # Authorization header the browser sent. That keeps the app's rule that every call has a key; it
+    # does not stop someone who calls this proxy, and is not meant to. What stops guessing is the
+    # app's 5 failed attempts per card number per hour, and the limit below. A small body (the
+    # request is under 150 bytes), and no body in any log (the log format above has none).
+    location = /v1/pay/vouchers/redeem {
+        limit_req zone=ratel_redeem burst=10 nodelay;
+        limit_req_status 429;
+        client_max_body_size 1k;
+        include /etc/nginx/ratel-pay-key.conf;  # proxy_set_header Authorization "Bearer <key>";
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 10s;
     }
 
     # The rest of the API: staff only.
