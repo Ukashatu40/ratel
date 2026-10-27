@@ -19,12 +19,34 @@ from tests.contract.helpers import not_implemented, operations
 from tests.route_walk import effective_routes
 
 # Routes that exist on our services but are intentionally not in the
-# cross-system contract. The contract covers RatelLink, RatelMeter and RatelPay;
-# RatelBSS's API for RatelDesk is not in it yet (see contracts/openapi.yaml, info.description).
-OPERATIONAL = {("GET", "/healthz"), ("GET", "/readyz"), ("POST", "/v1/lines/activate")}
+# cross-system contract. The contract covers only RatelLink, RatelMeter and
+# RatelBSS's own API; operational endpoints are out of scope by design.
+#
+# The three lifecycle routes (/suspend, /reinstate, /terminate) and /activate are internal
+# helpers today. Their contract versions (bss_suspend_line, bss_reinstate_line,
+# bss_activate_line) are documented under RatelBSS in M-02 and implemented in M-26.
+OPERATIONAL = {
+    ("GET", "/healthz"),
+    ("GET", "/readyz"),
+    ("POST", "/v1/lines/activate"),
+    ("POST", "/v1/lines/suspend"),
+    ("POST", "/v1/lines/reinstate"),
+    ("POST", "/v1/lines/terminate"),
+    # Internal lookup, promoted to the contract as bss_get_line in M-26.
+    # It lives at /v1/lines/lookup... so the paths do not collide with the
+    # contract's GET /v1/lines/{line_id}.
+    ("GET", "/v1/lines/lookup"),
+    ("GET", "/v1/lines/lookup/{line_id}"),
+}
 
-# RatelPay's operations are served by RatelBSS, which runs in the `app` service.
-TAGS_FOR_SERVICE = {"ratel_link": {"RatelLink"}, "app": {"RatelMeter", "RatelPay"}}
+# Service -> primary tag, used by test_service_exposes_no_undocumented_routes so each service
+# is checked against the operations tagged for it. `app` hosts both RatelMeter and RatelBSS:
+# RatelMeter is the primary tag for that service; RatelBSS is listed separately below.
+TAG_FOR_SERVICE = {"ratel_link": "RatelLink", "app": "RatelMeter"}
+
+# Tag -> service, used by test_implemented_matches_not_implemented_list. Both RatelMeter and
+# RatelBSS live in `app`, so both map to it.
+TAG_TO_SERVICE = {**{tag: svc for svc, tag in TAG_FOR_SERVICE.items()}, "RatelBSS": "app"}
 
 
 def _services() -> dict[str, FastAPI]:
@@ -36,9 +58,9 @@ def _routes(app: FastAPI) -> set[tuple[str, str]]:
     return {(m, r.path) for r in effective_routes(app) if r.is_api_route for m in r.methods}
 
 
-@pytest.mark.parametrize("service", sorted(TAGS_FOR_SERVICE))
+@pytest.mark.parametrize("service", sorted(TAG_FOR_SERVICE))
 def test_service_exposes_no_undocumented_routes(service: str) -> None:
-    tags = TAGS_FOR_SERVICE[service]
+    tags = {TAG_FOR_SERVICE[service], *(["RatelBSS"] if service == "app" else [])}
     documented = {(o.method, o.path) for o in operations() if o.tag in tags}
     extra = _routes(_services()[service]) - OPERATIONAL - documented
     assert not extra, f"{service} has routes missing from contracts/openapi.yaml: {sorted(extra)}"
@@ -54,11 +76,10 @@ def test_not_implemented_list_has_no_unknown_ids() -> None:
 def test_implemented_matches_not_implemented_list() -> None:
     services = _services()
     routes = {name: _routes(app) for name, app in services.items()}
-    owner = {tag: svc for svc, tags in TAGS_FOR_SERVICE.items() for tag in tags}
     skip = not_implemented()
     problems = []
     for o in operations():
-        implemented = (o.method, o.path) in routes[owner[o.tag]]
+        implemented = (o.method, o.path) in routes[TAG_TO_SERVICE[o.tag]]
         if o.op_id in skip and implemented:
             problems.append(f"{o.op_id} is implemented: remove it from not_implemented.txt")
         if o.op_id not in skip and not implemented:

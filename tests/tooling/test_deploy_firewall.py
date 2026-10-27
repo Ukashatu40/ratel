@@ -7,12 +7,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy/firewall"
-RULES = [DEPLOY / "core-cp.nft", DEPLOY / "core-up.nft"]
+RULES = [
+    DEPLOY / "core-cp.nft",
+    DEPLOY / "core-up.nft",
+    DEPLOY / "voice.nft",
+    DEPLOY / "bss-app.nft",
+]
 ADDRESSES = DEPLOY / "addresses.nft.example"
 UNIT = DEPLOY / "ratel-fw.service"
 
 # The documentation ranges (RFC 5737) are the only addresses allowed in the repository.
-DOCUMENTATION = ("192.0.2.", "198.51.100.", "203.0.113.")
+# Loopback names no host, so it may appear too.
+DOCUMENTATION = ("192.0.2.", "198.51.100.", "203.0.113.", "127.0.0.1")
 
 
 def _code(path: Path) -> str:
@@ -50,3 +56,24 @@ def test_the_unit_loads_the_rules_before_the_network() -> None:
     assert "ExecStart=/usr/sbin/nft -f /etc/ratel-fw/ratel-fw.nft" in text
     assert "Before=network-pre.target" in text
     assert "WantedBy=multi-user.target" in text
+
+
+def test_the_voice_vm_protects_the_port_docker_publishes_in_the_forward_path() -> None:
+    code = _code(DEPLOY / "voice.nft")
+    assert "hook forward" in code  # a published port never reaches the input chain
+    assert "ct status dnat tcp dport 8080 ip saddr != $pyhss_clients drop" in code
+    assert (
+        code.count("policy accept") == 1
+    )  # only the forward chain: all other routing is untouched
+
+
+def test_bss_app_opens_https_to_everyone_and_nothing_else_but_ssh() -> None:
+    code = _code(DEPLOY / "bss-app.nft")
+    assert "tcp dport 443 accept" in code
+    ports = re.findall(r"dport (\d+)", code)
+    assert sorted(ports) == [
+        "22",
+        "22",
+        "22",
+        "443",
+    ]  # ssh (limited twice, then accepted) and https

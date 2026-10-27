@@ -4,36 +4,42 @@ info:
   version: 0.1.0-draft
   description: |
     The two seams where RatelBSS touches the network (Build Plan, "The two contracts to freeze on
-    day one"), and the part of RatelBSS's own API that RatelPay calls (M-02). This file is the
-    source of truth. If code and this file disagree, the code is wrong.
+    day one"). This file is the source of truth. If code and this file disagree, the code is wrong.
 
     - Contract 1: RatelLink (tag `RatelLink`), runs on core-cp.
-    - Contract 2: RatelMeter (tag `RatelMeter`), API runs on bss-app. It includes the meter
-      agent's ingest call (`POST /v1/usage`).
-    - RatelPay (tag `RatelPay`): served by RatelBSS on bss-app for the public top-up page. Every
-      path starts with `/v1/pay/`, so the reverse proxy can expose those paths and nothing else.
+    - Contract 2: RatelMeter (tag `RatelMeter`), API runs on bss-app.
+    - RatelBSS's own API for RatelDesk and RatelPay (tag `RatelBSS`), M-02. RatelPay's
+      operations all start with `/v1/pay/`.
 
     Conventions from the Build Plan:
     - Plain REST, standard HTTP status codes, JSON bodies.
     - Errors: `{"error": {"code": "...", "message": "..."}}`.
     - Every call carries an API key in the `Authorization` header, one key per calling system.
-      The exception is RatelPay, which is public by design (ARCHITECTURE.md): its operations
-      declare `security: []`, are rate-limited (429), and return nothing personal about a line's
-      owner (TOP-2).
+      RatelPay's public paths keep this rule. The page is a static file in a browser and cannot
+      keep a key secret, so it sends none: the reverse proxy adds the key on each public path and
+      replaces anything the browser sent.
     - Every call that changes something accepts an `Idempotency-Key` header. Repeating a call with
       the same key returns the first result.
     - Times are Unix epoch seconds in UTC, sent as integers. Usage is in bytes.
+    - Money is whole kobo, sent as integers. Never a decimal.
     - Until RatelLink's live changes land, every change takes effect at the line's next attach.
     - Ki, OPc and voucher PINs are write-only. No response in this file may contain them.
 
-    Anything the Build Plan does not specify is marked `TODO(contract)` in a description or with
-    the `x-todo` extension. Do not fill those in by guessing. Agree them with the owners, then
-    update this file in the same commit as the code.
+    Anything the Build Plan or the PRD (`docs/PRODUCT_RULES.md`) does not specify is marked
+    `TODO(contract)` in a description or with the `x-todo` extension. Do not fill those in by
+    guessing. Agree them with the owners, then update this file in the same commit as the code.
 
-    Not covered here yet: RatelBSS's API for RatelDesk (M-02, needs the PRD), and the payment
-    gateway's webhook (M-19, the provider is not chosen). TODO(contract): add them here.
+    The `RatelBSS` operations cover only the four PRD demo journeys that belong to RatelBSS
+    (PRODUCT_RULES.md, Demo journeys). Self-care and dealer apps are out of scope (Build Plan,
+    "What not to build yet"). The meter agent's ingest call is `meter_ingest_usage`; its
+    authentication scheme and batch size are still TODO(contract).
+
+    Not covered here yet: the payment gateway's webhook (M-19, the provider is not chosen).
+    TODO(contract): add it here.
   x-todo:
-    - Operational endpoints (/healthz) are deliberately not in this contract.
+    - Operational endpoints (/healthz, /readyz) are deliberately not in this contract.
+    - RatelLink's internal sell-to-activate endpoint (/v1/lines/activate with body line_id) is
+      not in this contract. The external version is bss_activate_line.
 servers:
   - url: http://127.0.0.1:4010
     description: Local mock (make mock). TODO(contract) - real base URLs and ports per environment.
@@ -44,10 +50,8 @@ tags:
     description: Contract 1. Provisioning. Only writer to RatelCore's subscriber database.
   - name: RatelMeter
     description: Contract 2. Usage and call records for billing.
-  - name: RatelPay
-    description: |
-      Served by RatelBSS (`app` on bss-app) for the RatelPay top-up page. Public: no API key,
-      rate-limited, and nothing personal about a line's owner in any response (TOP-2).
+  - name: RatelBSS
+    description: RatelBSS's own API for RatelDesk and RatelPay (M-02). Not a network seam.
 paths:
   /v1/sims:
     post:
@@ -328,89 +332,412 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
-  /v1/pay/vouchers/redeem:
+  /v1/customers:
     post:
-      tags: [RatelPay]
-      operationId: pay_redeem_voucher
-      summary: Credit a voucher to a line's wallet. Public, no API key.
+      tags: [RatelBSS]
+      operationId: bss_create_customer
+      summary: Register a customer. KYC verified before any line is activated.
       description: |
-        Credits the voucher's value to the wallet of the line with this number. A voucher credits
-        exactly once, however many times it is redeemed (PRODUCT_RULES, Vouchers).
-        Every refusal gets the same 400: a wrong PIN, a PIN that fails its Luhn check, a voucher
-        that is used, expired, locked or unknown, and a number that is not a line that can be
-        credited. The answer never says which it was, or whether a line or a voucher exists.
-        A request of the wrong shape gets 422.
-        Failed attempts are limited (at most 5 per hour, PRODUCT_RULES) and answered with 429.
-        Attempts are counted whether or not the voucher exists, so 429 is not a clue either.
-        Idempotency-Key is required: a retry after a lost response returns the first result,
-        instead of the 400 a used voucher would get.
-        No response contains the PIN or anything about the line's owner (TOP-2).
-      x-todo:
-        - Voucher lookup and the rate-limit key need the M-18 owner's decision. PRODUCT_RULES stores PINs hashed and counts failed attempts per card number, but this request has no card number.
-        - Which line states can be credited (a suspended line, for example) is not specified.
-      security: []
+        Creates a customer. `kyc_status` is pending, verified or rejected; no line activates until
+        it is `verified` (PRODUCT_RULES.md, Customers and KYC). Customer and KYC data never leave
+        RatelBSS and never reach RatelLink or RatelMeter.
+        `id_type` allowed values and `address` format are open (PRODUCT_RULES.md, decision 3).
+        The demo value for `id_type` is `NIN` only; the demo value for `address` is free text.
+        The customer's NIN is captured at registration but never logged, never returned in any
+        response beyond this customer's own record, and never in any list.
       parameters:
-        - $ref: "#/components/parameters/BssIdempotencyKey"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RedeemRequest"
+              $ref: "#/components/schemas/CreateCustomerRequest"
       responses:
-        "200":
-          description: The voucher was credited.
+        "201":
+          description: Customer created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RedeemResult"
-        "400":
-          $ref: "#/components/responses/RedeemFailed"
+                $ref: "#/components/schemas/Customer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/PayValidationError"
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/customers/{customer_id}:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_customer
+      summary: Read one customer. KYC status and identity data are personal data.
+      description: |
+        Returns one customer. Used by RatelDesk, which is reachable only over the VPN.
+        RatelPay never calls this (PRODUCT_RULES.md, TOP-2: RatelPay shows nothing personal).
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      responses:
+        "200":
+          description: The customer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/plans:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_plans
+      summary: Plans on sale, for the sell-a-SIM journey.
+      description: |
+        Returns plans in state `on_sale`. Pagination is TODO(contract): the Build Plan gives no
+        page size for plans and the number of plans is small.
+      responses:
+        "200":
+          description: On-sale plans.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/stock/sims:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_stock_sims
+      summary: Free SIMs, for the sell-a-SIM journey.
+      description: |
+        Returns SIMs in state `in_stock`. Never returns Ki or OPc: SIM stock in RatelBSS holds
+        ICCID, IMSI and batch only (PRODUCT_RULES.md, SIMs).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: TODO(contract) - page size for stock lists, and the cursor to use.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 100
+      responses:
+        "200":
+          description: Free SIMs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/stock/numbers:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_stock_numbers
+      summary: Free numbers, for the sell-a-SIM journey.
+      description: |
+        Returns numbers in state `available`. The stored form is 234 and ten digits
+        (PRODUCT_RULES.md, Customers and KYC). A number and a SIM are each taken once.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 100
+      responses:
+        "200":
+          description: Free numbers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NumberList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_create_line
+      summary: Attach a customer, a SIM, a number and a plan as a line, awaiting activation.
+      description: |
+        Takes a free SIM and a free number atomically (PRODUCT_RULES.md: a SIM or number cannot be
+        taken twice, even by simultaneous requests). The line starts in `awaiting_activation`.
+        If `kyc_status` is not `verified`, activation later refuses (PRODUCT_RULES.md, Customers
+        and KYC). The line is created here; the RatelLink `/activate` call happens in
+        `bss_activate_line`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLineRequest"
+      responses:
+        "201":
+          description: Line created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_line
+      summary: One line's state and, when suspended, the state it was suspended from.
+      description: |
+        Returns the line's state (`awaiting_activation`, `active`, `out_of_data`, `expired`,
+        `suspended`, `terminated`) and, while suspended, `state_before_suspension`. Does not return
+        usage: the line page's usage comes from the RatelMeter API (M-12), never from here.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+      responses:
+        "200":
+          description: The line.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/activate:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_activate_line
+      summary: Activate a line. First plan paid for and KYC verified.
+      description: |
+        Calls RatelLink's `/activate` with the plan's speeds and voice true (PRODUCT_RULES.md,
+        Line lifecycle). Only the state machine calls RatelLink; each transition writes an audit
+        entry with who and why (PRODUCT_RULES.md, Line lifecycle).
+        If RatelLink fails, the line's state does not change; the call is retried with the same
+        `Idempotency-Key` (PRODUCT_RULES.md, failure in the middle of a transition).
+        A line whose `kyc_status` is not `verified`, or that is not in `awaiting_activation`,
+        answers `409` (the line is in a state where it cannot be activated).
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivateLineRequest"
+      responses:
+        "200":
+          description: Activated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/suspend:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_suspend_line
+      summary: Suspend a line with a reason. Customer care action.
+      description: |
+        `active` or `out_of_data` -> `suspended`. Calls RatelLink's `/deactivate`. Writes an audit
+        entry with the reason. Every care action carries a reason from a short fixed list plus free
+        text; starting list from PRODUCT_RULES.md (decided 2026-10-23): `fraud`, `non_payment`,
+        `customer_request`, `lost_sim`, `other`. The list is edited by @capitanaserdel and
+        @ml-lawarn before RatelDesk is built.
+        A line that is not active or out_of_data answers `409` (invalid transition).
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuspendLineRequest"
+      responses:
+        "200":
+          description: Suspended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/reinstate:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_reinstate_line
+      summary: Reinstate a suspended line. Customer care action.
+      description: |
+        `suspended` -> the state it had before (`state_before_suspension`). Calls RatelLink's
+        `/activate`, then `/data` if the previous state was `out_of_data`. Writes an audit entry
+        with the reason. If `state_before_suspension` is not `active` or `out_of_data`, the stored
+        data is wrong and the call answers `500` with a standard error; the caller does not retry.
+        A line that is not suspended answers `409`.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReinstateLineRequest"
+      responses:
+        "200":
+          description: Reinstated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/vouchers/redeem:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_redeem_voucher
+      summary: Redeem a prepaid card for the line with this phone number. Called for RatelPay.
+      description: |
+        Credits the card's face value to the wallet of the line that has `msisdn`, once.
+        The caller is the reverse proxy in front of RatelPay's page, with a key of its own
+        (`PAY_API_KEY`). The page is a static file in a browser and cannot keep a key secret, so it
+        sends none: the proxy adds the key to this one route and replaces anything the browser sent.
+        That keeps the rule that every call carries a key. It does not stop someone who calls the
+        proxy directly, and is not meant to: the protection against guessing is that there are at
+        most 5 failed attempts per card number per hour (PRODUCT_RULES.md, Vouchers), counted for
+        numbers that do not exist as well, and a per-address rate limit at the proxy.
+        What the caller learns is deliberately little. A wrong number, a wrong PIN, an unknown
+        phone number, a card that was used, locked, not yet on sale or expired all answer the same
+        `400`. Only two answers differ, and neither says anything about any card: `422` when the
+        digits are not well formed (a typo, caught by the PIN's Luhn check digit; not counted), and
+        `429` when the number has had 5 failures in the last hour (the PIN is not even looked at).
+        A repeat by the same line, after the card was redeemed, answers `200` again with the same
+        amounts and credits nothing more, so a retry after a lost reply is safe.
+        `msisdn` is the stored form: digits only, international format without a plus sign.
+        TODO(PRD): how RatelPay turns what a customer types into that form, and the screen wording.
+        The answer is sent with `Cache-Control: no-store`. The card number and PIN are never
+        logged, and never in an answer.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemVoucherRequest"
+      responses:
+        "200":
+          description: Redeemed (or already redeemed by this line).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedeemVoucherResponse"
+        "400":
+          $ref: "#/components/responses/VoucherRefused"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
         "429":
-          $ref: "#/components/responses/TooManyRequests"
+          $ref: "#/components/responses/RateLimited"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/pay/bundles:
     get:
-      tags: [RatelPay]
-      operationId: pay_list_bundles
-      summary: Bundles on sale. Public, no API key.
+      tags: [RatelBSS]
+      operationId: bss_list_bundles
+      summary: Bundles on sale, for RatelPay.
       description: |
         Every bundle in the `on_sale` state. Retired bundles are never listed. Not paged: the list
-        of bundles on sale is short. RatelPay cannot buy a bundle yet; there is no operation for it.
-      security: []
+        of bundles on sale is short. RatelPay cannot buy a bundle yet: buying needs the purchase
+        flow, which is not built, so there is no operation for it.
+        Called for RatelPay through the reverse proxy, which adds the key (see info.description).
+      x-todo:
+        - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
       responses:
         "200":
           description: Bundles on sale.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PayBundleList"
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
+                $ref: "#/components/schemas/BundleList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/pay/payments:
     post:
-      tags: [RatelPay]
-      operationId: pay_start_payment
-      summary: "DRAFT: start a payment through the gateway. Public, no API key."
+      tags: [RatelBSS]
+      operationId: bss_start_payment
+      summary: "DRAFT: start a payment through the gateway, for RatelPay."
       description: |
         DRAFT. TODO(contract): the payment provider is not chosen (PRODUCT_RULES decision 6), so
         this operation's fields will change. Do not build against it yet.
         Starts a payment of `amount_kobo` for the line with this number. Nothing is credited here:
         the wallet is credited only after the provider's webhook is verified and the transaction
         is re-queried with the provider (PRODUCT_RULES, Payments).
+        Called for RatelPay through the reverse proxy, which adds the key (see info.description).
       x-todo:
         - What the page needs to send the customer to the provider (a checkout link or similar) depends on the provider.
         - Lowest and highest amount.
         - The error when the provider cannot be reached.
-        - Idempotency-Key is required here as on redeem (a retried payment must not start twice); confirm with the M-19 owner.
-      security: []
+        - Whether Idempotency-Key must be required here (a retried payment must not start twice); confirm with the M-19 owner.
+        - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
       parameters:
-        - $ref: "#/components/parameters/BssIdempotencyKey"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -424,25 +751,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "422":
-          $ref: "#/components/responses/PayValidationError"
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
+          $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/pay/payments/{payment_id}:
     get:
-      tags: [RatelPay]
-      operationId: pay_get_payment
-      summary: "DRAFT: a payment's status. Public, no API key."
+      tags: [RatelBSS]
+      operationId: bss_get_payment
+      summary: "DRAFT: a payment's status, for RatelPay."
       description: |
         DRAFT. TODO(contract): the payment provider is not chosen (PRODUCT_RULES decision 6), so
         this operation's fields will change. Do not build against it yet.
-        Anyone who has the `payment_id` can call this, so the response holds nothing about the
-        line or its owner, and the id must be impossible to guess.
+        Anyone who reaches the page and has the `payment_id` can call this, so the response holds
+        nothing about the line or its owner (TOP-2), and the id must be impossible to guess.
+        Called for RatelPay through the reverse proxy, which adds the key (see info.description).
       x-todo:
         - The status values depend on the provider.
-      security: []
+        - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
       parameters:
         - $ref: "#/components/parameters/PaymentId"
       responses:
@@ -452,10 +780,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          $ref: "#/components/responses/PaymentNotFound"
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
+          $ref: "#/components/responses/NotFound"
         default:
           $ref: "#/components/responses/UnexpectedError"
 components:
@@ -475,19 +803,9 @@ components:
         RatelLink's operations are idempotent by construction: repeating a call with the same
         body changes nothing, with or without this header. The header is accepted and must not be
         empty. It is not stored, so it has no retention window.
-        TODO(contract): key format and length, and whether RatelBSS needs the first result
-        returned verbatim. Owner: RatelBSS lines.
-      schema:
-        type: string
-        minLength: 1
-    BssIdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: true
-      description: |
-        RatelBSS stores the key (in Redis, M-26) with the first result. Repeating a call with the
-        same key returns that first result and changes nothing.
-        TODO(contract): key format and length, and how long a key is kept. Owner: RatelBSS lines.
+        RatelBSS's own operations (tag RatelBSS) accept it too: repeating a call with the same
+        header and body returns the first result and changes nothing.
+        TODO(contract): key format and length. Owner: RatelBSS lines.
       schema:
         type: string
         minLength: 1
@@ -498,13 +816,27 @@ components:
       schema:
         type: string
         minLength: 1
-      x-todo: Format not specified. It must be impossible to guess (the operation is public).
+      x-todo: Format not specified. It must be impossible to guess.
     Imsi:
       name: imsi
       in: path
       required: true
       schema:
         $ref: "#/components/schemas/Imsi"
+    CustomerId:
+      name: customer_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    LineId:
+      name: line_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     From:
       name: from
       in: query
@@ -552,7 +884,8 @@ components:
     Conflict:
       description: |
         Nothing was changed. Either the IMSI already has different keys stored (`POST /v1/sims`),
-        or the network has no record for the line (`POST /v1/lines/{imsi}/data`): activate it again.
+        the network has no record for the line (`POST /v1/lines/{imsi}/data`): activate it again,
+        or the line is in a state where the requested transition is not allowed (RatelBSS).
       content:
         application/json:
           schema:
@@ -560,13 +893,13 @@ components:
           example:
             error: {code: conflict, message: "The network has no record for this line. Activate it again."}
     NotFound:
-      description: Unknown line.
+      description: Unknown line, customer, SIM, number, plan or payment.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
           example:
-            error: {code: not_found, message: "Unknown line."}
+            error: {code: not_found, message: "Unknown resource."}
     ValidationError:
       description: |
         Invalid request. RatelLink answers 422 for every validation failure (a bad IMSI in the
@@ -588,47 +921,35 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: {code: unavailable, message: "Voice cannot be switched on right now."}
-    RedeemFailed:
+    VoucherRefused:
       description: |
-        The voucher was not credited. One answer for every reason (wrong PIN, failed Luhn check,
-        voucher used, expired, locked or unknown, number not a line that can be credited), so it
-        reveals nothing. The attempt counts towards the limit.
+        The card cannot be used. One answer for every reason (a wrong number or PIN, an unknown
+        phone number, a card already used, locked, not on sale or expired), so that it gives a
+        guesser nothing to work from. The attempt counts towards 5 per card number per hour.
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
           example:
-            error: {code: redeem_failed, message: "This voucher cannot be used."}
-    PayValidationError:
+            error: {code: voucher_refused, message: "This card cannot be used."}
+    RateLimited:
       description: |
-        The request has the wrong shape: a missing field, or a number or PIN of the wrong length
-        or with characters other than digits. The message names the fields, never their values.
-        A PIN of the right shape that fails its Luhn check is not this error: it gets 400.
+        This card number has had 5 failed attempts in the last hour. Nothing was checked.
+        Try again after the time in `Retry-After`.
+      headers:
+        Retry-After:
+          schema: {type: string, enum: ["3600"]}
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
           example:
-            error: {code: validation_error, message: "Invalid request. Fields: body.pin"}
-    TooManyRequests:
-      description: |
-        Too many requests. Try again later. Redeem answers this after too many failed attempts
-        (at most 5 per hour, PRODUCT_RULES); every RatelPay operation is rate-limited.
-        TODO(contract): the limits other than redemption's, and whether a Retry-After header is sent.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error: {code: too_many_attempts, message: "Too many attempts. Try again later."}
-    PaymentNotFound:
-      description: Unknown payment.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error: {code: not_found, message: "Unknown payment."}
+            error: {code: rate_limited, message: "Too many attempts. Try again later."}
     UnexpectedError:
       description: Any other failure, in the standard error shape.
       content:
@@ -705,26 +1026,28 @@ components:
         Megabits per second. The core stores whole numbers, so the value must be a whole number of
         bits per second (1.5 is stored as 1500 Kbps). Zero is refused.
       x-todo: The maximum (10 Gbit/s) is a sanity limit chosen here. The Build Plan gives none.
-    DataRequest:
-      type: object
-      required: [mode]
-      additionalProperties: false
-      properties:
-        mode:
-          type: string
-          enum: [full, slow, "off"]
-        speed_ul_mbps:
-          $ref: "#/components/schemas/SpeedMbps"
-        speed_dl_mbps:
-          $ref: "#/components/schemas/SpeedMbps"
-      if:
+      DataRequest:
+        type: object
+        required: [mode]
+        additionalProperties: false
         properties:
           mode:
-            enum: [full, slow]
-      then:
-        required: [speed_ul_mbps, speed_dl_mbps]
-      description: "`full` and `slow` need both speeds. `off` ignores them."
-      x-todo: The Build Plan lists the speeds as body fields without saying when they are required.
+            type: string
+            enum: [full, slow, "off"]
+          speed_ul_mbps:
+            $ref: "#/components/schemas/SpeedMbps"
+          speed_dl_mbps:
+            $ref: "#/components/schemas/SpeedMbps"
+        anyOf:
+          - properties:
+              mode:
+                const: "off"
+          - properties:
+              mode:
+                enum: [full, slow]
+            required: [speed_ul_mbps, speed_dl_mbps]
+        description: |
+          `full` and `slow` need both speeds. `off` ignores them.
     DeactivateRequest:
       type: object
       required: [reason]
@@ -880,56 +1203,260 @@ components:
             $ref: "#/components/schemas/CallRecord"
         next_cursor:
           type: [string, "null"]
-    PayMsisdn:
-      type: string
-      pattern: "^234[0-9]{10}$"
-      description: |
-        The line's number in the stored form: 234 and ten digits, no plus sign (as in
-        ActivateRequest). The page converts what the customer types.
-      examples: ["2340000000001"]
-    KoboAmount:
-      type: integer
-      minimum: 1
-      description: Whole kobo.
-    RedeemRequest:
+    Customer:
       type: object
-      required: [msisdn, pin]
+      required: [customer_id, name, phone, email, id_type, id_number, address, kyc_status, blocked]
+      additionalProperties: false
+      description: |
+        Personal data. Never logged, never in fixtures, never sent to RatelLink or RatelMeter
+        (PRODUCT_RULES.md, Customers and KYC). No `ki` or `opc`: RatelBSS never holds them.
+      properties:
+        customer_id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          type: string
+          format: email
+          maxLength: 120
+        id_type:
+          type: string
+          minLength: 1
+          maxLength: 20
+          x-todo: Allowed values open (PRODUCT_RULES.md, decision 3). Demo value is NIN only.
+        id_number:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: The customer's NIN. Personal data.
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+          x-todo: Format open (PRODUCT_RULES.md, decision 3). Demo value is free text.
+        kyc_status:
+          type: string
+          enum: [pending, verified, rejected]
+        blocked:
+          type: boolean
+    CreateCustomerRequest:
+      type: object
+      required: [name, phone, email, id_type, id_number, address, kyc_status]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          type: string
+          format: email
+          maxLength: 120
+        id_type:
+          type: string
+          minLength: 1
+          maxLength: 20
+        id_number:
+          type: string
+          minLength: 1
+          maxLength: 20
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+        kyc_status:
+          type: string
+          enum: [pending, verified, rejected]
+    Plan:
+      type: object
+      required: [plan_id, name, price_kobo, validity_days, data_bytes, speed_ul_mbps, speed_dl_mbps, slow_ul_mbps, slow_dl_mbps, channels, on_exhaustion, state]
+      additionalProperties: false
+      properties:
+        plan_id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          maxLength: 80
+        price_kobo:
+          type: integer
+          minimum: 0
+          description: Whole kobo, never a decimal.
+        validity_days:
+          type: integer
+          minimum: 1
+        data_bytes:
+          type: integer
+          minimum: 0
+        speed_ul_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        speed_dl_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        slow_ul_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        slow_dl_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        channels:
+          type: string
+          maxLength: 40
+          x-todo: Representation is TODO(PRD). Current storage is VARCHAR(40). Do not invent a type.
+        on_exhaustion:
+          type: string
+          enum: [slow, stop]
+        state:
+          type: string
+          enum: [on_sale, retired]
+    PlanList:
+      type: object
+      required: [plans]
+      additionalProperties: false
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+    Sim:
+      type: object
+      required: [iccid, imsi, batch, state]
+      additionalProperties: false
+      description: SIM stock. Never contains Ki or OPc (PRODUCT_RULES.md, SIMs).
+      properties:
+        iccid:
+          type: string
+          maxLength: 20
+        imsi:
+          $ref: "#/components/schemas/Imsi"
+        batch:
+          type: string
+          maxLength: 40
+        state:
+          type: string
+          enum: [in_stock, in_use, retired]
+    SimList:
+      type: object
+      required: [sims]
+      additionalProperties: false
+      properties:
+        sims:
+          type: array
+          items:
+            $ref: "#/components/schemas/Sim"
+    PhoneNumber:
+      type: object
+      required: [msisdn, state]
       additionalProperties: false
       properties:
         msisdn:
-          $ref: "#/components/schemas/PayMsisdn"
+          type: string
+          pattern: "^234[0-9]{10}$"
+        state:
+          type: string
+          enum: [available, in_use, quarantined]
+    NumberList:
+      type: object
+      required: [numbers]
+      additionalProperties: false
+      properties:
+        numbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PhoneNumber"
+    CreateLineRequest:
+      type: object
+      required: [customer_id, iccid, msisdn, plan_id]
+      additionalProperties: false
+      properties:
+        customer_id:
+          type: integer
+          minimum: 1
+        iccid:
+          type: string
+          maxLength: 20
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        plan_id:
+          type: integer
+          minimum: 1
+    ActivateLineRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        speed_ul_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        speed_dl_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+      description: |
+        The speeds are optional when the line's plan is used (the plan's speeds are applied). Pass
+        them to override the plan's speeds for this activation.
+        TODO(contract): confirm whether overriding is wanted; the plan carries both speeds.
+    SuspendLineRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          enum: [fraud, non_payment, customer_request, lost_sim, other]
+        reason_text:
+          type: string
+          maxLength: 200
+          description: Free text recorded in the audit entry.
+    ReinstateLineRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          enum: [fraud, non_payment, customer_request, lost_sim, other]
+        reason_text:
+          type: string
+          maxLength: 200
+    RedeemVoucherRequest:
+      type: object
+      required: [msisdn, card_number, pin]
+      additionalProperties: false
+      properties:
+        msisdn:
+          type: string
+          pattern: "^[0-9]{10,15}$"
+          description: The phone number of the line to credit, as stored (digits, international form).
+        card_number:
+          type: string
+          pattern: "^[0-9]{20}$"
+          description: The 20 digit number printed on the card. Never logged.
         pin:
           type: string
           pattern: "^[0-9]{14}$"
           writeOnly: true
           description: |
-            Secret. Write-only. 13 digits plus one Luhn check digit. Never returned, never in a
-            URL, and in logs only masked to its last four digits.
-    RedeemResult:
+            The 13 digit PIN and its Luhn check digit, as printed. Write-only: it appears in no
+            response and in no log. TODO(PRD): confirm the check digit belongs to the PIN.
+    RedeemVoucherResponse:
       type: object
-      required: [reference, amount_kobo, redeemed_at]
+      required: [amount_kobo, balance_kobo]
       additionalProperties: false
-      description: |
-        Nothing about the line's owner (TOP-2), and never the PIN.
-        The example is made up for the mock (make mock). It is not a product value.
       properties:
-        reference:
-          type: string
-          minLength: 1
-          description: Identifies this redemption, for the customer to quote. Not the PIN.
-          x-todo: Format not specified.
         amount_kobo:
-          $ref: "#/components/schemas/KoboAmount"
-        redeemed_at:
           type: integer
-          minimum: 0
-          description: Unix epoch seconds, UTC.
-      # Example only, for the mock. Not a product value.
-      examples:
-        - reference: "EXAMPLE-REDEEM-0001"
-          amount_kobo: 50000
-          redeemed_at: 1791820800
-    PayBundle:
+          minimum: 1
+          description: The card's face value, in whole kobo.
+        balance_kobo:
+          type: integer
+          description: The line's wallet balance after this redemption, in whole kobo.
+    Bundle:
       type: object
       required: [bundle_id, name, price_kobo, data_bytes, validity_days]
       additionalProperties: false
@@ -943,14 +1470,14 @@ components:
         price_kobo:
           type: integer
           minimum: 0
-          description: Whole kobo.
+          description: Whole kobo, never a decimal.
         data_bytes:
           type: integer
           minimum: 1
         validity_days:
           type: integer
           minimum: 1
-    PayBundleList:
+    BundleList:
       type: object
       required: [bundles]
       additionalProperties: false
@@ -961,7 +1488,7 @@ components:
         bundles:
           type: array
           items:
-            $ref: "#/components/schemas/PayBundle"
+            $ref: "#/components/schemas/Bundle"
       # Examples only, for the mock. Not product values.
       examples:
         - bundles:
@@ -987,9 +1514,12 @@ components:
       description: "DRAFT. TODO(contract): depends on the payment provider."
       properties:
         msisdn:
-          $ref: "#/components/schemas/PayMsisdn"
+          type: string
+          pattern: "^234[0-9]{10}$"
         amount_kobo:
-          $ref: "#/components/schemas/KoboAmount"
+          type: integer
+          minimum: 1
+          description: Whole kobo, never a decimal.
     Payment:
       type: object
       required: [payment_id, status, amount_kobo]
@@ -1007,9 +1537,46 @@ components:
           type: string
           x-todo: Values depend on the payment provider.
         amount_kobo:
-          $ref: "#/components/schemas/KoboAmount"
+          type: integer
+          minimum: 1
+          description: Whole kobo, never a decimal.
       # Example only, for the mock. Not a product value.
       examples:
         - payment_id: "EXAMPLE-PAYMENT-0001"
           status: "pending"
           amount_kobo: 100000
+    Line:
+      type: object
+      required: [line_id, customer_id, iccid, imsi, msisdn, plan_id, state]
+      additionalProperties: false
+      description: |
+        A line. `state_before_suspension` is set only while `suspended`, and records the state the
+        line was in when it was suspended (PRODUCT_RULES.md, Line lifecycle).
+      properties:
+        line_id:
+          type: integer
+          minimum: 1
+        customer_id:
+          type: integer
+          minimum: 1
+        iccid:
+          type: string
+          maxLength: 20
+        imsi:
+          $ref: "#/components/schemas/Imsi"
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        plan_id:
+          type: integer
+          minimum: 1
+        state:
+          type: string
+          enum: [awaiting_activation, active, out_of_data, expired, suspended, terminated]
+        state_before_suspension:
+          type: [string, "null"]
+          enum: [active, out_of_data, null]
+        expires_at:
+          type: [integer, "null"]
+          minimum: 0
+          description: Unix epoch seconds, UTC.

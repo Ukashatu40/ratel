@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, insert
 from sqlalchemy.orm import sessionmaker
 
 from app.bss_lines.api.lines import get_client
@@ -29,7 +30,15 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
     factory = sessionmaker(engine, expire_on_commit=False)
 
     with factory() as s:
-        customer = Customer(name="Alice", phone="2348000000001", kyc_status="verified")
+        customer = Customer(
+            name="Alice",
+            phone="2348000000001",
+            email="alice@example.test",
+            id_type="NIN",
+            id_number="00000000000",
+            address="addr",
+            kyc_status="verified",
+        )
         sim = Sim(
             iccid="8923400000000000001",
             imsi="621000000000001",
@@ -39,8 +48,14 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
         number = Number(msisdn="2348000000001", state="in_use")
         plan = Plan(
             name="Basic",
+            price_kobo=500,
+            validity_days=30,
+            data_bytes=1_000_000,
             speed_ul_mbps=10,
             speed_dl_mbps=20,
+            slow_ul_mbps=1,
+            slow_dl_mbps=1,
+            channels="data",
             on_exhaustion="slow",
             state="on_sale",
         )
@@ -87,3 +102,145 @@ def test_activate_endpoint_calls_ratellink_once(
         json={"line_id": line_id, "actor": "staff:test", "idempotency_key": "key-1"},
     )
     assert len(fake_client.calls) == 1
+
+
+# --- M-26 line lookup ------------------------------------------------------------
+#
+# The 100,000-row database is seeded once per module (scope="module"), with bulk
+# inserts rather than per-row ORM adds. Four lookups (by id, msisdn, iccid, imsi)
+# then prove each is under a second with a large table in place. Per-test seeding
+# would be seven times slower for no extra evidence.
+
+
+@pytest.fixture(scope="module")
+def client_with_100k_lines(tmp_path_factory) -> Iterator[TestClient]:
+    """100,000 lines in the table, so a lookup is a real index probe."""
+    tmp = tmp_path_factory.mktemp("100k")
+    engine = create_engine(f"sqlite:///{tmp / 'big.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine, expire_on_commit=False)
+
+    with factory() as s:
+        customer = Customer(
+            name="Alice",
+            phone="2348000000001",
+            email="alice@example.test",
+            id_type="NIN",
+            id_number="00000000000",
+            address="addr",
+            kyc_status="verified",
+        )
+        plan = Plan(
+            name="Basic",
+            price_kobo=500,
+            validity_days=30,
+            data_bytes=1_000_000,
+            speed_ul_mbps=10,
+            speed_dl_mbps=20,
+            slow_ul_mbps=1,
+            slow_dl_mbps=1,
+            channels="data",
+            on_exhaustion="slow",
+            state="on_sale",
+        )
+        s.add_all([customer, plan])
+        s.flush()
+
+        # Bulk inserts: 300,000 rows in a few seconds, not per-row ORM adds.
+        s.execute(
+            insert(Sim),
+            [
+                {
+                    "iccid": f"89{n:018d}",
+                    "imsi": f"621{n:012d}",
+                    "batch": "bulk",
+                    "state": "in_use",
+                }
+                for n in range(100_000)
+            ],
+        )
+        s.execute(
+            insert(Number),
+            [{"msisdn": f"234{n:010d}", "state": "in_use"} for n in range(100_000)],
+        )
+        s.execute(
+            insert(Line),
+            [
+                {
+                    "customer_id": customer.customer_id,
+                    "iccid": f"89{n:018d}",
+                    "imsi": f"621{n:012d}",
+                    "msisdn": f"234{n:010d}",
+                    "plan_id": plan.plan_id,
+                    "state": "active",
+                }
+                for n in range(100_000)
+            ],
+        )
+        s.commit()
+
+    app = create_app(Settings())
+    app.state.session_factory = factory
+
+    with TestClient(app) as client:
+        yield client
+
+
+# The identifiers for the line seeded at n=50000:
+#   line_id  = 50001  (SQLite autoincrement starts at 1)
+#   msisdn   = "234" + f"{50000:010d}" = "2340000050000"
+#   iccid    = "89"  + f"{50000:018d}" = "89000000000000050000"
+#   imsi     = "621" + f"{50000:012d}" = "621000000050000"
+SEEDED_LINE_ID = 50001
+SEEDED_MSISDN = "2340000050000"
+SEEDED_ICCID = "89000000000000050000"
+SEEDED_IMSI = "621000000050000"
+
+
+def _timed_get(client: TestClient, url: str) -> tuple[int, float]:
+    started = time.monotonic()
+    response = client.get(url)
+    elapsed = time.monotonic() - started
+    return response.status_code, elapsed
+
+
+def test_lookup_by_line_id_under_a_second(client_with_100k_lines) -> None:
+    status, elapsed = _timed_get(client_with_100k_lines, f"/v1/lines/lookup/{SEEDED_LINE_ID}")
+    assert status == 200
+    assert elapsed < 1.0, f"line_id lookup took {elapsed:.3f}s"
+
+
+def test_lookup_by_msisdn_under_a_second(client_with_100k_lines) -> None:
+    status, elapsed = _timed_get(client_with_100k_lines, f"/v1/lines/lookup?msisdn={SEEDED_MSISDN}")
+    assert status == 200
+    assert elapsed < 1.0, f"msisdn lookup took {elapsed:.3f}s"
+    body = client_with_100k_lines.get(f"/v1/lines/lookup?msisdn={SEEDED_MSISDN}").json()
+    assert body["line_id"] == SEEDED_LINE_ID
+
+
+def test_lookup_by_iccid_under_a_second(client_with_100k_lines) -> None:
+    status, elapsed = _timed_get(client_with_100k_lines, f"/v1/lines/lookup?iccid={SEEDED_ICCID}")
+    assert status == 200
+    assert elapsed < 1.0, f"iccid lookup took {elapsed:.3f}s"
+
+
+def test_lookup_by_imsi_under_a_second(client_with_100k_lines) -> None:
+    status, elapsed = _timed_get(client_with_100k_lines, f"/v1/lines/lookup?imsi={SEEDED_IMSI}")
+    assert status == 200
+    assert elapsed < 1.0, f"imsi lookup took {elapsed:.3f}s"
+
+
+def test_lookup_with_no_identifier_is_422(client_with_100k_lines) -> None:
+    assert client_with_100k_lines.get("/v1/lines/lookup").status_code == 422
+
+
+def test_lookup_with_two_identifiers_is_422(client_with_100k_lines) -> None:
+    response = client_with_100k_lines.get(
+        f"/v1/lines/lookup?msisdn={SEEDED_MSISDN}&imsi={SEEDED_IMSI}"
+    )
+    assert response.status_code == 422
+
+
+def test_lookup_of_unknown_line_is_404(client_with_100k_lines) -> None:
+    assert client_with_100k_lines.get("/v1/lines/lookup/99999999").status_code == 404
+    assert client_with_100k_lines.get("/v1/lines/lookup?msisdn=2349999999999").status_code == 404

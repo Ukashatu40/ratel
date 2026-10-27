@@ -14,8 +14,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.bss_lines.models.lines import Line
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.activation import ActivationError, activate_line
+from app.bss_lines.services.lifecycle import (
+    LifecycleError,
+    LifecycleResult,
+    reinstate_line,
+    suspend_line,
+    terminate_line,
+)
 from app.bss_lines.services.ratel_link_client import RatelLinkClient, RatelLinkError
 from app.config import Settings
 
@@ -86,8 +94,7 @@ def post_activate(
 
     TODO(auth, M-26): this route has no authentication and takes the audit
     ``actor`` from the request body. That must not be deployed before M-26 adds
-    staff authentication. Anyone who can reach this route can claim to be any
-    actor, and the audit log would record it.
+    staff authentication.
 
     TODO(contract, M-02): this route and body will be replaced by whatever M-02
     specifies in contracts/openapi.yaml.
@@ -103,8 +110,6 @@ def post_activate(
     except ActivationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RatelLinkError as exc:
-        # RatelLink is downstream of us: a failure there is a gateway problem,
-        # not a bug in the request.
         raise HTTPException(
             status_code=502,
             detail=f"RatelLink error: {exc}",
@@ -114,3 +119,176 @@ def post_activate(
         line_id=result.line_id,
         state=result.to_state.value,
     )
+
+
+class LifecycleBody(BaseModel):
+    """Request payload for suspend, reinstate and terminate."""
+
+    line_id: int
+    actor: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=120)
+    reason: str = Field(min_length=1, max_length=40)
+    reason_text: str | None = Field(default=None, max_length=200)
+
+
+class LifecycleResponse(BaseModel):
+    """Response returned after a lifecycle change."""
+
+    line_id: int
+    from_state: str
+    to_state: str
+
+
+def _lifecycle_response(result: LifecycleResult) -> LifecycleResponse:
+    return LifecycleResponse(
+        line_id=result.line_id,
+        from_state=result.from_state.value,
+        to_state=result.to_state.value,
+    )
+
+
+@router.post("/lines/suspend", response_model=LifecycleResponse)
+def post_suspend(
+    payload: LifecycleBody,
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+    client: Annotated[RatelLinkClient, Depends(get_client)],
+) -> LifecycleResponse:
+    """Suspend a line with a reason."""
+    try:
+        result = suspend_line(
+            lines,
+            client,
+            payload.line_id,
+            actor=payload.actor,
+            reason=payload.reason,
+            reason_text=payload.reason_text,
+            idempotency_key=payload.idempotency_key,
+        )
+    except LifecycleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RatelLinkError as exc:
+        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+
+    return _lifecycle_response(result)
+
+
+@router.post("/lines/reinstate", response_model=LifecycleResponse)
+def post_reinstate(
+    payload: LifecycleBody,
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+    client: Annotated[RatelLinkClient, Depends(get_client)],
+) -> LifecycleResponse:
+    """Reinstate a suspended line."""
+    try:
+        result = reinstate_line(
+            lines,
+            client,
+            payload.line_id,
+            actor=payload.actor,
+            reason=payload.reason,
+            reason_text=payload.reason_text,
+            idempotency_key=payload.idempotency_key,
+        )
+    except LifecycleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RatelLinkError as exc:
+        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+
+    return _lifecycle_response(result)
+
+
+@router.post("/lines/terminate", response_model=LifecycleResponse)
+def post_terminate(
+    payload: LifecycleBody,
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+    client: Annotated[RatelLinkClient, Depends(get_client)],
+) -> LifecycleResponse:
+    """Terminate a line."""
+    try:
+        result = terminate_line(
+            lines,
+            client,
+            payload.line_id,
+            actor=payload.actor,
+            reason=payload.reason,
+            reason_text=payload.reason_text,
+            idempotency_key=payload.idempotency_key,
+        )
+    except LifecycleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RatelLinkError as exc:
+        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+
+    return _lifecycle_response(result)
+
+
+# --- M-26 line lookup ------------------------------------------------------------
+
+
+class LineLookupResponse(BaseModel):
+    """One line's identifying and state fields. No keys, no usage."""
+
+    line_id: int
+    imsi: str
+    iccid: str
+    msisdn: str
+    plan_id: int
+    state: str
+    state_before_suspension: str | None
+    expires_at: str | None
+
+
+def _line_lookup_response(line: Line) -> LineLookupResponse:
+    return LineLookupResponse(
+        line_id=line.line_id,
+        imsi=line.imsi,
+        iccid=line.iccid,
+        msisdn=line.msisdn,
+        plan_id=line.plan_id,
+        state=line.state,
+        state_before_suspension=line.state_before_suspension,
+        expires_at=line.expires_at.isoformat() if line.expires_at is not None else None,
+    )
+
+
+@router.get("/lines/lookup", response_model=LineLookupResponse)
+def get_line_by_identifier(
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+    msisdn: str | None = None,
+    iccid: str | None = None,
+    imsi: str | None = None,
+) -> LineLookupResponse:
+    """Look a line up by exactly one of msisdn, iccid or imsi.
+
+    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
+
+    Answers 422 if zero or more than one identifier is given, 404 if no line
+    matches. The indexes on line.msisdn, line.iccid and line.imsi make each
+    lookup one indexed read, so the under-a-second criterion holds with
+    100,000 rows in the table.
+    """
+    supplied = sum(x is not None for x in (msisdn, iccid, imsi))
+    if supplied != 1:
+        raise HTTPException(
+            status_code=422,
+            detail="exactly one of msisdn, iccid, imsi must be given",
+        )
+    line = lines.find_by_identifier(msisdn=msisdn, iccid=iccid, imsi=imsi)
+    if line is None:
+        raise HTTPException(status_code=404, detail="No line with that identifier")
+    return _line_lookup_response(line)
+
+
+@router.get("/lines/lookup/{line_id}", response_model=LineLookupResponse)
+def get_line_by_id(
+    line_id: int,
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+) -> LineLookupResponse:
+    """Look a line up by its id.
+
+    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
+    """
+    line = lines.find_by_identifier(line_id=line_id)
+    if line is None:
+        raise HTTPException(status_code=404, detail=f"No line with id {line_id}")
+    return _line_lookup_response(line)

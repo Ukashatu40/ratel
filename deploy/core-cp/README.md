@@ -151,8 +151,29 @@ RatelLink listens on `127.0.0.1` only. RatelBSS (on bss-app) and the RatelMeter 
 reach it through a TLS proxy on core-cp that allows only their addresses and limits the request
 rate (the project lead's decision of 2026-10-10, until the VPN exists). `nginx/ratel-link.conf.example`
 is a template with those four properties. Its access log records who called and the result, **never
-the path**, because paths contain IMSIs. Replace every `<placeholder>`, test with `nginx -t`, and
-do not open the port to anything else.
+the path**, because paths contain IMSIs. Do not open the port to anything else.
+
+The proxy has a **self-signed certificate** made on core-cp, for the address the callers will use.
+There is no public name to get a certificate for, so each caller trusts exactly that one file.
+
+1. Install the proxy: `sudo apt-get install -y nginx`.
+2. Make the certificate, typing the address core-cp has for the callers (it goes in the certificate and
+   never in the repository). Write down the fingerprint it prints:
+   `sudo ./nginx/make-self-signed-cert.sh <address-of-core-cp>`
+3. Copy `nginx/ratel-link.conf.example` to `/etc/nginx/conf.d/ratel-link.conf`, replace every
+   `<placeholder>` (the host, bss-app and core-up addresses), then `sudo nginx -t && sudo systemctl reload nginx`.
+   Remove the default site (`/etc/nginx/sites-enabled/default`), which also listens on port 80.
+4. Add `bss_app` to `/etc/ratel-fw/addresses.nft` on core-cp, then load the firewall rule for port 443 from
+   core-up and bss-app (`deploy/firewall/README.md`: check the syntax first, with the rollback armed).
+5. On each caller, copy **only** `/etc/ssl/ratel-link/fullchain.pem`, compare its fingerprint
+   (`openssl x509 -in <file> -noout -fingerprint -sha256`) with the one written down, and point `SSL_CERT_FILE`
+   at it (`deploy/core-up/ratel-meter.env.example`, `deploy/bss-app/ratel-app.env.example`). Use an
+   `https://<address-of-core-cp>` base URL, with exactly the address in the certificate.
+6. Check from a caller: the request succeeds with the file and fails with `CERTIFICATE_VERIFY_FAILED`
+   without it.
+
+The certificate lasts 825 days. Put the renewal date in the runbook; a renewal means making a new pair
+(move the old one aside), then replacing the file on both callers before the old one expires.
 
 ## Upgrade
 

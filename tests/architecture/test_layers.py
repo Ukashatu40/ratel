@@ -70,17 +70,19 @@ RATEL_LINK = Layering(
 # RatelBSS: money (docs/adr/0008, 0009). `api` joins the rules when the module gets routes.
 BSS_MONEY = Layering(
     package="app.bss_money",
-    root_modules=frozenset({"__init__", "check_cli"}),
-    entry_points=frozenset({"check_cli"}),
+    root_modules=frozenset({"__init__", "check_cli", "rating_cli", "voucher_cli"}),
+    entry_points=frozenset({"check_cli", "rating_cli", "voucher_cli"}),
     allowed={
         "domain": frozenset(),
         "models": frozenset(),
         "repositories.ports": frozenset({"domain"}),
         "repositories.sql": frozenset({"domain", "repositories.ports", "models"}),
         "services": frozenset({"domain", "repositories.ports"}),
+        "api": frozenset({"services", "domain", "repositories.ports"}),
     },
     banned_external={
         "domain": frozenset({"fastapi", "starlette", "sqlalchemy", "psycopg", "pymongo"}),
+        "api": frozenset({"sqlalchemy", "psycopg", "pymongo"}),
         "models": frozenset({"fastapi", "starlette", "pymongo"}),
         "repositories.ports": frozenset({"fastapi", "starlette", "sqlalchemy", "psycopg"}),
         "repositories.sql": frozenset({"fastapi", "starlette", "pymongo"}),

@@ -9,5 +9,10 @@ define radios = { 192.0.2.37, 192.0.2.38, 192.0.2.39 }
 define core_up = 192.0.2.43
 define core_cp = 192.0.2.42
 
-# The bss-app VM, for the TLS proxy rule that is commented out in core-cp.nft.
+# The bss-app VM. core-cp.nft lets it (and core-up) reach RatelLink's TLS proxy on port 443, so on
+# core-cp this name MUST be defined or the firewall will not load.
 define bss_app = 192.0.2.50
+
+# The hosts allowed to reach PyHSS's API (port 8080) on the voice VM, which Docker publishes. Used
+# only by voice.nft, and it MUST be defined there or the firewall will not load.
+define pyhss_clients = { 192.0.2.60 }

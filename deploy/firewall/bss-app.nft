@@ -1,0 +1,37 @@
+# Inbound firewall for bss-app (RatelBSS, the RatelMeter API, nginx). Install as
+# /etc/ratel-fw/ratel-fw.nft; ratel-fw.service loads it at boot (deploy/firewall/README.md). The
+# addresses are not in this file: it reads them from /etc/ratel-fw/addresses.nft on the host.
+#
+# Policy is drop. Let in: replies, loopback (the app listens on 127.0.0.1:8000, behind nginx), ping,
+# SSH (key-only, rate limited) and HTTPS. HTTPS is open to every address on purpose: RatelPay and
+# the payment webhook are public (docs/ARCHITECTURE.md). Which path each caller may use is nginx's
+# job (deploy/bss-app/nginx), not this file's: the proxy admits the staff API only from the office
+# and VPN, the usage path only from the agents, and the voucher path from anyone with the proxy's key.
+#
+# Check the syntax without applying it:   sudo nft -c -f /etc/ratel-fw/ratel-fw.nft
+include "/etc/ratel-fw/addresses.nft"
+
+table inet ratel_fw
+delete table inet ratel_fw
+
+table inet ratel_fw {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        ct state established,related accept
+        ct state invalid drop
+        iifname "lo" accept
+        meta l4proto { icmp, ipv6-icmp } accept
+
+        # SSH is key-only (PasswordAuthentication no), so it stays open to any address, but one
+        # address cannot open more than 10 new connections a minute.
+        tcp dport 22 ct state new meter ssh_new4 { ip saddr timeout 1m limit rate over 10/minute burst 10 packets } drop
+        tcp dport 22 ct state new meter ssh_new6 { ip6 saddr timeout 1m limit rate over 10/minute burst 10 packets } drop
+        tcp dport 22 accept
+
+        tcp dport 443 accept
+
+        # Not a verdict: it counts what the policy then drops (sudo nft list chain inet ratel_fw input).
+        counter
+    }
+}

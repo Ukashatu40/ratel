@@ -16,8 +16,23 @@ class LinesRepository(Protocol):
         """Load a line by its id. None if not found."""
         ...
 
+    def find_by_identifier(
+        self,
+        *,
+        line_id: int | None = None,
+        msisdn: str | None = None,
+        iccid: str | None = None,
+        imsi: str | None = None,
+    ) -> Line | None:
+        """Load a line by exactly one of line_id, msisdn, iccid or imsi."""
+        ...
+
     def save(self, line: Line) -> None:
         """Persist the line's current state (set by the state machine)."""
+        ...
+
+    def retire_sim(self, iccid: str) -> None:
+        """Mark the SIM with this ICCID retired. Used when a line is terminated."""
         ...
 
     def add_audit(
