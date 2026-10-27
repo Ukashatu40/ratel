@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # The key the reverse proxy adds to the public voucher redemption route, which RatelPay's page
     # calls without one (a browser cannot keep a secret). Same rules as meter_api_key.
     pay_api_key: SecretStr | None = None
+    # The key the BSS routes require. Same rules as meter_api_key. TODO(auth, M-26): replace with
+    # per-staff keys once the PRD decides the role model.
+    bss_api_key: SecretStr | None = None
 
     @property
     def meter_api_key_value(self) -> str | None:
@@ -36,4 +39,12 @@ class Settings(BaseSettings):
         if self.pay_api_key is None:
             return None
         value = self.pay_api_key.get_secret_value().strip()
+        return None if value in ("", "CHANGE_ME") else value
+
+    @property
+    def bss_api_key_value(self) -> str | None:
+        """The configured BSS key, or None when it is unset, empty or the placeholder."""
+        if self.bss_api_key is None:
+            return None
+        value = self.bss_api_key.get_secret_value().strip()
         return None if value in ("", "CHANGE_ME") else value

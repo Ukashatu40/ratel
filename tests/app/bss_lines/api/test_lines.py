@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import create_engine, insert
 from sqlalchemy.orm import sessionmaker
 
@@ -16,6 +17,9 @@ from app.config import Settings
 from app.db import Base
 from app.main import create_app
 from tests.app.bss_lines.fakes import FakeRatelLinkClient
+
+TEST_KEY = "unit-test-bss-key-00000000000"
+AUTH = {"Authorization": f"Bearer {TEST_KEY}"}
 
 
 @pytest.fixture
@@ -73,7 +77,7 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
         s.commit()
         line_id = line.line_id
 
-    app = create_app(Settings())
+    app = create_app(Settings(ratel_env="test", bss_api_key=SecretStr(TEST_KEY)))
     app.state.session_factory = factory
     app.dependency_overrides[get_client] = lambda: fake_client
 
@@ -86,7 +90,8 @@ def test_activate_endpoint_returns_active(client_with_seeded_line) -> None:
     line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
     response = client_with_seeded_line.post(
         "/v1/lines/activate",
-        json={"line_id": line_id, "actor": "staff:test", "idempotency_key": "key-1"},
+        json={"line_id": line_id, "idempotency_key": "key-1"},
+        headers=AUTH,
     )
     assert response.status_code == 200
     assert response.json()["state"] == "active"
@@ -99,17 +104,59 @@ def test_activate_endpoint_calls_ratellink_once(
     line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
     client_with_seeded_line.post(
         "/v1/lines/activate",
-        json={"line_id": line_id, "actor": "staff:test", "idempotency_key": "key-1"},
+        json={"line_id": line_id, "idempotency_key": "key-1"},
+        headers=AUTH,
     )
     assert len(fake_client.calls) == 1
 
 
+# --- auth (M-26) ---------------------------------------------------------------
+
+
+def test_activate_without_a_key_is_401(client_with_seeded_line) -> None:
+    response = client_with_seeded_line.post(
+        "/v1/lines/activate",
+        json={"line_id": 1, "idempotency_key": "k"},
+    )
+    assert response.status_code == 401
+
+
+def test_activate_with_a_wrong_key_is_401(client_with_seeded_line) -> None:
+    response = client_with_seeded_line.post(
+        "/v1/lines/activate",
+        json={"line_id": 1, "idempotency_key": "k"},
+        headers={"Authorization": "Bearer wrong-key"},
+    )
+    assert response.status_code == 401
+
+
+def test_activate_with_a_wrong_scheme_is_401(client_with_seeded_line) -> None:
+    response = client_with_seeded_line.post(
+        "/v1/lines/activate",
+        json={"line_id": 1, "idempotency_key": "k"},
+        headers={"Authorization": f"Basic {TEST_KEY}"},
+    )
+    assert response.status_code == 401
+
+
+def test_activate_with_an_invalid_body_and_no_key_is_401_not_422(
+    client_with_seeded_line,
+) -> None:
+    """Auth runs before the body is read: a bad body with no key is 401, not 422."""
+    response = client_with_seeded_line.post("/v1/lines/activate", json={})
+    assert response.status_code == 401
+
+
+def test_activate_with_an_invalid_body_and_a_valid_key_is_422(
+    client_with_seeded_line,
+) -> None:
+    response = client_with_seeded_line.post("/v1/lines/activate", json={}, headers=AUTH)
+    assert response.status_code == 422
+
+
 # --- M-26 line lookup ------------------------------------------------------------
 #
-# The 100,000-row database is seeded once per module (scope="module"), with bulk
-# inserts rather than per-row ORM adds. Four lookups (by id, msisdn, iccid, imsi)
-# then prove each is under a second with a large table in place. Per-test seeding
-# would be seven times slower for no extra evidence.
+# Lookup routes are read-only and unauthenticated; the write routes require the key.
 
 
 @pytest.fixture(scope="module")
@@ -146,7 +193,6 @@ def client_with_100k_lines(tmp_path_factory) -> Iterator[TestClient]:
         s.add_all([customer, plan])
         s.flush()
 
-        # Bulk inserts: 300,000 rows in a few seconds, not per-row ORM adds.
         s.execute(
             insert(Sim),
             [
@@ -179,18 +225,13 @@ def client_with_100k_lines(tmp_path_factory) -> Iterator[TestClient]:
         )
         s.commit()
 
-    app = create_app(Settings())
+    app = create_app(Settings(ratel_env="test"))
     app.state.session_factory = factory
 
     with TestClient(app) as client:
         yield client
 
 
-# The identifiers for the line seeded at n=50000:
-#   line_id  = 50001  (SQLite autoincrement starts at 1)
-#   msisdn   = "234" + f"{50000:010d}" = "2340000050000"
-#   iccid    = "89"  + f"{50000:018d}" = "89000000000000050000"
-#   imsi     = "621" + f"{50000:012d}" = "621000000050000"
 SEEDED_LINE_ID = 50001
 SEEDED_MSISDN = "2340000050000"
 SEEDED_ICCID = "89000000000000050000"
