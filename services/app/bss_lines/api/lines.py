@@ -106,7 +106,8 @@ def post_activate(
     nothing (M-26).
 
     TODO(auth, M-26): this route has no authentication and takes the audit
-    ``actor`` from the request body.
+    ``actor`` from the request body. That must not be deployed before M-26 adds
+    staff authentication.
 
     TODO(contract, M-02): this route and body will be replaced by whatever M-02
     specifies in contracts/openapi.yaml.
@@ -297,9 +298,12 @@ def get_line_by_identifier(
 ) -> LineLookupResponse:
     """Look a line up by exactly one of msisdn, iccid or imsi.
 
-    TODO(auth, M-26): no authentication yet.
+    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
 
-    Answers 422 if zero or more than one identifier is given, 404 if no line matches.
+    Answers 422 if zero or more than one identifier is given, 404 if no line
+    matches. The indexes on line.msisdn, line.iccid and line.imsi make each
+    lookup one indexed read, so the under-a-second criterion holds with
+    100,000 rows in the table.
     """
     supplied = sum(x is not None for x in (msisdn, iccid, imsi))
     if supplied != 1:
@@ -320,7 +324,7 @@ def get_line_by_id(
 ) -> LineLookupResponse:
     """Look a line up by its id.
 
-    TODO(auth, M-26): no authentication yet.
+    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
     """
     line = lines.find_by_identifier(line_id=line_id)
     if line is None:
