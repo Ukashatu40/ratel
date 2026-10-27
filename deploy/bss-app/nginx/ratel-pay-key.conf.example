@@ -1,0 +1,5 @@
+# The redemption key the proxy adds to POST /v1/pay/vouchers/redeem. Install as
+# /etc/nginx/ratel-pay-key.conf, owned by root, group of the nginx user, mode 0640. NEVER commit the
+# real file. The same value goes in /etc/ratel-app/ratel-app.env as PAY_API_KEY. Make it long and
+# random (for example `openssl rand -base64 32`), and make it different from every other key.
+proxy_set_header Authorization "Bearer CHANGE_ME";

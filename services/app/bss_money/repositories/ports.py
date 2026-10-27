@@ -5,7 +5,8 @@ The SQL implementation is in sql.py; tests use the in-memory fake in tests/app/b
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -153,3 +154,22 @@ class VoucherRepository(Protocol):
         ...
 
     def set_state(self, voucher_id: int, state: VoucherState) -> None: ...
+
+
+class LineLookup(Protocol):
+    def line_id_for_msisdn(self, msisdn: str) -> int | None:
+        """The line that has this phone number, or None. A terminated line does not count."""
+        ...
+
+
+@dataclass(frozen=True)
+class RedemptionRepositories:
+    """Everything one redemption touches, all on the same transaction."""
+
+    vouchers: VoucherRepository
+    ledger: LedgerRepository
+    lines: LineLookup
+
+
+RedemptionScope = Callable[[], AbstractContextManager[RedemptionRepositories]]
+"""Opens one transaction and yields the repositories on it: commit on exit, rollback on error."""
