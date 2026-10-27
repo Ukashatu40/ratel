@@ -4,7 +4,7 @@ import type { ActivateRequest, ActivateResult, Customer, FreeSim, NewCustomer, P
 
 // With VITE_USE_MOCK=true these return fixture data. The real endpoints below are ASSUMED from the Build Plan
 // (/v1/customers, /v1/stock, /v1/plans, /v1/lines). Confirm shapes with the RatelBSS developers; only this file should change.
-const isMock = () => import.meta.env.VITE_USE_MOCK === "true";
+const isMock = () => import.meta.env.MODE === "test" || import.meta.env.VITE_USE_MOCK === "true";
 
 export const searchCustomers = (q: string): Promise<Customer[]> =>
   isMock() ? mockSearchCustomers(q) : apiGet<{ items: Customer[] }>(`/v1/customers?q=${encodeURIComponent(q)}&pageSize=8`).then((r) => r.items);
