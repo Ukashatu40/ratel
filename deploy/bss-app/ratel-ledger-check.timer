@@ -1,0 +1,16 @@
+# Runs ratel-ledger-check.service once a day. Install as /etc/systemd/system/ratel-ledger-check.timer,
+# then:  sudo systemctl enable --now ratel-ledger-check.timer
+# Check it: systemctl list-timers ratel-ledger-check.timer
+[Unit]
+Description=RatelBSS: daily check of every wallet against its ledger
+
+[Timer]
+# Daily, in the host's time (UTC). Persistent: a run missed while the host was off happens at boot,
+# which matters here because the servers lose power every night.
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15min
+Unit=ratel-ledger-check.service
+
+[Install]
+WantedBy=timers.target

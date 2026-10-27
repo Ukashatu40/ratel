@@ -25,6 +25,8 @@ Owner: Software team (project lead). TODO: confirm host details and how deployme
 | `install-release.sh` | Installs a release into its own folder with its own virtualenv and points `current` at it. Never restarts anything and never runs a migration |
 | `ratel-app.service` | The app. Runs as the unprivileged user `ratelbss`, no capabilities, listens on `127.0.0.1:8000` |
 | `ratel-app.env.example` | The app's settings, with placeholders |
+| `ratel-rating.service`, `.timer` | The rating job every five minutes (usage, out of data, restore, and renewal if turned on) |
+| `ratel-ledger-check.service`, `.timer` | The nightly check that every wallet equals its ledger |
 | `postgres-roles.sql` | The two database roles: an owner for migrations, and a runtime role that cannot change the schema |
 | `nginx/ratel-app.conf.example` | A TLS reverse proxy template. The one public path so far is the voucher redemption; the RatelPay page and the webhook are TODO until they exist |
 | `nginx/ratel-pay-key.conf.example` | The one line that adds the redemption key (`PAY_API_KEY`) to that public path. Real file: root-owned, never committed |
@@ -65,6 +67,8 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    scripts/release/build-release.sh app HEAD /tmp          # prints the tarball name and its SHA-256
    REL=ratel-app-$(git rev-parse --short HEAD)
    scp /tmp/$REL.tar.gz deploy/bss-app/install-release.sh deploy/bss-app/ratel-app.service \
+     deploy/bss-app/ratel-rating.service deploy/bss-app/ratel-rating.timer \
+     deploy/bss-app/ratel-ledger-check.service deploy/bss-app/ratel-ledger-check.timer \
      deploy/bss-app/ratel-app.env.example deploy/bss-app/nginx/ratel-app.conf.example \
      deploy/bss-app/nginx/ratel-pay-key.conf.example <bss-app>:/tmp/
    ```
@@ -108,6 +112,20 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    Test with `sudo nginx -t`, then reload. TODO: the domain name and
    certificate for RatelPay, and the firewall rules (443 public for RatelPay and the webhook only; 22 from admin
    addresses only; the core-up and voice agents to the usage path only).
+
+9. **The timers** (after the app answers `healthz` and the migrations are done). Copy the four files, check them, and
+   enable the timers (not the services, which the timers start):
+   ```bash
+   sudo cp /tmp/ratel-rating.service /tmp/ratel-rating.timer /tmp/ratel-ledger-check.service \
+     /tmp/ratel-ledger-check.timer /etc/systemd/system/ && sudo systemctl daemon-reload
+   sudo systemd-analyze verify /etc/systemd/system/ratel-rating.{service,timer} /etc/systemd/system/ratel-ledger-check.{service,timer}
+   sudo systemctl enable --now ratel-rating.timer ratel-ledger-check.timer
+   systemctl list-timers 'ratel-*'
+   sudo systemctl start ratel-rating.service; systemctl status ratel-rating.service --no-pager | head -8
+   ```
+   The rating job needs `RATEL_LINK_API_KEY` set to a real key in `ratel-app.env` (it exits 2 without one). Decide
+   `RATING_AUTO_RENEW` and `VAT_RATE_BPS` there too (docs/runbooks/bss-app.md says what each does). A timer that
+   missed its time while the host was off runs once as soon as the host is back (the nightly power cut).
 
 ## Upgrade and rollback
 
