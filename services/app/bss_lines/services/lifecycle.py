@@ -331,3 +331,29 @@ def expire_line(
         reason_text=None,
         idempotency_key=idempotency_key,
     )
+
+
+def restore_line(
+    lines: LinesRepository,
+    client: RatelLinkClientProto,
+    line_id: int,
+    *,
+    idempotency_key: str,
+) -> LifecycleResult:
+    """out_of_data -> active (RatelLink /data at full speed), or expired -> active (/activate).
+
+    Done by the rating job when a purchase has given the line allowance again, not by a person.
+    """
+    line = lines.get(line_id)
+    if line is None:
+        raise LifecycleError(f"line {line_id} not found")
+    return _run(
+        lines,
+        client,
+        line_id,
+        target=LineState.ACTIVE,
+        actor=RATING_JOB,
+        reason="allowance_restored",
+        reason_text=None,
+        idempotency_key=idempotency_key,
+    )

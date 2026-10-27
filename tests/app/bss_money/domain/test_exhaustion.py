@@ -26,7 +26,13 @@ def bucket(
 
 
 A, OOD = LineState.ACTIVE, LineState.OUT_OF_DATA
-NONE, OUT, EXPIRE = ServiceAction.NONE, ServiceAction.OUT_OF_DATA, ServiceAction.EXPIRE
+NONE, OUT, EXPIRE, RESTORE = (
+    ServiceAction.NONE,
+    ServiceAction.OUT_OF_DATA,
+    ServiceAction.EXPIRE,
+    ServiceAction.RESTORE,
+)
+EXP = LineState.EXPIRED
 
 CASES = [
     ("allowance left", A, [bucket(used=999)], NONE),
@@ -34,7 +40,7 @@ CASES = [
     ("zero left in one, some in another", A, [bucket(used=1_000), bucket(n=2)], NONE),
     ("zero left in all", A, [bucket(used=1_000), bucket(used=500, total=500, n=2)], OUT),
     ("already out of data and still empty", OOD, [bucket(used=1_000)], NONE),
-    ("out of data but topped up: restoring is the purchase's job", OOD, [bucket()], NONE),
+    ("out of data and a purchase gave allowance again", OOD, [bucket()], RESTORE),
     ("only bucket expired", A, [bucket(starts=NOW - 31 * DAY, expires=NOW - DAY)], EXPIRE),
     (
         "only bucket expired, was out of data",
@@ -65,6 +71,50 @@ CASES = [
         OUT,
     ),
     ("a bucket of zero bytes, valid", A, [bucket(total=0)], OUT),
+    (
+        "out of data, allowance back in a newer bucket",
+        OOD,
+        [bucket(used=1_000), bucket(n=2)],
+        RESTORE,
+    ),
+    (
+        "out of data, the only bucket expired",
+        OOD,
+        [bucket(starts=NOW - 31 * DAY, expires=NOW - DAY)],
+        EXPIRE,
+    ),
+    (
+        "out of data, renewal starts later",
+        OOD,
+        [
+            bucket(starts=NOW - 31 * DAY, expires=NOW - DAY),
+            bucket(starts=NOW + DAY, expires=NOW + 30 * DAY, n=2),
+        ],
+        NONE,
+    ),
+    (
+        "expired and a new bucket was bought",
+        EXP,
+        [bucket(starts=NOW - 31 * DAY, expires=NOW - DAY), bucket(n=2)],
+        RESTORE,
+    ),
+    ("expired and nothing bought", EXP, [bucket(starts=NOW - 31 * DAY, expires=NOW - DAY)], NONE),
+    (
+        "expired, the new bucket is empty",
+        EXP,
+        [bucket(starts=NOW - 31 * DAY, expires=NOW - DAY), bucket(used=1_000, n=2)],
+        NONE,
+    ),
+    (
+        "expired, the new bucket starts later",
+        EXP,
+        [
+            bucket(starts=NOW - 31 * DAY, expires=NOW - DAY),
+            bucket(starts=NOW + DAY, expires=NOW + 30 * DAY, n=2),
+        ],
+        NONE,
+    ),
+    ("expired with no allowance ever", EXP, [], NONE),
     ("no allowance ever", A, [], NONE),
     ("no allowance ever, out of data", OOD, [], NONE),
 ]
@@ -82,7 +132,6 @@ def test_the_action_for_a_line(
     [
         LineState.AWAITING_ACTIVATION,
         LineState.SUSPENDED,
-        LineState.EXPIRED,
         LineState.TERMINATED,
     ],
 )

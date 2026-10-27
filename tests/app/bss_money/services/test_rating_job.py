@@ -362,3 +362,74 @@ def test_a_second_count_matches_the_first_whatever_the_order_of_runs(job: Job) -
 
     assert _used(job) == [40]
     assert job.query(select(func.sum(UsageRating.deducted_bytes))) == [40]
+
+
+def test_an_out_of_data_line_that_has_allowance_again_gets_full_speed_back_once(job: Job) -> None:
+    def build(s: Session) -> SeededLine:
+        line = seed_line(s, state="out_of_data", on_exhaustion="slow")
+        add_bucket(s, line, 500, used=500)  # the old one, spent
+        add_bucket(s, line, 2_000)  # a bundle bought after
+        return line
+
+    line = job.seed(build)
+    first = job.run()
+    second = job.run()
+
+    assert (first.lines_restored, second.lines_restored) == (1, 0)
+    assert (first.failures, second.failures) == (0, 0)
+    assert _state(job, line) == "active"
+    [call] = job.client.calls  # one call in all: /data at full speed, voice untouched
+    assert isinstance(call, RecordedData)
+    assert (call.mode, call.speed_ul_mbps, call.speed_dl_mbps) == ("full", 5.0, 10.0)
+    audit = job.query(select(LineAudit))
+    assert [(a.from_state, a.to_state, a.reason) for a in audit] == [
+        ("out_of_data", "active", "allowance_restored")
+    ]
+
+
+def test_an_expired_line_with_a_new_bucket_is_activated_again(job: Job) -> None:
+    def build(s: Session) -> SeededLine:
+        line = seed_line(s, state="expired")
+        add_bucket(s, line, 1_000, starts=T0 - 31 * DAY, expires=T0 - DAY)
+        add_bucket(s, line, 1_000)
+        return line
+
+    line = job.seed(build)
+    run = job.run()
+
+    assert run.lines_restored == 1
+    assert _state(job, line) == "active"
+    assert [c.endpoint for c in job.client.calls] == ["/activate"]
+
+
+def test_a_restore_that_failed_is_tried_again_on_the_next_run(job: Job) -> None:
+    def build(s: Session) -> SeededLine:
+        line = seed_line(s, state="out_of_data")
+        add_bucket(s, line, 1_000)
+        return line
+
+    line = job.seed(build)
+    job.client.fail_on_data = RuntimeError("RatelLink is down")
+    first = job.run()
+    assert (first.failures, first.lines_restored) == (1, 0)
+    assert _state(job, line) == "out_of_data"  # nothing half-done
+
+    job.client.fail_on_data = None
+    second = job.run()
+
+    assert (second.failures, second.lines_restored) == (0, 1)
+    assert _state(job, line) == "active"
+
+
+def test_an_out_of_data_line_with_nothing_left_is_not_touched(job: Job) -> None:
+    def build(s: Session) -> SeededLine:
+        line = seed_line(s, state="out_of_data")
+        add_bucket(s, line, 500, used=500)
+        return line
+
+    line = job.seed(build)
+    run = job.run()
+
+    assert (run.lines_restored, run.failures) == (0, 0)
+    assert _state(job, line) == "out_of_data"
+    assert job.client.calls == []

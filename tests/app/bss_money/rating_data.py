@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.bss_lines.models.lines import Customer, Line, Number, Plan, Sim
+from app.bss_lines.models.lines import Bundle, Customer, Line, Number, Plan, Sim
 from app.bss_money.models.allowance import AllowanceBucket
 from app.meter_api.models import UsageRecordModel
 
@@ -108,3 +108,18 @@ def add_usage(
     session.add(record)
     session.flush()
     return record.id
+
+
+def add_bundle(
+    session: Session, *, price_kobo: int = 30_000, data_bytes: int = 5_000, days: int = 7
+) -> int:
+    bundle = Bundle(
+        name="Test bundle",
+        price_kobo=price_kobo,
+        validity_days=days,
+        data_bytes=data_bytes,
+        channels="data",
+    )
+    session.add(bundle)
+    session.flush()
+    return bundle.bundle_id
