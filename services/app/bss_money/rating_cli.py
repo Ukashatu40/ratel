@@ -21,9 +21,14 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.ratel_link_client import RatelLinkClient
-from app.bss_money.repositories.ports import RatingRepository
-from app.bss_money.repositories.sql import SqlRatingRepository
+from app.bss_money.repositories.ports import PurchaseRepositories, RatingRepository
+from app.bss_money.repositories.sql import (
+    SqlLedgerRepository,
+    SqlPurchaseRepository,
+    SqlRatingRepository,
+)
 from app.bss_money.services.line_control import LifecycleLineControl
+from app.bss_money.services.purchase import renew_plan_if_covered
 from app.bss_money.services.rating_job import run_rating
 from app.config import Settings
 from app.db import make_engine, session_factory
@@ -52,9 +57,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         with sessions() as session:
             yield SqlLinesRepository(session)
 
+    @contextmanager
+    def purchase_scope() -> Iterator[PurchaseRepositories]:
+        with sessions() as session, session.begin():
+            yield PurchaseRepositories(
+                purchases=SqlPurchaseRepository(session), ledger=SqlLedgerRepository(session)
+            )
+
+    now = datetime.now(UTC)
+
+    def renew(line_id: int) -> bool:
+        bought = renew_plan_if_covered(
+            purchase_scope, line_id=line_id, now=now, vat_rate_bps=settings.vat_rate_bps
+        )
+        return bought is not None
+
     client = RatelLinkClient(settings.ratel_link_base_url, key.get_secret_value())
     try:
-        run = run_rating(scope, LifecycleLineControl(lines_scope, client), now=datetime.now(UTC))
+        run = run_rating(
+            scope,
+            LifecycleLineControl(lines_scope, client),
+            now=now,
+            renew=renew if settings.rating_auto_renew else None,
+        )
     except SQLAlchemyError as exc:
         # Type only: a driver message can carry the database host and user.
         log_event(log, logging.ERROR, "rating.failed", exc_type=type(exc).__name__)

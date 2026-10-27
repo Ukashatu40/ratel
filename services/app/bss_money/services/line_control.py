@@ -11,7 +11,12 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 
 from app.bss_lines.repositories.ports import LinesRepository
-from app.bss_lines.services.lifecycle import RatelLinkClientProto, expire_line, mark_out_of_data
+from app.bss_lines.services.lifecycle import (
+    RatelLinkClientProto,
+    expire_line,
+    mark_out_of_data,
+    restore_line,
+)
 
 LinesScope = Callable[[], AbstractContextManager[LinesRepository]]
 """Opens a session and yields the lines repository on it; closes the session on exit."""
@@ -29,3 +34,7 @@ class LifecycleLineControl:
     def expire(self, line_id: int, idempotency_key: str) -> None:
         with self._lines_scope() as lines:
             expire_line(lines, self._client, line_id, idempotency_key=idempotency_key)
+
+    def restore(self, line_id: int, idempotency_key: str) -> None:
+        with self._lines_scope() as lines:
+            restore_line(lines, self._client, line_id, idempotency_key=idempotency_key)
