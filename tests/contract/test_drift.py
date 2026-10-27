@@ -32,6 +32,11 @@ OPERATIONAL = {
     ("POST", "/v1/lines/suspend"),
     ("POST", "/v1/lines/reinstate"),
     ("POST", "/v1/lines/terminate"),
+    # Internal lookup, promoted to the contract as bss_get_line in M-26.
+    # It lives at /v1/lines/lookup... so the paths do not collide with the
+    # contract's GET /v1/lines/{line_id}.
+    ("GET", "/v1/lines/lookup"),
+    ("GET", "/v1/lines/lookup/{line_id}"),
 }
 
 # Service -> primary tag, used by test_service_exposes_no_undocumented_routes so each service
