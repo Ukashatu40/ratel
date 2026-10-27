@@ -26,7 +26,8 @@ Owner: Software team (project lead). TODO: confirm host details and how deployme
 | `ratel-app.service` | The app. Runs as the unprivileged user `ratelbss`, no capabilities, listens on `127.0.0.1:8000` |
 | `ratel-app.env.example` | The app's settings, with placeholders |
 | `postgres-roles.sql` | The two database roles: an owner for migrations, and a runtime role that cannot change the schema |
-| `nginx/ratel-app.conf.example` | A TLS reverse proxy template. RatelPay and the webhook are TODO until they exist |
+| `nginx/ratel-app.conf.example` | A TLS reverse proxy template. The one public path so far is the voucher redemption; the RatelPay page and the webhook are TODO until they exist |
+| `nginx/ratel-pay-key.conf.example` | The one line that adds the redemption key (`PAY_API_KEY`) to that public path. Real file: root-owned, never committed |
 
 ## Layout on bss-app
 
@@ -64,7 +65,8 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    scripts/release/build-release.sh app HEAD /tmp          # prints the tarball name and its SHA-256
    REL=ratel-app-$(git rev-parse --short HEAD)
    scp /tmp/$REL.tar.gz deploy/bss-app/install-release.sh deploy/bss-app/ratel-app.service \
-     deploy/bss-app/ratel-app.env.example deploy/bss-app/nginx/ratel-app.conf.example <bss-app>:/tmp/
+     deploy/bss-app/ratel-app.env.example deploy/bss-app/nginx/ratel-app.conf.example \
+     deploy/bss-app/nginx/ratel-pay-key.conf.example <bss-app>:/tmp/
    ```
    On bss-app, compare `sha256sum /tmp/$REL.tar.gz` with the value printed above.
 
@@ -100,7 +102,10 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    Enable it at boot (`systemctl enable`) only when you are happy, then reboot once to prove it comes back.
 
 8. **The proxy.** Copy `ratel-app.conf.example` to `/etc/nginx/conf.d/ratel-app.conf`, replace every
-   `<placeholder>`, install the certificate, test with `sudo nginx -t`, then reload. TODO: the domain name and
+   `<placeholder>`, install the certificate, then make the redemption key: `openssl rand -base64 32`, put it in
+   `/etc/ratel-app/ratel-app.env` as `PAY_API_KEY` and, from `ratel-pay-key.conf.example`, in
+   `/etc/nginx/ratel-pay-key.conf` (root-owned, group of the nginx user, mode 0640; the same value in both).
+   Test with `sudo nginx -t`, then reload. TODO: the domain name and
    certificate for RatelPay, and the firewall rules (443 public for RatelPay and the webhook only; 22 from admin
    addresses only; the core-up and voice agents to the usage path only).
 
