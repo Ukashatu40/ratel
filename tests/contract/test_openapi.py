@@ -29,23 +29,36 @@ def check_unique_ids_and_tags(spec: dict[str, Any]) -> list[str]:
     return problems
 
 
+# Open on purpose: signing in is how a session starts, and signing out is harmless without one.
+OPEN_OPERATIONS = {"bss_staff_login", "bss_staff_logout"}
+STAFF_SECURITY = [{"StaffSession": []}]
+
+
 def check_auth_everywhere(spec: dict[str, Any]) -> list[str]:
     problems = []
     if spec.get("security") != [{"ApiKeyAuth": []}]:
         problems.append("global security must be ApiKeyAuth")
     for o in operations(spec):
-        if "security" in o.raw and o.raw["security"] != [{"ApiKeyAuth": []}]:
-            problems.append(f"{o.op_id}: overrides global API-key auth")
+        if "security" not in o.raw or o.raw["security"] == [{"ApiKeyAuth": []}]:
+            continue
+        if o.op_id in OPEN_OPERATIONS and o.raw["security"] == []:
+            continue
+        if o.tag == "RatelBSS" and o.raw["security"] == STAFF_SECURITY:
+            continue
+        problems.append(f"{o.op_id}: overrides global API-key auth")
     scheme = spec["components"]["securitySchemes"]["ApiKeyAuth"]
     if (scheme.get("type"), scheme.get("scheme")) != ("http", "bearer"):
         problems.append("ApiKeyAuth must be an http bearer scheme (Authorization: Bearer <key>)")
+    staff = spec["components"]["securitySchemes"].get("StaffSession", {})
+    if (staff.get("type"), staff.get("in")) != ("apiKey", "cookie"):
+        problems.append("StaffSession must be an apiKey carried in a cookie")
     return problems
 
 
 def check_idempotency_on_state_changes(spec: dict[str, Any]) -> list[str]:
     problems = []
     for o in operations(spec):
-        if o.method == "GET":
+        if o.method == "GET" or o.op_id in OPEN_OPERATIONS:
             continue
         params = [resolve(spec, p) for p in o.raw.get("parameters", [])]
         if not any(p.get("in") == "header" and p.get("name") == "Idempotency-Key" for p in params):
@@ -166,6 +179,15 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
             "name": "Authorization",
         }
 
+    def open_staff_route(s: dict[str, Any]) -> None:
+        s["paths"]["/v1/customers"]["post"]["security"] = []
+
+    def staff_cookie_in_header(s: dict[str, Any]) -> None:
+        s["components"]["securitySchemes"]["StaffSession"]["in"] = "header"
+
+    def staff_scheme_on_a_network_operation(s: dict[str, Any]) -> None:
+        s["paths"]["/v1/assignments"]["get"]["security"] = [{"StaffSession": []}]
+
     def basic_auth(s: dict[str, Any]) -> None:
         s["components"]["securitySchemes"]["ApiKeyAuth"] = {"type": "http", "scheme": "basic"}
 
@@ -181,6 +203,12 @@ def _mutations() -> dict[str, tuple[Any, Any]]:
         "open_endpoint": (open_endpoint, check_auth_everywhere),
         "old_api_key_header": (old_api_key_header, check_auth_everywhere),
         "basic_auth": (basic_auth, check_auth_everywhere),
+        "open_staff_route": (open_staff_route, check_auth_everywhere),
+        "staff_cookie_in_header": (staff_cookie_in_header, check_auth_everywhere),
+        "staff_scheme_on_a_network_operation": (
+            staff_scheme_on_a_network_operation,
+            check_auth_everywhere,
+        ),
         "leak_pin": (leak_pin, check_no_secrets_in_responses),
     }
 
