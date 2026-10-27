@@ -17,6 +17,7 @@ from app.bss_lines.domain.state_machine import (
     OnExhaustion,
     validate_transition,
 )
+from app.bss_lines.models.lines import Line
 from app.bss_lines.repositories.ports import LinesRepository
 
 
@@ -45,6 +46,10 @@ class RatelLinkClientProto(Protocol):
         speed_dl_mbps: float | None,
         idempotency_key: str,
     ) -> None: ...
+
+
+# The actor written to the audit trail for changes the system makes by itself.
+RATING_JOB = "system:rating-job"
 
 
 class LifecycleError(Exception):
@@ -163,6 +168,16 @@ def _run(
     return LifecycleResult(line.line_id, transition.from_state, transition.to_state)
 
 
+def _on_exhaustion_of(line: Line) -> OnExhaustion:
+    """What the line's plan does when the allowance runs out."""
+    try:
+        return OnExhaustion(line.plan.on_exhaustion)
+    except ValueError:
+        raise LifecycleError(
+            f"plan {line.plan_id} has unknown on_exhaustion {line.plan.on_exhaustion!r}"
+        ) from None
+
+
 def suspend_line(
     lines: LinesRepository,
     client: RatelLinkClientProto,
@@ -218,16 +233,7 @@ def reinstate_line(
             f"state_before_suspension {previous_raw!r} is not a known state"
         ) from exc
 
-    on_exhaustion: OnExhaustion | None = None
-    if previous is LineState.OUT_OF_DATA:
-        if line.plan.on_exhaustion == OnExhaustion.SLOW.value:
-            on_exhaustion = OnExhaustion.SLOW
-        elif line.plan.on_exhaustion == OnExhaustion.STOP.value:
-            on_exhaustion = OnExhaustion.STOP
-        else:
-            raise LifecycleError(
-                f"plan {line.plan_id} has unknown on_exhaustion {line.plan.on_exhaustion!r}"
-            )
+    on_exhaustion = _on_exhaustion_of(line) if previous is LineState.OUT_OF_DATA else None
 
     return _run(
         lines,
@@ -277,3 +283,51 @@ def terminate_line(
         lines.commit()
 
     return result
+
+
+def mark_out_of_data(
+    lines: LinesRepository,
+    client: RatelLinkClientProto,
+    line_id: int,
+    *,
+    idempotency_key: str,
+) -> LifecycleResult:
+    """active -> out_of_data, the allowance is used up. Calls /data with the plan's mode.
+
+    Slows the line to the plan's slow speeds or cuts its data, as the plan says. Voice is not
+    touched: the only RatelLink call is /data. Done by the rating job (M-17), not by a person.
+    """
+    line = lines.get(line_id)
+    if line is None:
+        raise LifecycleError(f"line {line_id} not found")
+    return _run(
+        lines,
+        client,
+        line_id,
+        target=LineState.OUT_OF_DATA,
+        actor=RATING_JOB,
+        reason="allowance_used_up",
+        reason_text=None,
+        idempotency_key=idempotency_key,
+        on_exhaustion=_on_exhaustion_of(line),
+    )
+
+
+def expire_line(
+    lines: LinesRepository,
+    client: RatelLinkClientProto,
+    line_id: int,
+    *,
+    idempotency_key: str,
+) -> LifecycleResult:
+    """active or out_of_data -> expired, the validity ended without a renewal. Calls /deactivate."""
+    return _run(
+        lines,
+        client,
+        line_id,
+        target=LineState.EXPIRED,
+        actor=RATING_JOB,
+        reason="validity_ended",
+        reason_text=None,
+        idempotency_key=idempotency_key,
+    )
