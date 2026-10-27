@@ -11,3 +11,4 @@ openapi-spec-validator>=0.7
 pyyaml>=6
 types-PyYAML
 pip-audit>=2.7
+pytest-httpx>=0.30

@@ -8,6 +8,7 @@ info:
 
     - Contract 1: RatelLink (tag `RatelLink`), runs on core-cp.
     - Contract 2: RatelMeter (tag `RatelMeter`), API runs on bss-app.
+    - RatelBSS's own API for RatelDesk and RatelPay (tag `RatelBSS`), M-02.
 
     Conventions from the Build Plan:
     - Plain REST, standard HTTP status codes, JSON bodies.
@@ -16,17 +17,22 @@ info:
     - Every call that changes something accepts an `Idempotency-Key` header. Repeating a call with
       the same key returns the first result.
     - Times are Unix epoch seconds in UTC, sent as integers. Usage is in bytes.
+    - Money is whole kobo, sent as integers. Never a decimal.
     - Until RatelLink's live changes land, every change takes effect at the line's next attach.
     - Ki and OPc are write-only. No response in this file may contain them.
 
-    Anything the Build Plan does not specify is marked `TODO(contract)` in a description or with
-    the `x-todo` extension. Do not fill those in by guessing. Agree them with the owners, then
-    update this file in the same commit as the code.
+    Anything the Build Plan or the PRD (`docs/PRODUCT_RULES.md`) does not specify is marked
+    `TODO(contract)` in a description or with the `x-todo` extension. Do not fill those in by
+    guessing. Agree them with the owners, then update this file in the same commit as the code.
 
-    Not covered here on purpose: RatelBSS's own API for RatelDesk/RatelPay, and the internal
-    ingest call from the meter agent to the RatelMeter API. TODO(contract): decide where those live.
+    The `RatelBSS` operations cover only the four PRD demo journeys that belong to RatelBSS
+    (PRODUCT_RULES.md, Demo journeys). Self-care and dealer apps are out of scope (Build Plan,
+    "What not to build yet"). The meter agent's ingest call is `meter_ingest_usage`; its
+    authentication scheme and batch size are still TODO(contract).
   x-todo:
-    - Operational endpoints (/healthz) are deliberately not in this contract.
+    - Operational endpoints (/healthz, /readyz) are deliberately not in this contract.
+    - RatelLink's internal sell-to-activate endpoint (/v1/lines/activate with body line_id) is
+      not in this contract. The external version is bss_activate_line.
 servers:
   - url: http://127.0.0.1:4010
     description: Local mock (make mock). TODO(contract) - real base URLs and ports per environment.
@@ -37,6 +43,8 @@ tags:
     description: Contract 1. Provisioning. Only writer to RatelCore's subscriber database.
   - name: RatelMeter
     description: Contract 2. Usage and call records for billing.
+  - name: RatelBSS
+    description: RatelBSS's own API for RatelDesk and RatelPay (M-02). Not a network seam.
 paths:
   /v1/sims:
     post:
@@ -227,6 +235,32 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/usage:
+    post:
+      tags: [RatelMeter]
+      operationId: meter_ingest_usage
+      summary: Ingest a batch of data usage records.
+      description: |
+        Ingests a batch of 300-second data usage records delivered by the meter agent.
+        Records are keyed on `imsi` plus `period_start`. Replay of an identical interval
+        overwrites the existing record, never duplicates.
+        At most 5,000 records per batch. A batch containing any invalid record is rejected as a whole.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UsageBatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/OkEmpty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
     get:
       tags: [RatelMeter]
       operationId: meter_get_usage
@@ -291,6 +325,319 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/customers:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_create_customer
+      summary: Register a customer. KYC verified before any line is activated.
+      description: |
+        Creates a customer. `kyc_status` is pending, verified or rejected; no line activates until
+        it is `verified` (PRODUCT_RULES.md, Customers and KYC). Customer and KYC data never leave
+        RatelBSS and never reach RatelLink or RatelMeter.
+        `id_type` allowed values and `address` format are open (PRODUCT_RULES.md, decision 3).
+        The demo value for `id_type` is `NIN` only; the demo value for `address` is free text.
+        The customer's NIN is captured at registration but never logged, never returned in any
+        response beyond this customer's own record, and never in any list.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerRequest"
+      responses:
+        "201":
+          description: Customer created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/customers/{customer_id}:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_customer
+      summary: Read one customer. KYC status and identity data are personal data.
+      description: |
+        Returns one customer. Used by RatelDesk, which is reachable only over the VPN.
+        RatelPay never calls this (PRODUCT_RULES.md, TOP-2: RatelPay shows nothing personal).
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      responses:
+        "200":
+          description: The customer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/plans:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_plans
+      summary: Plans on sale, for the sell-a-SIM journey.
+      description: |
+        Returns plans in state `on_sale`. Pagination is TODO(contract): the Build Plan gives no
+        page size for plans and the number of plans is small.
+      responses:
+        "200":
+          description: On-sale plans.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/stock/sims:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_stock_sims
+      summary: Free SIMs, for the sell-a-SIM journey.
+      description: |
+        Returns SIMs in state `in_stock`. Never returns Ki or OPc: SIM stock in RatelBSS holds
+        ICCID, IMSI and batch only (PRODUCT_RULES.md, SIMs).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: TODO(contract) - page size for stock lists, and the cursor to use.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 100
+      responses:
+        "200":
+          description: Free SIMs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/stock/numbers:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_stock_numbers
+      summary: Free numbers, for the sell-a-SIM journey.
+      description: |
+        Returns numbers in state `available`. The stored form is 234 and ten digits
+        (PRODUCT_RULES.md, Customers and KYC). A number and a SIM are each taken once.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 100
+      responses:
+        "200":
+          description: Free numbers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NumberList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_create_line
+      summary: Attach a customer, a SIM, a number and a plan as a line, awaiting activation.
+      description: |
+        Takes a free SIM and a free number atomically (PRODUCT_RULES.md: a SIM or number cannot be
+        taken twice, even by simultaneous requests). The line starts in `awaiting_activation`.
+        If `kyc_status` is not `verified`, activation later refuses (PRODUCT_RULES.md, Customers
+        and KYC). The line is created here; the RatelLink `/activate` call happens in
+        `bss_activate_line`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLineRequest"
+      responses:
+        "201":
+          description: Line created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_line
+      summary: One line's state and, when suspended, the state it was suspended from.
+      description: |
+        Returns the line's state (`awaiting_activation`, `active`, `out_of_data`, `expired`,
+        `suspended`, `terminated`) and, while suspended, `state_before_suspension`. Does not return
+        usage: the line page's usage comes from the RatelMeter API (M-12), never from here.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+      responses:
+        "200":
+          description: The line.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/activate:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_activate_line
+      summary: Activate a line. First plan paid for and KYC verified.
+      description: |
+        Calls RatelLink's `/activate` with the plan's speeds and voice true (PRODUCT_RULES.md,
+        Line lifecycle). Only the state machine calls RatelLink; each transition writes an audit
+        entry with who and why (PRODUCT_RULES.md, Line lifecycle).
+        If RatelLink fails, the line's state does not change; the call is retried with the same
+        `Idempotency-Key` (PRODUCT_RULES.md, failure in the middle of a transition).
+        A line whose `kyc_status` is not `verified`, or that is not in `awaiting_activation`,
+        answers `409` (the line is in a state where it cannot be activated).
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivateLineRequest"
+      responses:
+        "200":
+          description: Activated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/suspend:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_suspend_line
+      summary: Suspend a line with a reason. Customer care action.
+      description: |
+        `active` or `out_of_data` -> `suspended`. Calls RatelLink's `/deactivate`. Writes an audit
+        entry with the reason. Every care action carries a reason from a short fixed list plus free
+        text; starting list from PRODUCT_RULES.md (decided 2026-10-23): `fraud`, `non_payment`,
+        `customer_request`, `lost_sim`, `other`. The list is edited by @capitanaserdel and
+        @ml-lawarn before RatelDesk is built.
+        A line that is not active or out_of_data answers `409` (invalid transition).
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuspendLineRequest"
+      responses:
+        "200":
+          description: Suspended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/reinstate:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_reinstate_line
+      summary: Reinstate a suspended line. Customer care action.
+      description: |
+        `suspended` -> the state it had before (`state_before_suspension`). Calls RatelLink's
+        `/activate`, then `/data` if the previous state was `out_of_data`. Writes an audit entry
+        with the reason. If `state_before_suspension` is not `active` or `out_of_data`, the stored
+        data is wrong and the call answers `500` with a standard error; the caller does not retry.
+        A line that is not suspended answers `409`.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReinstateLineRequest"
+      responses:
+        "200":
+          description: Reinstated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -308,8 +655,9 @@ components:
         RatelLink's operations are idempotent by construction: repeating a call with the same
         body changes nothing, with or without this header. The header is accepted and must not be
         empty. It is not stored, so it has no retention window.
-        TODO(contract): key format and length, and whether RatelBSS needs the first result
-        returned verbatim. Owner: RatelBSS lines.
+        RatelBSS's own operations (tag RatelBSS) accept it too: repeating a call with the same
+        header and body returns the first result and changes nothing.
+        TODO(contract): key format and length. Owner: RatelBSS lines.
       schema:
         type: string
         minLength: 1
@@ -319,6 +667,20 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Imsi"
+    CustomerId:
+      name: customer_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    LineId:
+      name: line_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     From:
       name: from
       in: query
@@ -366,7 +728,8 @@ components:
     Conflict:
       description: |
         Nothing was changed. Either the IMSI already has different keys stored (`POST /v1/sims`),
-        or the network has no record for the line (`POST /v1/lines/{imsi}/data`): activate it again.
+        the network has no record for the line (`POST /v1/lines/{imsi}/data`): activate it again,
+        or the line is in a state where the requested transition is not allowed (RatelBSS).
       content:
         application/json:
           schema:
@@ -374,13 +737,13 @@ components:
           example:
             error: {code: conflict, message: "The network has no record for this line. Activate it again."}
     NotFound:
-      description: Unknown line.
+      description: Unknown line, customer, SIM, number or plan.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
           example:
-            error: {code: not_found, message: "Unknown line."}
+            error: {code: not_found, message: "Unknown resource."}
     ValidationError:
       description: |
         Invalid request. RatelLink answers 422 for every validation failure (a bad IMSI in the
@@ -478,26 +841,28 @@ components:
         Megabits per second. The core stores whole numbers, so the value must be a whole number of
         bits per second (1.5 is stored as 1500 Kbps). Zero is refused.
       x-todo: The maximum (10 Gbit/s) is a sanity limit chosen here. The Build Plan gives none.
-    DataRequest:
-      type: object
-      required: [mode]
-      additionalProperties: false
-      properties:
-        mode:
-          type: string
-          enum: [full, slow, "off"]
-        speed_ul_mbps:
-          $ref: "#/components/schemas/SpeedMbps"
-        speed_dl_mbps:
-          $ref: "#/components/schemas/SpeedMbps"
-      if:
+      DataRequest:
+        type: object
+        required: [mode]
+        additionalProperties: false
         properties:
           mode:
-            enum: [full, slow]
-      then:
-        required: [speed_ul_mbps, speed_dl_mbps]
-      description: "`full` and `slow` need both speeds. `off` ignores them."
-      x-todo: The Build Plan lists the speeds as body fields without saying when they are required.
+            type: string
+            enum: [full, slow, "off"]
+          speed_ul_mbps:
+            $ref: "#/components/schemas/SpeedMbps"
+          speed_dl_mbps:
+            $ref: "#/components/schemas/SpeedMbps"
+        anyOf:
+          - properties:
+              mode:
+                const: "off"
+          - properties:
+              mode:
+                enum: [full, slow]
+            required: [speed_ul_mbps, speed_dl_mbps]
+        description: |
+          `full` and `slow` need both speeds. `off` ignores them.
     DeactivateRequest:
       type: object
       required: [reason]
@@ -577,6 +942,33 @@ components:
         bytes_down:
           type: integer
           minimum: 0
+      examples:
+        - imsi: "621000000000001"
+          period_start: 1791820800
+          period_end: 1791821100
+          bytes_up: 1048576
+          bytes_down: 5242880
+    UsageBatch:
+      type: object
+      required: [records]
+      additionalProperties: false
+      description: |
+        A batch of 300-second usage records from the meter agent.
+        Each record is keyed on imsi + period_start; sending the same interval again overwrites.
+      properties:
+        records:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            $ref: "#/components/schemas/UsageRecord"
+      examples:
+        - records:
+            - imsi: "621000000000001"
+              period_start: 1791820800
+              period_end: 1791821100
+              bytes_up: 1048576
+              bytes_down: 5242880
     UsageList:
       type: object
       required: [records, next_cursor]
@@ -626,3 +1018,259 @@ components:
             $ref: "#/components/schemas/CallRecord"
         next_cursor:
           type: [string, "null"]
+    Customer:
+      type: object
+      required: [customer_id, name, phone, email, id_type, id_number, address, kyc_status, blocked]
+      additionalProperties: false
+      description: |
+        Personal data. Never logged, never in fixtures, never sent to RatelLink or RatelMeter
+        (PRODUCT_RULES.md, Customers and KYC). No `ki` or `opc`: RatelBSS never holds them.
+      properties:
+        customer_id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          type: string
+          format: email
+          maxLength: 120
+        id_type:
+          type: string
+          minLength: 1
+          maxLength: 20
+          x-todo: Allowed values open (PRODUCT_RULES.md, decision 3). Demo value is NIN only.
+        id_number:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: The customer's NIN. Personal data.
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+          x-todo: Format open (PRODUCT_RULES.md, decision 3). Demo value is free text.
+        kyc_status:
+          type: string
+          enum: [pending, verified, rejected]
+        blocked:
+          type: boolean
+    CreateCustomerRequest:
+      type: object
+      required: [name, phone, email, id_type, id_number, address, kyc_status]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          type: string
+          format: email
+          maxLength: 120
+        id_type:
+          type: string
+          minLength: 1
+          maxLength: 20
+        id_number:
+          type: string
+          minLength: 1
+          maxLength: 20
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+        kyc_status:
+          type: string
+          enum: [pending, verified, rejected]
+    Plan:
+      type: object
+      required: [plan_id, name, price_kobo, validity_days, data_bytes, speed_ul_mbps, speed_dl_mbps, slow_ul_mbps, slow_dl_mbps, channels, on_exhaustion, state]
+      additionalProperties: false
+      properties:
+        plan_id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          maxLength: 80
+        price_kobo:
+          type: integer
+          minimum: 0
+          description: Whole kobo, never a decimal.
+        validity_days:
+          type: integer
+          minimum: 1
+        data_bytes:
+          type: integer
+          minimum: 0
+        speed_ul_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        speed_dl_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        slow_ul_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        slow_dl_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        channels:
+          type: string
+          maxLength: 40
+          x-todo: Representation is TODO(PRD). Current storage is VARCHAR(40). Do not invent a type.
+        on_exhaustion:
+          type: string
+          enum: [slow, stop]
+        state:
+          type: string
+          enum: [on_sale, retired]
+    PlanList:
+      type: object
+      required: [plans]
+      additionalProperties: false
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+    Sim:
+      type: object
+      required: [iccid, imsi, batch, state]
+      additionalProperties: false
+      description: SIM stock. Never contains Ki or OPc (PRODUCT_RULES.md, SIMs).
+      properties:
+        iccid:
+          type: string
+          maxLength: 20
+        imsi:
+          $ref: "#/components/schemas/Imsi"
+        batch:
+          type: string
+          maxLength: 40
+        state:
+          type: string
+          enum: [in_stock, in_use, retired]
+    SimList:
+      type: object
+      required: [sims]
+      additionalProperties: false
+      properties:
+        sims:
+          type: array
+          items:
+            $ref: "#/components/schemas/Sim"
+    PhoneNumber:
+      type: object
+      required: [msisdn, state]
+      additionalProperties: false
+      properties:
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        state:
+          type: string
+          enum: [available, in_use, quarantined]
+    NumberList:
+      type: object
+      required: [numbers]
+      additionalProperties: false
+      properties:
+        numbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PhoneNumber"
+    CreateLineRequest:
+      type: object
+      required: [customer_id, iccid, msisdn, plan_id]
+      additionalProperties: false
+      properties:
+        customer_id:
+          type: integer
+          minimum: 1
+        iccid:
+          type: string
+          maxLength: 20
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        plan_id:
+          type: integer
+          minimum: 1
+    ActivateLineRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        speed_ul_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        speed_dl_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+      description: |
+        The speeds are optional when the line's plan is used (the plan's speeds are applied). Pass
+        them to override the plan's speeds for this activation.
+        TODO(contract): confirm whether overriding is wanted; the plan carries both speeds.
+    SuspendLineRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          enum: [fraud, non_payment, customer_request, lost_sim, other]
+        reason_text:
+          type: string
+          maxLength: 200
+          description: Free text recorded in the audit entry.
+    ReinstateLineRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          enum: [fraud, non_payment, customer_request, lost_sim, other]
+        reason_text:
+          type: string
+          maxLength: 200
+    Line:
+      type: object
+      required: [line_id, customer_id, iccid, imsi, msisdn, plan_id, state]
+      additionalProperties: false
+      description: |
+        A line. `state_before_suspension` is set only while `suspended`, and records the state the
+        line was in when it was suspended (PRODUCT_RULES.md, Line lifecycle).
+      properties:
+        line_id:
+          type: integer
+          minimum: 1
+        customer_id:
+          type: integer
+          minimum: 1
+        iccid:
+          type: string
+          maxLength: 20
+        imsi:
+          $ref: "#/components/schemas/Imsi"
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        plan_id:
+          type: integer
+          minimum: 1
+        state:
+          type: string
+          enum: [awaiting_activation, active, out_of_data, expired, suspended, terminated]
+        state_before_suspension:
+          type: [string, "null"]
+          enum: [active, out_of_data, null]
+        expires_at:
+          type: [integer, "null"]
+          minimum: 0
+          description: Unix epoch seconds, UTC.

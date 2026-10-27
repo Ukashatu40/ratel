@@ -1,0 +1,22 @@
+# Loads the RatelMeter counting table (ratel-meter.nft) at boot and removes it on stop. Install as
+# /etc/systemd/system/ratel-meter-nft.service (deploy/core-up/README.md). It runs as root because
+# changing the firewall needs it, so it does one thing: load or delete that one table.
+[Unit]
+Description=RatelMeter per-address byte counters (nftables table)
+Before=ratel-meter.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/ratel-meter/ratel-meter.nft
+ExecStop=/usr/sbin/nft delete table inet ratel_meter
+
+# Hardening: only the network-admin capability, nothing else.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target

@@ -39,13 +39,21 @@ from tests.synthetic import (
 TEMPLATE_ENV = "RATEL_LINK_TEMPLATE_COMPARE_FILE"
 
 
+def _load_export(path: Path) -> dict[str, Any]:
+    """The network team's export, made comparable. Two things an export cannot carry:
+    MongoDB's `_id`, and `security`, which is left out on purpose so no key is ever copied. The
+    `security` block is filled with the synthetic one so its shape is still checked."""
+    document: dict[str, Any] = json_util.loads(path.read_text())
+    document.pop("_id", None)
+    document.setdefault("security", synthetic_template()["security"])
+    return document
+
+
 def _templates() -> list[Any]:
     found: list[Any] = [pytest.param(synthetic_template, id="synthetic")]
     real = os.environ.get(TEMPLATE_ENV)
     if real:
-        found.append(
-            pytest.param(lambda: json_util.loads(Path(real).read_text()), id="network-export")
-        )
+        found.append(pytest.param(lambda: _load_export(Path(real)), id="network-export"))
     return found
 
 

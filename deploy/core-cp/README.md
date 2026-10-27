@@ -71,11 +71,14 @@ These are not developer tasks and nothing goes near real SIMs until they are don
 On a developer machine, from a reviewed commit on `main`:
 
 ```
-git archive --format=tar.gz --prefix=ratel-link-$(git rev-parse --short HEAD)/ \
-  -o ratel-link-$(git rev-parse --short HEAD).tar.gz HEAD services/ratel_link services/common requirements
+git switch main && git pull
+scripts/release/build-release.sh link HEAD /tmp     # prints the tarball name and its SHA-256
 ```
 
-Copy the tarball and `install-release.sh` to core-cp (by the usual secure copy, not by chat or
+The release carries its dependencies as prebuilt Linux wheels (about 22), so installing it needs no
+internet on core-cp, which matters while the site uplink has no failover. The builder refuses a
+commit that is not on `origin/main`. On core-cp, compare `sha256sum` of the copied file with the
+value it printed. Copy the tarball and `install-release.sh` to core-cp (by the usual secure copy, not by chat or
 email). Then, on core-cp:
 
 ```
@@ -99,20 +102,24 @@ the network team's decision, because it adds software to a core host: a third-pa
 (deadsnakes: `python3.12`, `python3.12-venv`) or a standalone build (for example `uv python install 3.12`,
 which needs the host to reach GitHub). TODO(network team): choose, and install.
 
-**Package index.** Checked 2026-10-15: PyPI is reachable from core-cp (HTTP 200 on the `pip` index
-page), so a plain install works. If that ever changes, build the release's packages on another
-machine (`pip download -r requirements/link.txt -c requirements/constraints.txt -d wheels`) and
-install with `pip install --no-index --find-links wheels`.
+**Package index.** A release built with `build-release.sh link` installs from its own wheels and needs no
+package index. An older tarball without a `wheels/` folder downloads from PyPI, which was reachable from
+core-cp on 2026-10-15 but depends on the site uplink.
 
 Edit `/etc/ratel-link/ratel-link.env`: put the generated MongoDB password into `MONGO_URI`, and set
 `RATEL_LINK_UE_POOL` once the range is agreed. Then, as the service user (the settings are loaded
-the same way the unit loads them):
+the same way the unit loads them). Define the small function once in your shell; it is a function, not a
+variable, because a variable holding a quoted command is split into words and breaks (found 2026-10-23):
 
 ```
-RUN="sudo -u ratellink env PYTHONPATH=/opt/ratel-link/current/services bash -c 'set -a; . /etc/ratel-link/ratel-link.env; set +a; exec \"\$@\"' _"
-$RUN /opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli key generate --out /etc/ratel-link/ratel_link.key
-$RUN /opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli init-db
-$RUN /opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli api-key create --id bss-app --name RatelBSS
+admin_cli() {
+  sudo -u ratellink env PYTHONPATH=/opt/ratel-link/current/services \
+    bash -c 'set -a; . /etc/ratel-link/ratel-link.env; set +a; exec "$@"' _ \
+    /opt/ratel-link/current/venv/bin/python -m ratel_link.admin_cli "$@"
+}
+admin_cli key generate --out /etc/ratel-link/ratel_link.key
+admin_cli init-db
+admin_cli api-key create --id bss-app --name RatelBSS
 ```
 
 - **Back up the key file offline, and never with the database backups, before importing any real

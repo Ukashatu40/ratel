@@ -162,7 +162,8 @@ def test_the_internet_session_carries_the_fixed_address_and_the_plan_speeds() ->
         "downlink": {"value": 10, "unit": 2},
         "uplink": {"value": 5, "unit": 2},
     }
-    assert (internet["type"], internet["qos"]["index"]) == (3, 9)
+    # Type 1 = IPv4 only. The meter counts IPv4 addresses, so an IPv4v6 session (3) would leak.
+    assert (internet["type"], internet["qos"]["index"]) == (1, 9)
     assert internet["pcc_rule"] == []
 
 
@@ -185,7 +186,7 @@ def test_the_voice_session_has_no_fixed_address() -> None:
 
 def test_fields_the_hss_owns_are_only_created_never_set_on_update() -> None:
     fields = _fields()
-    for name in ("imeisv", "mme_host", "mm_realm", "mme_timestamp", "purge_flag"):
+    for name in ("imeisv", "mme_host", "mme_realm", "mm_realm", "mme_timestamp", "purge_flag"):
         assert fields.created_only[name] == []
         assert name not in fields.owned
     assert fields.created_only["schema_version"] == 1

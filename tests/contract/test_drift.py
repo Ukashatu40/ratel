@@ -18,8 +18,30 @@ from ratel_link.main import create_app as create_link_app
 from tests.contract.helpers import not_implemented, operations
 from tests.route_walk import effective_routes
 
-OPERATIONAL = {("GET", "/healthz"), ("GET", "/readyz")}
+# Routes that exist on our services but are intentionally not in the
+# cross-system contract. The contract covers only RatelLink, RatelMeter and
+# RatelBSS's own API; operational endpoints are out of scope by design.
+#
+# The three lifecycle routes (/suspend, /reinstate, /terminate) and /activate are internal
+# helpers today. Their contract versions (bss_suspend_line, bss_reinstate_line,
+# bss_activate_line) are documented under RatelBSS in M-02 and implemented in M-26.
+OPERATIONAL = {
+    ("GET", "/healthz"),
+    ("GET", "/readyz"),
+    ("POST", "/v1/lines/activate"),
+    ("POST", "/v1/lines/suspend"),
+    ("POST", "/v1/lines/reinstate"),
+    ("POST", "/v1/lines/terminate"),
+}
+
+# Service -> primary tag, used by test_service_exposes_no_undocumented_routes so each service
+# is checked against the operations tagged for it. `app` hosts both RatelMeter and RatelBSS:
+# RatelMeter is the primary tag for that service; RatelBSS is listed separately below.
 TAG_FOR_SERVICE = {"ratel_link": "RatelLink", "app": "RatelMeter"}
+
+# Tag -> service, used by test_implemented_matches_not_implemented_list. Both RatelMeter and
+# RatelBSS live in `app`, so both map to it.
+TAG_TO_SERVICE = {**{tag: svc for svc, tag in TAG_FOR_SERVICE.items()}, "RatelBSS": "app"}
 
 
 def _services() -> dict[str, FastAPI]:
@@ -49,11 +71,10 @@ def test_not_implemented_list_has_no_unknown_ids() -> None:
 def test_implemented_matches_not_implemented_list() -> None:
     services = _services()
     routes = {name: _routes(app) for name, app in services.items()}
-    owner = {tag: svc for svc, tag in TAG_FOR_SERVICE.items()}
     skip = not_implemented()
     problems = []
     for o in operations():
-        implemented = (o.method, o.path) in routes[owner[o.tag]]
+        implemented = (o.method, o.path) in routes[TAG_TO_SERVICE[o.tag]]
         if o.op_id in skip and implemented:
             problems.append(f"{o.op_id} is implemented: remove it from not_implemented.txt")
         if o.op_id not in skip and not implemented:

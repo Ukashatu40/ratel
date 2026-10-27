@@ -38,6 +38,7 @@ SERVICES=(
 status=0
 pids=()
 workdir=""
+meter_workdir=""
 test_db=""
 core_db=""
 
@@ -60,6 +61,9 @@ PY
   fi
   if [ -n "$workdir" ]; then
     rm -rf "$workdir"
+  fi
+  if [ -n "$meter_workdir" ]; then
+    rm -rf "$meter_workdir"
   fi
 }
 trap cleanup EXIT
@@ -117,6 +121,27 @@ PY
   fi
 }
 
+prepare_ratelmeter() {
+  # The usage API has no built-in key: the server must be given the one Schemathesis will send.
+  export METER_API_KEY="$DEFAULT_KEY"
+  if [ -n "${RATEL_TEST_POSTGRES_URI:-}" ]; then
+    export DATABASE_URL="$RATEL_TEST_POSTGRES_URI"
+  else
+    meter_workdir="$(mktemp -d)"
+    export DATABASE_URL="sqlite:///$meter_workdir/meter.db"
+  fi
+  # Create the tables on either database. Without this a PostgreSQL run fuzzes an empty database
+  # and every request is a 500 ("relation usage_record does not exist").
+  PYTHONPATH=services:. "$PY" - <<'PY'
+import os
+from sqlalchemy import create_engine
+from app.db import Base
+import app.models
+engine = create_engine(os.environ["DATABASE_URL"])
+Base.metadata.create_all(engine)
+PY
+}
+
 for entry in "${SERVICES[@]}"; do
   IFS='|' read -r tag module port <<<"$entry"
   # Assigned first so a failing helper stops the script (set -e) instead of looking like "none".
@@ -136,6 +161,8 @@ for entry in "${SERVICES[@]}"; do
   KEY="$DEFAULT_KEY"
   if [ "$tag" = "RatelLink" ]; then
     prepare_ratellink || continue
+  elif [ "$tag" = "RatelMeter" ]; then
+    prepare_ratelmeter || continue
   fi
 
   echo "[$tag] fuzzing ${#ids[@]} operation(s): ${ids[*]}"
