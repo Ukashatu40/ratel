@@ -300,7 +300,7 @@ def get_line_by_identifier(
 
     TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
 
-    Answers 422 if zero or more than one identifier is given, 404 if no line
+    Answers 422  if zero or more than one identifier is given, 404 if no line
     matches. The indexes on line.msisdn, line.iccid and line.imsi make each
     lookup one indexed read, so the under-a-second criterion holds with
     100,000 rows in the table.
