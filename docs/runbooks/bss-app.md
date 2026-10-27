@@ -53,15 +53,16 @@ If you see one, report it as a security issue.
 
 ## The rating job
 
-`python -m app.bss_money.rating_cli` takes each line's new usage records off its allowance and then
-slows, cuts or expires lines that need it (M-17). It is meant to run every five minutes from a timer.
-**There is no timer file yet** (deployment of the job is part of M-27), so until then it runs by hand:
+`python -m app.bss_money.rating_cli` takes each line's new usage records off its allowance and then slows, cuts,
+expires or restores lines (M-17). `ratel-rating.timer` runs it at two minutes past every fifth minute
+(`systemctl list-timers ratel-rating.timer`; `journalctl -u ratel-rating.service -n 50`). To run it once by hand:
 
 ```
-sudo -u ratelbss env PYTHONPATH=/opt/ratel-app/current/services \
-  bash -c 'set -a; . /etc/ratel-app/ratel-app.env; set +a; exec "$@"' _ \
-  /opt/ratel-app/current/venv/bin/python -m app.bss_money.rating_cli; echo "exit $?"
+sudo systemctl start ratel-rating.service; systemctl status ratel-rating.service --no-pager | head -8
 ```
+
+A failed unit means exit 1 or 2 below. The nightly `ratel-ledger-check.timer` is the same idea for the books: a
+failed `ratel-ledger-check.service` means a wallet differs from its ledger (`journalctl -u ratel-ledger-check`).
 
 | Exit | Meaning | What to do |
 | ---- | ------- | ---------- |
@@ -78,8 +79,14 @@ What it does, and does not do:
   renewal goes to `expired` (`/deactivate`). If RatelLink is down, the change is tried again on the next run.
 - A line that has **never had an allowance** is rated but never cut, so a line made by hand in the lab does not
   lose service. A SIM with no line keeps its records unrated until a line exists.
-- It does **not** restore data when a customer tops up: that belongs to the purchase flow (not built yet).
-  A line stays `out_of_data` until then.
+- **A line gets its data back when it has allowance again.** A purchase (a bundle, or a plan) creates the bucket;
+  the next run sees it and puts an out-of-data line back to full speed, or an expired line back on, through the
+  state machine. If RatelLink is down at that moment the next run tries again, and the customer is not charged twice.
+- **Top-up with a voucher restores data only if `RATING_AUTO_RENEW=true`.** Then, on each run, a line that is
+  out of data or expired and whose wallet covers its own plan has that plan bought again (the price comes out of the
+  wallet as a `purchase` and a `vat` entry; `VAT_RATE_BPS`, 750 = 7.5%, finance to confirm). Off, the voucher only
+  credits the wallet and the plan or bundle must be bought on purpose (`ops_cli buy`). It is a product decision
+  (TODO(PRD)), so it is off until it is turned on in `ratel-app.env`.
 - Never roll the `usage_rating` table back by hand. Those rows are the only record of what has been deducted,
   and deleting them makes the next run deduct the same usage again. The migration refuses to downgrade while they exist.
 
@@ -135,6 +142,21 @@ tells us to go and look; its `x-paystack-signature` is checked first, on the raw
 before anything is read. The same payment delivered twice, or at the same moment twice, is credited once. **The
 webhook is not needed**: every five minutes the rating job asks about payments that are still pending, and the page's
 own status check does too after 15 seconds, so this works in the lab where Paystack cannot reach us.
+
+### Try the adapter against Paystack's real test mode first (no server needed)
+
+From a developer's machine in the repository, with a Paystack **test** secret key (the script refuses anything
+that does not start with `sk_test_`, and never prints the key):
+
+```bash
+read -rs -p "Paystack TEST secret key: " PAYSTACK_SECRET_KEY; echo; export PAYSTACK_SECRET_KEY
+PYTHONPATH=services .venv/bin/python scripts/paystack_sandbox_check.py
+```
+
+It starts a 200 naira test payment, prints the checkout page for you to open and pay with a test card Paystack shows
+there, then asks Paystack the way the app does and reports PASS or FAIL for the amount, the currency, the status and
+the transaction id. A FAIL means the adapter and Paystack disagree: fix `gateways/paystack.py` before anything else.
+Do not paste the checkout address into a ticket or chat.
 
 ### Switching it on (test mode first)
 

@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     payment_min_kobo: int = Field(default=10_000, ge=1)
     payment_max_kobo: int = Field(default=100_000_000, ge=1)
 
+    # VAT in basis points (750 = 7.5%), recorded as its own ledger entry on every purchase.
+    # TODO(finance): the rate is finance's to confirm (decision 7).
+    vat_rate_bps: int = Field(default=750, ge=0, le=10_000)
+    # Whether the rating job buys a line's plan again when its wallet covers it, so a top-up brings
+    # data back by itself. TODO(PRD): a product decision, so it is off until the deployment says so.
+    rating_auto_renew: bool = False
+
     @property
     def meter_api_key_value(self) -> str | None:
         """The configured usage API key, or None when it is unset, empty or the placeholder."""

@@ -9,10 +9,14 @@ Run every five minutes by a timer on bss-app (`python -m app.bss_money.rating_cl
    One line failing is logged and counted and does not stop the others.
 2. Settle (only when a payment gateway is configured). Payments still pending with the gateway are
    asked about and, if they went through, credited once, so the system works without a webhook.
-3. Act. For every active or out-of-data line that holds an allowance, judge it (`action_for()`):
-   used up -> `out_of_data`, validity ended -> `expired`, both through the state machine. This pass
-   does not depend on step 1 having had records, so a change that failed last time (RatelLink was
-   down) is tried again now. A line already moved is judged NONE, so it is moved once.
+3. Renew (only when the deployment turns it on). A line that is out of data or expired, whose
+   wallet covers its plan, has the plan bought again (`renew`), so a top-up brings data back by
+   itself.
+4. Act. For every active, out-of-data or expired line that holds an allowance, judge it
+   (`action_for()`): used up -> `out_of_data`, validity ended -> `expired`, allowance back (a
+   purchase made the bucket) -> `active` again, all through the state machine. This pass does not
+   depend on step 1 having had records, so a change that failed last time (RatelLink was down) is
+   tried again now. A line already moved is judged NONE, so it is moved once.
 
 Calls are not rated for the demo. Nothing here logs an IMSI or a byte count per line.
 """
@@ -39,6 +43,9 @@ BATCH_SIZE = 5000
 Settle = Callable[[], int]
 """Settles payments still pending with the gateway; returns how many it credited."""
 
+Renew = Callable[[int], bool]
+"""Buys the line's plan again if its wallet covers it; True if it did (services/purchase.py)."""
+
 Scope = Callable[[], AbstractContextManager[RatingRepository]]
 """Opens one transaction and yields the repository inside it: commit on exit, rollback on error."""
 
@@ -50,6 +57,8 @@ class LineControl(Protocol):
 
     def expire(self, line_id: int, idempotency_key: str) -> None: ...
 
+    def restore(self, line_id: int, idempotency_key: str) -> None: ...
+
 
 @dataclass(frozen=True)
 class RatingRun:
@@ -60,6 +69,8 @@ class RatingRun:
     lines_out_of_data: int = 0
     lines_expired: int = 0
     payments_credited: int = 0
+    lines_restored: int = 0
+    lines_renewed: int = 0
     failures: int = 0
 
 
@@ -70,6 +81,7 @@ def run_rating(
     now: datetime,
     batch_size: int = BATCH_SIZE,
     settle: Settle | None = None,
+    renew: Renew | None = None,
 ) -> RatingRun:
     """One pass of the job at `now`. Never raises for one line's failure; see `failures`."""
     if now.tzinfo is None:
@@ -97,6 +109,22 @@ def run_rating(
         except Exception as exc:
             run.failures += 1
             log_event(log, logging.ERROR, "rating.settle_failed", exc_type=type(exc).__name__)
+    if renew is not None:
+        with scope() as repository:
+            to_renew = repository.lines_with_allowance()
+        for line_id in to_renew:
+            try:
+                if renew(line_id):
+                    run.lines_renewed += 1
+            except Exception as exc:
+                run.failures += 1
+                log_event(
+                    log,
+                    logging.ERROR,
+                    "rating.line_renew_failed",
+                    line_id=line_id,
+                    exc_type=type(exc).__name__,
+                )
     with scope() as repository:
         to_judge = repository.lines_with_allowance()
     for line_id in to_judge:
@@ -122,6 +150,8 @@ def run_rating(
         lines_out_of_data=result.lines_out_of_data,
         lines_expired=result.lines_expired,
         payments_credited=result.payments_credited,
+        lines_restored=result.lines_restored,
+        lines_renewed=result.lines_renewed,
         failures=result.failures,
     )
     return result
@@ -136,6 +166,8 @@ class _RunCounts:
     lines_out_of_data: int = 0
     lines_expired: int = 0
     payments_credited: int = 0
+    lines_restored: int = 0
+    lines_renewed: int = 0
     failures: int = 0
 
     def freeze(self) -> RatingRun:
@@ -174,3 +206,6 @@ def _judge_line(
     elif action is ServiceAction.EXPIRE:
         control.expire(line_id, f"rating-expire-{line_id}-{stamp}")
         run.lines_expired += 1
+    elif action is ServiceAction.RESTORE:
+        control.restore(line_id, f"rating-restore-{line_id}-{stamp}")
+        run.lines_restored += 1

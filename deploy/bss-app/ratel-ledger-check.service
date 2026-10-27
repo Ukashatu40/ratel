@@ -1,0 +1,48 @@
+# The nightly check that every wallet equals the sum of its ledger entries
+# (services/app/bss_money/check_cli.py). Install as /etc/systemd/system/ratel-ledger-check.service
+# (deploy/bss-app/README.md). It is started by ratel-ledger-check.timer, not enabled by itself.
+#
+# Exit 0: the books balance. Exit 1: a wallet differs from its ledger (the unit shows as failed and
+# each one is in the journal as ledger.wallet_mismatch). Exit 2: it could not run.
+# TODO(RatelOps): turn a failed unit into an alert (Build Plan, week 5).
+[Unit]
+Description=RatelBSS: check every wallet against its ledger
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelbss
+Group=ratelbss
+WorkingDirectory=/opt/ratel-app/current
+EnvironmentFile=/etc/ratel-app/ratel-app.env
+Environment=PYTHONPATH=/opt/ratel-app/current/services
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/ratel-app/current/venv/bin/python -m app.bss_money.check_cli
+TimeoutStartSec=120
+UMask=0077
+
+# Hardening: the same as the app. This job needs PostgreSQL, the network (RatelLink) and its own code.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ReadOnlyPaths=/opt/ratel-app /etc/ratel-app

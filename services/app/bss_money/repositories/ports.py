@@ -14,7 +14,8 @@ from typing import Protocol
 from app.bss_lines.domain.state_machine import LineState
 from app.bss_money.domain.allowance import Bucket
 from app.bss_money.domain.entries import Posting
-from app.bss_money.domain.plans import Plan
+from app.bss_money.domain.plans import Bundle, Plan
+from app.bss_money.domain.purchase import OfferKind
 from app.bss_money.domain.rating import RatingResult, UsageRecord
 from app.bss_money.domain.vouchers import VoucherState
 from app.bss_money.domain.wallets import WalletMismatch
@@ -78,7 +79,7 @@ class RatingRepository(Protocol):
         ...
 
     def lines_with_allowance(self) -> list[int]:
-        """Active or out-of-data lines that hold at least one bucket, lowest id first."""
+        """Active, out-of-data or expired lines that hold at least one bucket, lowest id first."""
         ...
 
     def lock_line(self, line_id: int) -> RatedLine | None:
@@ -239,4 +240,34 @@ class PaymentRepositories:
 
 
 PaymentScope = Callable[[], AbstractContextManager[PaymentRepositories]]
+"""Opens one transaction and yields the repositories on it: commit on exit, rollback on error."""
+
+
+class PurchaseRepository(Protocol):
+    """Storage for buying a plan or a bundle. Works in the caller's transaction, never commits."""
+
+    def lock_line(self, line_id: int) -> RatedLine | None:
+        """Take the line for this transaction, so two purchases cannot overdraw its wallet."""
+        ...
+
+    def get_offer(self, kind: OfferKind, offer_id: int) -> Plan | Bundle | None:
+        """The offer, or None if there is none or it is not on sale."""
+        ...
+
+    def buckets(self, line_id: int) -> list[Bucket]: ...
+
+    def add_bucket(self, line_id: int, bucket: Bucket) -> int:
+        """Store a new bucket for the line and return its id (the id in `bucket` is ignored)."""
+        ...
+
+
+@dataclass(frozen=True)
+class PurchaseRepositories:
+    """Everything one purchase touches, all on the same transaction."""
+
+    purchases: PurchaseRepository
+    ledger: LedgerRepository
+
+
+PurchaseScope = Callable[[], AbstractContextManager[PurchaseRepositories]]
 """Opens one transaction and yields the repositories on it: commit on exit, rollback on error."""

@@ -207,3 +207,27 @@ def test_callers_are_told_which_certificates_to_trust_and_core_cp_lets_them_in()
     assert "ca-certificates.crt" in app_env  # a bundle, never the one certificate alone
     rules = (ROOT / "deploy/firewall/core-cp.nft").read_text()
     assert "ip saddr { $core_up, $bss_app } tcp dport 443 accept" in rules
+
+
+def test_the_paystack_sandbox_check_refuses_anything_but_a_test_key_before_any_network_call() -> (
+    None
+):
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    script = ROOT / "scripts/paystack_sandbox_check.py"
+    assert shutil.which("env") is not None
+    for key in ("", "sk_live_aaaaaaaaaaaaaaaaaaaa", "pk_test_aaaaaaaaaaaaaaaa", "CHANGE_ME"):
+        env = {**os.environ, "PAYSTACK_SECRET_KEY": key, "PYTHONPATH": str(ROOT / "services")}
+        done = subprocess.run(  # noqa: S603
+            [sys.executable, str(script)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert done.returncode == 2, (key, done.stderr)
+        assert key == "" or key not in done.stdout + done.stderr  # the key is never echoed
