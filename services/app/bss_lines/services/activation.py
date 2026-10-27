@@ -3,8 +3,8 @@
 Everything in this module goes through domain.state_machine.validate_transition().
 No other code path may set a line's state directly.
 
-It talks to storage through LinesRepository (repositories/ports.py), not through
-a database session. That keeps the rules testable without a database.
+It talks to storage through LinesRepository (repositories/ports.py) and the
+Idempotency store (repositories/idempotency.py), not through a database session.
 """
 
 from __future__ import annotations
@@ -17,15 +17,12 @@ from app.bss_lines.domain.state_machine import (
     LineState,
     validate_transition,
 )
+from app.bss_lines.repositories.idempotency import IdempotencyStore, StoredResult
 from app.bss_lines.repositories.ports import LinesRepository
 
 
 class RatelLinkClientProto(Protocol):
-    """Anything that can call RatelLink's /activate.
-
-    The real RatelLinkClient and the test's FakeRatelLinkClient both match this.
-    The service does not depend on either concretely.
-    """
+    """Anything that can call RatelLink's /activate."""
 
     def activate(
         self,
@@ -53,6 +50,7 @@ class ActivationResult:
 def activate_line(
     lines: LinesRepository,
     client: RatelLinkClientProto,
+    idempotency: IdempotencyStore,
     line_id: int,
     *,
     actor: str,
@@ -60,13 +58,23 @@ def activate_line(
 ) -> ActivationResult:
     """Run the sell-to-activate flow for one line.
 
-    Order:
-      1. Load the line through the repository.
-      2. Refuse if the customer's KYC is not verified.
-      3. Ask the state machine what to do (must be awaiting_activation -> active).
-      4. Execute each RatelLink call the transition implies.
-      5. Set the line's new state, write an audit entry, commit.
+    A repeat with the same Idempotency-Key returns the first result and changes
+    nothing (M-26). Otherwise:
+      1. Load the line.
+      2. Refuse if KYC is not verified.
+      3. Ask the state machine (must be awaiting_activation -> active).
+      4. Execute the RatelLink call.
+      5. Set state, write audit, commit.
+      6. Save the result under the key.
     """
+    saved = idempotency.get("/activate", idempotency_key)
+    if saved is not None:
+        return ActivationResult(
+            line_id=saved.line_id,
+            from_state=LineState(saved.from_state),
+            to_state=LineState(saved.to_state),
+        )
+
     line = lines.get(line_id)
     if line is None:
         raise ActivationError(f"line {line_id} not found")
@@ -74,10 +82,6 @@ def activate_line(
     if line.customer.kyc_status != "verified":
         raise ActivationError("KYC is not verified; activation is refused")
 
-    # TODO(idempotency, M-26): a repeat call with the same Idempotency-Key
-    # currently returns 400 ("active -> active is refused"), not the first
-    # result. True idempotent behaviour — return the original response for a
-    # repeated key — needs a key store, planned for M-26.
     try:
         transition = validate_transition(LineState(line.state), LineState.ACTIVE)
     except InvalidTransition as exc:
@@ -107,4 +111,14 @@ def activate_line(
     )
     lines.commit()
 
-    return ActivationResult(line.line_id, transition.from_state, transition.to_state)
+    result = ActivationResult(line.line_id, transition.from_state, transition.to_state)
+    idempotency.put(
+        "/activate",
+        idempotency_key,
+        StoredResult(
+            line_id=result.line_id,
+            from_state=result.from_state.value,
+            to_state=result.to_state.value,
+        ),
+    )
+    return result

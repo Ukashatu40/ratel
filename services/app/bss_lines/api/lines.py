@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.bss_lines.models.lines import Line
+from app.bss_lines.repositories.idempotency import IdempotencyStore
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.activation import ActivationError, activate_line
 from app.bss_lines.services.lifecycle import (
@@ -69,6 +70,14 @@ def get_lines_repo(
     return SqlLinesRepository(session)
 
 
+def get_idempotency_store(request: Request) -> IdempotencyStore:
+    """The Idempotency-Key store, set on app.state by create_app."""
+    store = getattr(request.app.state, "idempotency_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Idempotency store not configured")
+    return store  # type: ignore[no-any-return]
+
+
 class ActivateBody(BaseModel):
     """Request payload for activating a line."""
 
@@ -89,8 +98,12 @@ def post_activate(
     payload: ActivateBody,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
 ) -> ActivateResponse:
     """Activate a line through the RatelLink client.
+
+    A repeat with the same Idempotency-Key returns the first result and changes
+    nothing (M-26).
 
     TODO(auth, M-26): this route has no authentication and takes the audit
     ``actor`` from the request body. That must not be deployed before M-26 adds
@@ -103,6 +116,7 @@ def post_activate(
         result = activate_line(
             lines,
             client,
+            idempotency,
             payload.line_id,
             actor=payload.actor,
             idempotency_key=payload.idempotency_key,
@@ -153,7 +167,10 @@ def post_suspend(
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> LifecycleResponse:
-    """Suspend a line with a reason."""
+    """Suspend a line with a reason.
+
+    TODO(auth, M-26): same caveat as activation.
+    """
     try:
         result = suspend_line(
             lines,
@@ -178,7 +195,10 @@ def post_reinstate(
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> LifecycleResponse:
-    """Reinstate a suspended line."""
+    """Reinstate a suspended line.
+
+    TODO(auth, M-26): same caveat as activation.
+    """
     try:
         result = reinstate_line(
             lines,
@@ -203,7 +223,10 @@ def post_terminate(
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> LifecycleResponse:
-    """Terminate a line."""
+    """Terminate a line.
+
+    TODO(auth, M-26): same caveat as activation.
+    """
     try:
         result = terminate_line(
             lines,
@@ -260,12 +283,9 @@ def get_line_by_identifier(
 ) -> LineLookupResponse:
     """Look a line up by exactly one of msisdn, iccid or imsi.
 
-    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
+    TODO(auth, M-26): no authentication yet.
 
-    Answers 422 if zero or more than one identifier is given, 404 if no line
-    matches. The indexes on line.msisdn, line.iccid and line.imsi make each
-    lookup one indexed read, so the under-a-second criterion holds with
-    100,000 rows in the table.
+    Answers 422 if zero or more than one identifier is given, 404 if no line matches.
     """
     supplied = sum(x is not None for x in (msisdn, iccid, imsi))
     if supplied != 1:
@@ -286,7 +306,7 @@ def get_line_by_id(
 ) -> LineLookupResponse:
     """Look a line up by its id.
 
-    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
+    TODO(auth, M-26): no authentication yet.
     """
     line = lines.find_by_identifier(line_id=line_id)
     if line is None:

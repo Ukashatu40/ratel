@@ -264,3 +264,53 @@ def test_terminate_writes_audit(session: Session, repo: SqlLinesRepository) -> N
     assert audits[0].from_state == LineState.ACTIVE.value
     assert audits[0].to_state == LineState.TERMINATED.value
     assert audits[0].actor == "bob"
+
+
+# --- failure mid-transition leaves the state unchanged -------------------------
+
+
+def test_suspend_that_ratellink_refuses_leaves_the_state_unchanged(
+    session: Session, repo: SqlLinesRepository
+) -> None:
+    from app.bss_lines.services.ratel_link_client import RatelLinkError
+
+    line = _make_line(session, state=LineState.ACTIVE.value)
+    client = FakeRatelLinkClient(fail_on_deactivate=RatelLinkError("boom", status=503))
+    with pytest.raises(RatelLinkError):
+        suspend_line(repo, client, line.line_id, actor="a", reason="fraud", idempotency_key="k")
+    session.refresh(line)
+    assert line.state == LineState.ACTIVE.value
+    assert line.state_before_suspension is None
+
+
+def test_reinstate_that_ratellink_refuses_leaves_the_state_unchanged(
+    session: Session, repo: SqlLinesRepository
+) -> None:
+    from app.bss_lines.services.ratel_link_client import RatelLinkError
+
+    line = _make_line(
+        session,
+        state=LineState.SUSPENDED.value,
+        state_before_suspension=LineState.ACTIVE.value,
+    )
+    client = FakeRatelLinkClient(fail_on_activate=RatelLinkError("boom", status=503))
+    with pytest.raises(RatelLinkError):
+        reinstate_line(repo, client, line.line_id, actor="a", reason="x", idempotency_key="k")
+    session.refresh(line)
+    assert line.state == LineState.SUSPENDED.value
+    assert line.state_before_suspension == LineState.ACTIVE.value
+
+
+def test_terminate_that_ratellink_refuses_leaves_the_state_unchanged(
+    session: Session, repo: SqlLinesRepository
+) -> None:
+    from app.bss_lines.services.ratel_link_client import RatelLinkError
+
+    line = _make_line(session, state=LineState.ACTIVE.value)
+    client = FakeRatelLinkClient(fail_on_deactivate=RatelLinkError("boom", status=503))
+    with pytest.raises(RatelLinkError):
+        terminate_line(repo, client, line.line_id, actor="a", reason="x", idempotency_key="k")
+    session.refresh(line)
+    assert line.state == LineState.ACTIVE.value
+    sim = session.get(Sim, line.iccid)
+    assert sim is not None and sim.state == "in_use"  # the SIM was not retired
