@@ -165,7 +165,11 @@ There is no public name to get a certificate for, so each caller trusts exactly 
    Remove the default site (`/etc/nginx/sites-enabled/default`), which also listens on port 80.
 4. Add `bss_app` to `/etc/ratel-fw/addresses.nft` on core-cp, then load the firewall rule for port 443 from
    core-up and bss-app (`deploy/firewall/README.md`: check the syntax first, with the rollback armed).
-5. On each caller, copy **only** `/etc/ssl/ratel-link/fullchain.pem`, compare its fingerprint
+5. Get the public certificate off core-cp. The folder is root-only on purpose, so an ordinary user cannot read
+   even the public half: copy it to a temporary place first, pull it with `scp`, then delete the temporary copy
+   (`sudo cp /etc/ssl/ratel-link/fullchain.pem /tmp/ratel-link-cert.pem && sudo chmod 644 /tmp/ratel-link-cert.pem`
+   on core-cp; `sudo rm /tmp/ratel-link-cert.pem` afterwards). Check the copy is not empty (`wc -c` is more than 0).
+   On each caller, copy **only** that file, compare its fingerprint
    (`openssl x509 -in <file> -noout -fingerprint -sha256`) with the one written down, and point `SSL_CERT_FILE`
    at it (`deploy/core-up/ratel-meter.env.example`, `deploy/bss-app/ratel-app.env.example`). Use an
    `https://<address-of-core-cp>` base URL, with exactly the address in the certificate.

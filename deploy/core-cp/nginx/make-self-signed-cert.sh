@@ -15,7 +15,8 @@
 # on a caller and have them compare it with what they see there.
 #
 # Only fullchain.pem (the public half) is ever copied to a caller, as the file its SSL_CERT_FILE
-# points at (deploy/core-up/ratel-meter.env.example, deploy/bss-app/ratel-app.env.example).
+# points at (deploy/core-up/ratel-meter.env.example, deploy/bss-app/ratel-app.env.example). The
+# folder is root-only (the umask below), so copy the file with sudo first; deploy/core-cp/README.md says how.
 set -euo pipefail
 
 usage() {
