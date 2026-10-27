@@ -192,7 +192,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.detect.outputs.present == 'true'
         with:
-          node-version: "22"
+          node-version: "22.22.2"
           cache: npm
           cache-dependency-path: web/desk/package-lock.json
       - name: Install, lint, typecheck, test, build
