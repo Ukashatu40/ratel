@@ -20,10 +20,14 @@ from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.bss_lines.domain.state_machine import LineState
+from app.bss_lines.models.lines import Bundle as BundleRow
 from app.bss_lines.models.lines import Line
+from app.bss_lines.models.lines import Plan as PlanRow
 from app.bss_money.domain.allowance import Bucket
 from app.bss_money.domain.entries import Posting
+from app.bss_money.domain.plans import Bundle as BundleOffer
 from app.bss_money.domain.plans import OnExhaustion, Plan
+from app.bss_money.domain.purchase import OfferKind
 from app.bss_money.domain.rating import RatingResult, UsageRecord
 from app.bss_money.domain.vouchers import VoucherState
 from app.bss_money.domain.wallets import WalletMismatch
@@ -225,7 +229,7 @@ class SqlVoucherRepository:
         )
 
 
-_IN_SERVICE = (LineState.ACTIVE.value, LineState.OUT_OF_DATA.value)
+_IN_SERVICE = (LineState.ACTIVE.value, LineState.OUT_OF_DATA.value, LineState.EXPIRED.value)
 
 
 def _utc(moment: datetime) -> datetime:
@@ -268,24 +272,11 @@ class SqlRatingRepository:
         ).scalar_one_or_none()
         if line is None:
             return None
-        plan = line.plan
         return RatedLine(
             line_id=line.line_id,
             imsi=line.imsi,
             state=LineState(line.state),
-            plan=Plan(
-                plan_id=plan.plan_id,
-                name=plan.name,
-                price_kobo=plan.price_kobo,
-                validity_days=plan.validity_days,
-                data_bytes=plan.data_bytes,
-                speed_ul_mbps=plan.speed_ul_mbps,
-                speed_dl_mbps=plan.speed_dl_mbps,
-                channels=tuple(c for c in plan.channels.split(",") if c),
-                on_exhaustion=OnExhaustion(plan.on_exhaustion),
-                slow_ul_mbps=plan.slow_ul_mbps,
-                slow_dl_mbps=plan.slow_dl_mbps,
-            ),
+            plan=_plan_offer(line.plan),
         )
 
     def unrated_records(self, line: RatedLine, limit: int) -> list[UsageRecord]:
@@ -355,3 +346,77 @@ class SqlLineLookup:
                 Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value
             )
         )
+
+
+def _plan_offer(plan: PlanRow) -> Plan:
+    return Plan(
+        plan_id=plan.plan_id,
+        name=plan.name,
+        price_kobo=plan.price_kobo,
+        validity_days=plan.validity_days,
+        data_bytes=plan.data_bytes,
+        speed_ul_mbps=plan.speed_ul_mbps,
+        speed_dl_mbps=plan.speed_dl_mbps,
+        channels=tuple(c for c in plan.channels.split(",") if c),
+        on_exhaustion=OnExhaustion(plan.on_exhaustion),
+        slow_ul_mbps=plan.slow_ul_mbps,
+        slow_dl_mbps=plan.slow_dl_mbps,
+    )
+
+
+class SqlPurchaseRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def lock_line(self, line_id: int) -> RatedLine | None:
+        # The same lock the rating job takes: a purchase and a rating run for one line take turns.
+        line = self._session.execute(
+            select(Line)
+            .where(Line.line_id == line_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        if line is None:
+            return None
+        return RatedLine(
+            line_id=line.line_id,
+            imsi=line.imsi,
+            state=LineState(line.state),
+            plan=_plan_offer(line.plan),
+        )
+
+    def get_offer(self, kind: OfferKind, offer_id: int) -> Plan | BundleOffer | None:
+        if kind is OfferKind.PLAN:
+            plan = self._session.get(PlanRow, offer_id)
+            if plan is None or plan.state != "on_sale":
+                return None
+            return _plan_offer(plan)
+        # TODO(M-25): the bundle table has no state column yet, so every bundle is on sale.
+        bundle = self._session.get(BundleRow, offer_id)
+        if bundle is None:
+            return None
+        return BundleOffer(
+            bundle_id=bundle.bundle_id,
+            name=bundle.name,
+            price_kobo=bundle.price_kobo,
+            validity_days=bundle.validity_days,
+            data_bytes=bundle.data_bytes,
+            channels=tuple(c for c in bundle.channels.split(",") if c),
+        )
+
+    def buckets(self, line_id: int) -> list[Bucket]:
+        return SqlRatingRepository(self._session).buckets(line_id)
+
+    def add_bucket(self, line_id: int, bucket: Bucket) -> int:
+        row = AllowanceBucket(
+            line_id=line_id,
+            source_kind=bucket.source_kind.value,
+            source_id=bucket.source_id,
+            data_bytes_total=bucket.data_bytes_total,
+            data_bytes_used=bucket.data_bytes_used,
+            valid_from=bucket.valid_from,
+            valid_to=bucket.valid_to,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row.bucket_id
