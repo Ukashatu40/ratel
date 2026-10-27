@@ -3,7 +3,6 @@ from typing import Any, cast
 from fastapi import FastAPI, Request, Response
 
 from app.bss_lines.api.lines import router as bss_lines_router
-from app.bss_lines.repositories.idempotency import InMemoryIdempotencyStore
 from app.config import Settings
 from app.db import make_engine, session_factory
 from app.meter_api.api import router as meter_api_router
@@ -39,7 +38,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = make_engine(db_url)
     app.state.engine = engine
     app.state.session_factory = session_factory(engine)
-    app.state.idempotency_store = InMemoryIdempotencyStore()
+
+    # Idempotency-Key store (M-26). In local and test a per-process dict is
+    # enough; everywhere else it must be Redis, so a restart does not turn a
+    # repeat into a new operation.
+    from app.bss_lines.repositories.idempotency import (
+        InMemoryIdempotencyStore,
+        RedisIdempotencyStore,
+    )
+
+    if settings.ratel_env in ("local", "test"):
+        app.state.idempotency_store = InMemoryIdempotencyStore()
+    else:
+        import redis
+
+        app.state.idempotency_store = RedisIdempotencyStore(
+            redis.Redis.from_url(settings.redis_url.get_secret_value())
+        )
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

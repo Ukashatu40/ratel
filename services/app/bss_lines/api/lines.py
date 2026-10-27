@@ -106,8 +106,7 @@ def post_activate(
     nothing (M-26).
 
     TODO(auth, M-26): this route has no authentication and takes the audit
-    ``actor`` from the request body. That must not be deployed before M-26 adds
-    staff authentication.
+    ``actor`` from the request body.
 
     TODO(contract, M-02): this route and body will be replaced by whatever M-02
     specifies in contracts/openapi.yaml.
@@ -166,8 +165,12 @@ def post_suspend(
     payload: LifecycleBody,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
 ) -> LifecycleResponse:
     """Suspend a line with a reason.
+
+    A repeat with the same Idempotency-Key returns the first result and changes
+    nothing.
 
     TODO(auth, M-26): same caveat as activation.
     """
@@ -175,6 +178,7 @@ def post_suspend(
         result = suspend_line(
             lines,
             client,
+            idempotency,
             payload.line_id,
             actor=payload.actor,
             reason=payload.reason,
@@ -194,8 +198,12 @@ def post_reinstate(
     payload: LifecycleBody,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
 ) -> LifecycleResponse:
     """Reinstate a suspended line.
+
+    A repeat with the same Idempotency-Key returns the first result and changes
+    nothing.
 
     TODO(auth, M-26): same caveat as activation.
     """
@@ -203,6 +211,7 @@ def post_reinstate(
         result = reinstate_line(
             lines,
             client,
+            idempotency,
             payload.line_id,
             actor=payload.actor,
             reason=payload.reason,
@@ -222,8 +231,12 @@ def post_terminate(
     payload: LifecycleBody,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
 ) -> LifecycleResponse:
     """Terminate a line.
+
+    A repeat with the same Idempotency-Key returns the first result and changes
+    nothing.
 
     TODO(auth, M-26): same caveat as activation.
     """
@@ -231,6 +244,7 @@ def post_terminate(
         result = terminate_line(
             lines,
             client,
+            idempotency,
             payload.line_id,
             actor=payload.actor,
             reason=payload.reason,

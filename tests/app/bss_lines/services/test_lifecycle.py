@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.bss_lines.domain.state_machine import LineState
 from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
+from app.bss_lines.repositories.idempotency import InMemoryIdempotencyStore
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.lifecycle import (
     LifecycleError,
@@ -36,6 +37,11 @@ def session():
 @pytest.fixture
 def repo(session: Session) -> SqlLinesRepository:
     return SqlLinesRepository(session)
+
+
+@pytest.fixture
+def store() -> InMemoryIdempotencyStore:
+    return InMemoryIdempotencyStore()
 
 
 def _make_line(
@@ -98,11 +104,13 @@ def _audits(session: Session) -> list[LineAudit]:
 # --- suspend --------------------------------------------------------------------
 
 
-def test_suspend_from_active(session: Session, repo: SqlLinesRepository) -> None:
+def test_suspend_from_active(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
     line = _make_line(session, state=LineState.ACTIVE.value)
     client = FakeRatelLinkClient()
     result = suspend_line(
-        repo, client, line.line_id, actor="alice", reason="fraud", idempotency_key="k1"
+        repo, client, store, line.line_id, actor="alice", reason="fraud", idempotency_key="k1"
     )
     assert result.from_state is LineState.ACTIVE
     assert result.to_state is LineState.SUSPENDED
@@ -120,34 +128,39 @@ def test_suspend_from_active(session: Session, repo: SqlLinesRepository) -> None
 
 
 def test_suspend_from_out_of_data_records_previous(
-    session: Session, repo: SqlLinesRepository
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
 ) -> None:
     line = _make_line(session, state=LineState.OUT_OF_DATA.value)
     client = FakeRatelLinkClient()
     suspend_line(
-        repo, client, line.line_id, actor="a", reason="customer_request", idempotency_key="k"
+        repo, client, store, line.line_id, actor="a", reason="customer_request", idempotency_key="k"
     )
     assert line.state == LineState.SUSPENDED.value
     assert line.state_before_suspension == LineState.OUT_OF_DATA.value
 
 
 def test_suspend_refuses_from_awaiting_activation(
-    session: Session, repo: SqlLinesRepository
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
 ) -> None:
     line = _make_line(session, state=LineState.AWAITING_ACTIVATION.value)
     client = FakeRatelLinkClient()
     with pytest.raises(LifecycleError):
-        suspend_line(repo, client, line.line_id, actor="a", reason="fraud", idempotency_key="k")
+        suspend_line(
+            repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+        )
     assert line.state == LineState.AWAITING_ACTIVATION.value
     assert client.calls == []
 
 
-def test_suspend_reason_text_is_recorded(session: Session, repo: SqlLinesRepository) -> None:
+def test_suspend_reason_text_is_recorded(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
     line = _make_line(session)
     client = FakeRatelLinkClient()
     suspend_line(
         repo,
         client,
+        store,
         line.line_id,
         actor="a",
         reason="lost_sim",
@@ -160,7 +173,9 @@ def test_suspend_reason_text_is_recorded(session: Session, repo: SqlLinesReposit
 # --- reinstate -----------------------------------------------------------------
 
 
-def test_reinstate_from_active_suspension(session: Session, repo: SqlLinesRepository) -> None:
+def test_reinstate_from_active_suspension(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
     line = _make_line(
         session,
         state=LineState.SUSPENDED.value,
@@ -168,7 +183,7 @@ def test_reinstate_from_active_suspension(session: Session, repo: SqlLinesReposi
     )
     client = FakeRatelLinkClient()
     result = reinstate_line(
-        repo, client, line.line_id, actor="a", reason="customer_request", idempotency_key="k"
+        repo, client, store, line.line_id, actor="a", reason="customer_request", idempotency_key="k"
     )
     assert result.from_state is LineState.SUSPENDED
     assert result.to_state is LineState.ACTIVE
@@ -179,7 +194,7 @@ def test_reinstate_from_active_suspension(session: Session, repo: SqlLinesReposi
 
 
 def test_reinstate_from_out_of_data_suspension_calls_activate_then_data(
-    session: Session, repo: SqlLinesRepository
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
 ) -> None:
     line = _make_line(
         session,
@@ -188,7 +203,9 @@ def test_reinstate_from_out_of_data_suspension_calls_activate_then_data(
         on_exhaustion="slow",
     )
     client = FakeRatelLinkClient()
-    reinstate_line(repo, client, line.line_id, actor="a", reason="fraud", idempotency_key="k")
+    reinstate_line(
+        repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
     assert line.state == LineState.OUT_OF_DATA.value
     assert line.state_before_suspension is None
     assert len(client.calls) == 2
@@ -200,30 +217,38 @@ def test_reinstate_from_out_of_data_suspension_calls_activate_then_data(
 
 
 def test_reinstate_refuses_when_state_before_suspension_is_missing(
-    session: Session, repo: SqlLinesRepository
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
 ) -> None:
     line = _make_line(session, state=LineState.SUSPENDED.value, state_before_suspension=None)
     client = FakeRatelLinkClient()
     with pytest.raises(LifecycleError):
-        reinstate_line(repo, client, line.line_id, actor="a", reason="fraud", idempotency_key="k")
+        reinstate_line(
+            repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+        )
     assert client.calls == []
 
 
-def test_reinstate_refuses_from_wrong_state(session: Session, repo: SqlLinesRepository) -> None:
+def test_reinstate_refuses_from_wrong_state(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
     line = _make_line(session, state=LineState.ACTIVE.value)
     client = FakeRatelLinkClient()
     with pytest.raises(LifecycleError):
-        reinstate_line(repo, client, line.line_id, actor="a", reason="fraud", idempotency_key="k")
+        reinstate_line(
+            repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+        )
 
 
 # --- terminate -----------------------------------------------------------------
 
 
-def test_terminate_from_active(session: Session, repo: SqlLinesRepository) -> None:
+def test_terminate_from_active(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
     line = _make_line(session, state=LineState.ACTIVE.value)
     client = FakeRatelLinkClient()
     result = terminate_line(
-        repo, client, line.line_id, actor="a", reason="non_payment", idempotency_key="k"
+        repo, client, store, line.line_id, actor="a", reason="non_payment", idempotency_key="k"
     )
     assert result.to_state is LineState.TERMINATED
     assert line.state == LineState.TERMINATED.value
@@ -235,30 +260,42 @@ def test_terminate_from_active(session: Session, repo: SqlLinesRepository) -> No
     assert isinstance(client.calls[0], RecordedDeactivate)
 
 
-def test_terminate_from_suspended(session: Session, repo: SqlLinesRepository) -> None:
+def test_terminate_from_suspended(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
     line = _make_line(
         session,
         state=LineState.SUSPENDED.value,
         state_before_suspension=LineState.ACTIVE.value,
     )
     client = FakeRatelLinkClient()
-    terminate_line(repo, client, line.line_id, actor="a", reason="fraud", idempotency_key="k")
+    terminate_line(
+        repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
     assert line.state == LineState.TERMINATED.value
     assert line.state_before_suspension is None  # cleared on the way out of suspended
 
 
-def test_terminate_refuses_on_terminated(session: Session, repo: SqlLinesRepository) -> None:
+def test_terminate_refuses_on_terminated(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
     line = _make_line(session, state=LineState.TERMINATED.value)
     client = FakeRatelLinkClient()
     with pytest.raises(LifecycleError):
-        terminate_line(repo, client, line.line_id, actor="a", reason="fraud", idempotency_key="k")
+        terminate_line(
+            repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+        )
     assert client.calls == []
 
 
-def test_terminate_writes_audit(session: Session, repo: SqlLinesRepository) -> None:
+def test_terminate_writes_audit(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
     line = _make_line(session, state=LineState.ACTIVE.value)
     client = FakeRatelLinkClient()
-    terminate_line(repo, client, line.line_id, actor="bob", reason="fraud", idempotency_key="k")
+    terminate_line(
+        repo, client, store, line.line_id, actor="bob", reason="fraud", idempotency_key="k"
+    )
     audits = _audits(session)
     assert len(audits) == 1
     assert audits[0].from_state == LineState.ACTIVE.value
@@ -266,25 +303,97 @@ def test_terminate_writes_audit(session: Session, repo: SqlLinesRepository) -> N
     assert audits[0].actor == "bob"
 
 
+# --- idempotency: a repeat returns the first result and changes nothing --------
+
+
+def test_a_repeat_suspend_with_the_same_key_returns_the_first_result(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    line = _make_line(session, state=LineState.ACTIVE.value)
+    client = FakeRatelLinkClient()
+
+    first = suspend_line(
+        repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
+    assert first.to_state is LineState.SUSPENDED
+    assert len(client.calls) == 1
+
+    second = suspend_line(
+        repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
+    assert second.line_id == first.line_id
+    assert second.from_state is first.from_state
+    assert second.to_state is first.to_state
+    assert len(client.calls) == 1
+
+
+def test_a_repeat_reinstate_with_the_same_key_returns_the_first_result(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    line = _make_line(
+        session,
+        state=LineState.SUSPENDED.value,
+        state_before_suspension=LineState.ACTIVE.value,
+    )
+    client = FakeRatelLinkClient()
+
+    first = reinstate_line(
+        repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
+    assert first.to_state is LineState.ACTIVE
+    assert len(client.calls) == 1
+
+    second = reinstate_line(
+        repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
+    assert second.line_id == first.line_id
+    assert second.from_state is first.from_state
+    assert second.to_state is first.to_state
+    assert len(client.calls) == 1
+
+
+def test_a_repeat_terminate_with_the_same_key_returns_the_first_result(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    line = _make_line(session, state=LineState.ACTIVE.value)
+    client = FakeRatelLinkClient()
+
+    first = terminate_line(
+        repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
+    assert first.to_state is LineState.TERMINATED
+    assert len(client.calls) == 1
+
+    second = terminate_line(
+        repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+    )
+    assert second.line_id == first.line_id
+    assert second.from_state is first.from_state
+    assert second.to_state is first.to_state
+    assert len(client.calls) == 1
+
+
 # --- failure mid-transition leaves the state unchanged -------------------------
 
 
 def test_suspend_that_ratellink_refuses_leaves_the_state_unchanged(
-    session: Session, repo: SqlLinesRepository
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
 ) -> None:
     from app.bss_lines.services.ratel_link_client import RatelLinkError
 
     line = _make_line(session, state=LineState.ACTIVE.value)
     client = FakeRatelLinkClient(fail_on_deactivate=RatelLinkError("boom", status=503))
     with pytest.raises(RatelLinkError):
-        suspend_line(repo, client, line.line_id, actor="a", reason="fraud", idempotency_key="k")
+        suspend_line(
+            repo, client, store, line.line_id, actor="a", reason="fraud", idempotency_key="k"
+        )
     session.refresh(line)
     assert line.state == LineState.ACTIVE.value
     assert line.state_before_suspension is None
 
 
 def test_reinstate_that_ratellink_refuses_leaves_the_state_unchanged(
-    session: Session, repo: SqlLinesRepository
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
 ) -> None:
     from app.bss_lines.services.ratel_link_client import RatelLinkError
 
@@ -295,21 +404,25 @@ def test_reinstate_that_ratellink_refuses_leaves_the_state_unchanged(
     )
     client = FakeRatelLinkClient(fail_on_activate=RatelLinkError("boom", status=503))
     with pytest.raises(RatelLinkError):
-        reinstate_line(repo, client, line.line_id, actor="a", reason="x", idempotency_key="k")
+        reinstate_line(
+            repo, client, store, line.line_id, actor="a", reason="x", idempotency_key="k"
+        )
     session.refresh(line)
     assert line.state == LineState.SUSPENDED.value
     assert line.state_before_suspension == LineState.ACTIVE.value
 
 
 def test_terminate_that_ratellink_refuses_leaves_the_state_unchanged(
-    session: Session, repo: SqlLinesRepository
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
 ) -> None:
     from app.bss_lines.services.ratel_link_client import RatelLinkError
 
     line = _make_line(session, state=LineState.ACTIVE.value)
     client = FakeRatelLinkClient(fail_on_deactivate=RatelLinkError("boom", status=503))
     with pytest.raises(RatelLinkError):
-        terminate_line(repo, client, line.line_id, actor="a", reason="x", idempotency_key="k")
+        terminate_line(
+            repo, client, store, line.line_id, actor="a", reason="x", idempotency_key="k"
+        )
     session.refresh(line)
     assert line.state == LineState.ACTIVE.value
     sim = session.get(Sim, line.iccid)

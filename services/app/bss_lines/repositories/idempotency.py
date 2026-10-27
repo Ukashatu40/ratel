@@ -2,15 +2,16 @@
 
 A repeat of a state-changing call with the same key returns the first result
 and changes nothing. The key is scoped per endpoint, so the same string on
-/activate and /data are two different keys — the same discipline the fake
-RatelLinkClient uses.
+/activate and /data are two different keys.
 
-Production uses Redis (keys kept for 24 hours). Tests use the in-memory
-implementation. The service never depends on either concretely.
+In local and test the app uses InMemoryIdempotencyStore (single process, lost
+on restart). Everywhere else create_app uses RedisIdempotencyStore, so a
+restart does not turn a repeat into a new operation.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -37,7 +38,7 @@ class IdempotencyStore(Protocol):
 
 
 class InMemoryIdempotencyStore:
-    """A store that holds results for the process's lifetime. Tests only."""
+    """A store that holds results for the process's lifetime. local and test."""
 
     def __init__(self) -> None:
         self._results: dict[tuple[str, str], StoredResult] = {}
@@ -50,7 +51,7 @@ class InMemoryIdempotencyStore:
 
 
 class RedisIdempotencyStore:
-    """A Redis-backed store, kept for 24 hours per key. Production."""
+    """A Redis-backed store, kept for 24 hours per key. lab, staging, production."""
 
     def __init__(self, redis_client: object, ttl_seconds: int = 24 * 60 * 60) -> None:
         self._redis = redis_client
@@ -60,8 +61,6 @@ class RedisIdempotencyStore:
         return f"bss_lines:idempotency:{endpoint}:{idempotency_key}"
 
     def get(self, endpoint: str, idempotency_key: str) -> StoredResult | None:
-        import json
-
         raw = self._redis.get(self._key(endpoint, idempotency_key))  # type: ignore[attr-defined]
         if raw is None:
             return None
@@ -73,8 +72,6 @@ class RedisIdempotencyStore:
         )
 
     def put(self, endpoint: str, idempotency_key: str, result: StoredResult) -> None:
-        import json
-
         self._redis.set(  # type: ignore[attr-defined]
             self._key(endpoint, idempotency_key),
             json.dumps(
