@@ -198,7 +198,8 @@ def _judge_line(
         if line is None:
             return
         action = action_for(line.state, repository.buckets(line_id), now)
-    # The transaction ends before RatelLink is called: no line stays locked across a network call.
+    # This transaction ends before the change is made. The change (bss_lines' lifecycle) then
+    # locks the line itself for the RatelLink call, so changes to one line take turns (ADR 0012).
     stamp = int(now.timestamp())
     if action is ServiceAction.OUT_OF_DATA:
         control.mark_out_of_data(line_id, f"rating-out-of-data-{line_id}-{stamp}")
