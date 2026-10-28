@@ -236,4 +236,3 @@ def test_lookup_with_two_identifiers_is_422(client_with_100k_lines) -> None:
 def test_lookup_of_unknown_line_is_404(client_with_100k_lines) -> None:
     assert client_with_100k_lines.get("/v1/lines/lookup/99999999").status_code == 404
     assert client_with_100k_lines.get("/v1/lines/lookup?msisdn=2349999999999").status_code == 404
-

@@ -336,4 +336,3 @@ def get_line_by_id(
     if line is None:
         raise HTTPException(status_code=404, detail=f"No line with id {line_id}")
     return _line_lookup_response(line)
-
