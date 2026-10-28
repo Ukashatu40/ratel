@@ -7,7 +7,3 @@
 # Remove a line in the same PR that implements the operation.
 meter_get_calls
 
-bss_activate_line
-bss_suspend_line
-bss_reinstate_line
-bss_list_bundles

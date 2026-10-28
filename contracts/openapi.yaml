@@ -40,8 +40,6 @@ info:
     TODO(contract): add it here.
   x-todo:
     - Operational endpoints (/healthz, /readyz) are deliberately not in this contract.
-    - RatelLink's internal sell-to-activate endpoint (/v1/lines/activate with body line_id) is
-      not in this contract. The external version is bss_activate_line.
 servers:
   - url: http://127.0.0.1:4010
     description: Local mock (make mock). TODO(contract) - real base URLs and ports per environment.

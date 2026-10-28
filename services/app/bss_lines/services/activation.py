@@ -44,6 +44,10 @@ class ActivationError(Exception):
     """A legitimate refusal: KYC not verified, wrong state, RatelLink said no."""
 
 
+class LineNotFoundError(ActivationError):
+    """There is no line with this id."""
+
+
 @dataclass(frozen=True)
 class ActivationResult:
     line_id: int
@@ -94,7 +98,7 @@ def activate_line(
 
     line = lines.get(line_id)
     if line is None:
-        raise ActivationError(f"line {line_id} not found")
+        raise LineNotFoundError(f"line {line_id} not found")
 
     if line.customer.kyc_status != "verified":
         raise ActivationError("KYC is not verified; activation is refused")

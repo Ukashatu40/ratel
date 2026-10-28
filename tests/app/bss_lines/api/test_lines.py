@@ -1,4 +1,4 @@
-"""End-to-end test through POST /v1/lines/activate with the fake client."""
+"""The line lifecycle routes end to end on SQLite, with the fake RatelLink client."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.bss_lines.api.lines import get_client
 from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
+from app.bss_lines.services.ratel_link_client import RatelLinkError
 from app.db import Base
 from tests.app.bss_lines.desk_helpers import add_staff, make_app, signed_in
 from tests.app.bss_lines.fakes import FakeRatelLinkClient
@@ -82,39 +83,69 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
         yield client
 
 
-def test_activate_endpoint_returns_active(client_with_seeded_line) -> None:
-    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
-    response = client_with_seeded_line.post(
-        "/v1/lines/activate",
-        json={"line_id": line_id, "idempotency_key": "key-1"},
+def _activate(client, line_id: int, key: str | None = "key-1", body: dict | None = None):  # type: ignore[no-untyped-def]
+    headers = {} if key is None else {"Idempotency-Key": key}
+    return client.post(f"/v1/lines/{line_id}/activate", json=body or {}, headers=headers)
+
+
+def _care(client, action: str, line_id: int, key: str = "k", reason: str = "fraud", **extra):  # type: ignore[no-untyped-def]
+    return client.post(
+        f"/v1/lines/{line_id}/{action}",
+        json={"reason": reason, **extra},
+        headers={"Idempotency-Key": key},
     )
+
+
+def _line_state(client, line_id: int) -> str:  # type: ignore[no-untyped-def]
+    with client.app.state.session_factory() as session:
+        return session.get(Line, line_id).state
+
+
+def test_activate_answers_with_the_line_as_the_contract_describes_it(
+    client_with_seeded_line,
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    response = _activate(client_with_seeded_line, line_id)
     assert response.status_code == 200
+    assert set(response.json()) == {
+        "line_id",
+        "customer_id",
+        "iccid",
+        "imsi",
+        "msisdn",
+        "plan_id",
+        "state",
+        "state_before_suspension",
+        "expires_at",
+    }
     assert response.json()["state"] == "active"
     assert response.json()["line_id"] == line_id
 
 
-def test_the_audit_actor_is_the_signed_in_member_whatever_the_body_says(
-    client_with_seeded_line,
-) -> None:
+def test_the_audit_actor_is_the_signed_in_member(client_with_seeded_line) -> None:
     from sqlalchemy import select
 
     line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
-    client_with_seeded_line.post(
-        "/v1/lines/activate",
-        json={"line_id": line_id, "actor": "staff:999", "idempotency_key": "key-actor"},
-    )
+    _activate(client_with_seeded_line, line_id)
     factory = client_with_seeded_line.app.state.session_factory
     with factory() as session:
         actors = session.scalars(select(LineAudit.actor).where(LineAudit.line_id == line_id)).all()
-    assert actors == ["staff:1"]  # the signed-in member, not the 999 the body claimed
+    assert actors == ["staff:1"]
+
+
+def test_a_body_that_names_an_actor_is_refused(client_with_seeded_line) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    response = _activate(client_with_seeded_line, line_id, body={"actor": "staff:999"})
+    assert response.status_code == 422
+    assert _line_state(client_with_seeded_line, line_id) == "awaiting_activation"
 
 
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("post", "/v1/lines/activate"),
-        ("post", "/v1/lines/suspend"),
-        ("post", "/v1/lines/reinstate"),
+        ("post", "/v1/lines/1/activate"),
+        ("post", "/v1/lines/1/suspend"),
+        ("post", "/v1/lines/1/reinstate"),
         ("post", "/v1/lines/terminate"),
         ("get", "/v1/lines/lookup?msisdn=2348000000001"),
         ("get", "/v1/lines/lookup/1"),
@@ -128,6 +159,15 @@ def test_the_line_routes_refuse_a_caller_who_is_not_signed_in(
     response = getattr(anonymous, method)(path, **({"json": body} if method == "post" else {}))
     assert response.status_code == 401
     assert fake_client.calls == []  # RatelLink was not called
+
+
+@pytest.mark.parametrize("action", ["activate", "suspend", "reinstate"])
+def test_a_missing_sign_in_is_401_before_the_body_is_read(
+    client_with_seeded_line, action: str
+) -> None:
+    anonymous = TestClient(client_with_seeded_line.app)
+    response = anonymous.post(f"/v1/lines/1/{action}", json={"reason": "not-on-the-list"})
+    assert response.status_code == 401
 
 
 def test_care_may_not_terminate_a_line_but_an_admin_may(
@@ -144,15 +184,193 @@ def test_care_may_not_terminate_a_line_but_an_admin_may(
     assert admin.post("/v1/lines/terminate", json=body).status_code == 200
 
 
-def test_activate_endpoint_calls_ratellink_once(
+def test_activate_calls_ratellink_once(
     client_with_seeded_line, fake_client: FakeRatelLinkClient
 ) -> None:
     line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
-    client_with_seeded_line.post(
-        "/v1/lines/activate",
-        json={"line_id": line_id, "idempotency_key": "key-1"},
-    )
+    _activate(client_with_seeded_line, line_id)
     assert len(fake_client.calls) == 1
+
+
+def test_a_repeat_with_the_same_key_returns_the_line_and_calls_ratellink_once(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    first = _activate(client_with_seeded_line, line_id, "same")
+    second = _activate(client_with_seeded_line, line_id, "same")
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert second.json() == first.json()
+    assert len(fake_client.calls) == 1
+
+
+def test_the_same_key_for_another_line_is_409(client_with_seeded_line) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id, "same")
+    response = _activate(client_with_seeded_line, line_id + 1, "same")
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "conflict"
+
+
+def test_a_call_without_a_key_works_and_each_one_is_a_new_operation(
+    client_with_seeded_line,
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    assert _activate(client_with_seeded_line, line_id, None).status_code == 200
+    # The line is active now, so a second keyless call is a refused transition, not a replay.
+    assert _activate(client_with_seeded_line, line_id, None).status_code == 409
+
+
+def test_an_empty_key_is_422(client_with_seeded_line) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    assert _activate(client_with_seeded_line, line_id, "").status_code == 422
+
+
+def test_an_unknown_line_is_404_in_the_standard_error_shape(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    for response in (
+        _activate(client_with_seeded_line, 99999),
+        _care(client_with_seeded_line, "suspend", 99999),
+        _care(client_with_seeded_line, "reinstate", 99999),
+    ):
+        assert response.status_code == 404
+        assert response.json() == {"error": {"code": "not_found", "message": "No such line."}}
+    assert fake_client.calls == []
+
+
+def test_activating_a_line_that_is_not_awaiting_activation_is_409(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id, "a")
+    response = _activate(client_with_seeded_line, line_id, "b")
+    assert response.status_code == 409
+    assert len(fake_client.calls) == 1
+
+
+def test_a_customer_who_is_not_verified_cannot_be_activated(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    with client_with_seeded_line.app.state.session_factory() as session, session.begin():
+        session.get(Line, line_id).customer.kyc_status = "pending"
+    response = _activate(client_with_seeded_line, line_id)
+    assert response.status_code == 409
+    assert fake_client.calls == []
+    assert _line_state(client_with_seeded_line, line_id) == "awaiting_activation"
+
+
+def test_overriding_the_plans_speeds_is_not_supported_yet(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    response = _activate(client_with_seeded_line, line_id, body={"speed_dl_mbps": 50})
+    assert response.status_code == 422
+    assert fake_client.calls == []
+
+
+def test_when_ratellink_fails_the_answer_is_502_and_the_line_does_not_change(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    fake_client.fail_on_activate = RatelLinkError("secret detail 621000000000001", status=503)
+    response = _activate(client_with_seeded_line, line_id)
+    assert response.status_code == 502
+    assert "621000000000001" not in response.text  # nothing from RatelLink is passed on
+    assert _line_state(client_with_seeded_line, line_id) == "awaiting_activation"
+
+    fake_client.fail_on_activate = None  # the retry, with the same key, goes through
+    assert _activate(client_with_seeded_line, line_id).status_code == 200
+
+
+def test_suspend_then_reinstate_walks_the_line_there_and_back(client_with_seeded_line) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+
+    suspended = _care(client_with_seeded_line, "suspend", line_id, "s1", reason_text="seen")
+    assert suspended.status_code == 200
+    assert suspended.json()["state"] == "suspended"
+    assert suspended.json()["state_before_suspension"] == "active"
+
+    reinstated = _care(client_with_seeded_line, "reinstate", line_id, "r1", "customer_request")
+    assert reinstated.status_code == 200
+    assert reinstated.json()["state"] == "active"
+    assert reinstated.json()["state_before_suspension"] is None
+
+
+def test_the_audit_trail_keeps_the_reason_and_its_text(client_with_seeded_line) -> None:
+    from sqlalchemy import select
+
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+    _care(client_with_seeded_line, "suspend", line_id, "s1", "lost_sim", reason_text="phone stolen")
+    factory = client_with_seeded_line.app.state.session_factory
+    with factory() as session:
+        reasons = session.scalars(
+            select(LineAudit.reason).where(LineAudit.line_id == line_id).order_by(LineAudit.id)
+        ).all()
+    assert reasons[-1] == "lost_sim: phone stolen"
+
+
+def test_a_repeat_suspend_with_the_same_key_changes_nothing(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+    first = _care(client_with_seeded_line, "suspend", line_id, "same")
+    second = _care(client_with_seeded_line, "suspend", line_id, "same")
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert len([c for c in fake_client.calls if c.endpoint == "/deactivate"]) == 1
+
+
+def test_suspending_a_line_that_is_not_active_is_409_and_reinstating_one_that_is_not_suspended(
+    client_with_seeded_line,
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    assert _care(client_with_seeded_line, "suspend", line_id, "a").status_code == 409
+    assert _care(client_with_seeded_line, "reinstate", line_id, "b").status_code == 409
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"reason": "because"},
+        {"reason": "fraud", "reason_text": "x" * 201},
+        {"reason": "fraud", "line_id": 1},
+    ],
+    ids=["no-reason", "reason-not-on-the-list", "text-too-long", "extra-field"],
+)
+def test_a_bad_care_action_body_is_422_and_changes_nothing(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient, body: dict
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+    calls = len(fake_client.calls)
+    response = client_with_seeded_line.post(f"/v1/lines/{line_id}/suspend", json=body)
+    assert response.status_code == 422
+    assert len(fake_client.calls) == calls
+
+
+def test_reinstating_a_line_whose_stored_state_is_wrong_is_500_and_not_a_retry(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    with client_with_seeded_line.app.state.session_factory() as session, session.begin():
+        line = session.get(Line, line_id)
+        line.state = "suspended"
+        line.state_before_suspension = None
+    response = _care(client_with_seeded_line, "reinstate", line_id)
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "internal_error"
+    assert fake_client.calls == []
+
+
+def test_an_agent_may_suspend_and_reinstate_but_not_terminate(client_with_seeded_line) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+    assert _care(client_with_seeded_line, "suspend", line_id, "s").status_code == 200
+    assert _care(client_with_seeded_line, "reinstate", line_id, "r").status_code == 200
 
 
 # --- M-26 line lookup ------------------------------------------------------------
