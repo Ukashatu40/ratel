@@ -72,7 +72,7 @@ Rules:
 - Until live changes (CHG-6) land, a slowed or cut line may keep its old service until its phone next reattaches.
 - A number taken back from a terminated line is quarantined for a period compliance sets. **No value is decided**, so none is written here and code must not default one (decision 4). Any value used to run the demo is a setting labelled demo only, never a built-in default.
 - **Decided 2026-10-23, reasons:** every care action (suspend, reinstate, terminate) carries a reason from a short fixed list plus free text. Starting list: `fraud`, `non_payment`, `customer_request`, `lost_sim`, `other`. @capitanaserdel and @ml-lawarn edit the list before RatelDesk is built.
-- **Decided 2026-10-23, failure in the middle of a transition:** if RatelLink fails, the line's state does not change, the call is retried with the same `Idempotency-Key`, and an alert fires after repeated failure. The retry count is set when W2-11 is built (decision 16 in [DECISIONS_PENDING.md](DECISIONS_PENDING.md)).
+- **Decided 2026-10-23, failure in the middle of a transition:** if RatelLink fails, the line's state does not change, the call is retried with the same `Idempotency-Key`, and an alert fires after repeated failure. **Decided 2026-10-28, the retry:** there is no retry loop inside a request. The caller (RatelDesk, "try again") repeats the call with the same `Idempotency-Key`, and an alert fires after 3 failures in 10 minutes.
 
 ## Plans, bundles, wallet and ledger
 
@@ -105,7 +105,8 @@ says only that usage intervals align to UTC.
 
 ## Payments
 
-- One gateway for the first release. Which one is open (decision 6; candidates and the sandbox requirement are in [DECISIONS_PENDING.md](DECISIONS_PENDING.md) item 11).
+- One gateway for the first release: **Paystack**, in test mode until the project lead says otherwise (decision 6, closed 2026-10-28; see [DECISIONS_PENDING.md](DECISIONS_PENDING.md) item 11). OPay comes after the demo.
+- A payment is final only when Paystack reports it reversed or cancelled, or when it is still unfinished 24 hours after it started. Paystack's `abandoned` (not finished yet) and `failed` (a declined card attempt) leave it open, because the customer can try another card on the same payment. A payment is never credited without a verified success.
 - Credit a payment only after verifying the webhook's signature and re-querying the transaction with the provider.
 - `provider_ref` is unique, so a webhook delivered twice credits once.
 - One payment row per provider transaction, with provider, `amount_kobo`, status and `line_id`.
@@ -207,11 +208,11 @@ the PRD" run through the screens without anyone touching the API by hand, but do
 | 3 | Allowed `id_type` values and the address format | Compliance, RatelBSS developers | Open. Demo values above |
 | 4 | Number quarantine period after termination | Compliance | Open. No value set; code must not default one |
 | 5 | Data retention for customer, usage and call records | Compliance | Open |
-| 6 | Payment provider | Project lead, finance | Open |
+| 6 | Payment provider | Project lead, finance | **Closed 2026-10-28: Paystack** (OPay after the demo; finance still to confirm fees) |
 | 7 | VAT rate | Finance | Open. Demo value above |
 | 8 | `end_reason` values and the meaning of from and to in a call record | Network team, RatelMeter developers | Open |
 | 9 | Reason values for care actions | Customer care, RatelBSS developers | **Decided 2026-10-23** (starting list above) |
-| 10 | What happens when RatelLink fails mid-transition | Project lead, RatelLink developers | **Decided 2026-10-23** (above); retry count at W2-11 |
+| 10 | What happens when RatelLink fails mid-transition | Project lead, RatelLink developers | **Decided 2026-10-23** (above); retry policy decided 2026-10-28 |
 | 11 | Staff roles for RatelDesk | Project lead | **Decided 2026-10-23, demo only** |
 | 12 | SIM re-import with different keys | Project lead, network team | **Decided 2026-10-10**: 409, never overwrite |
 | 13 | Charging for minutes and rollover after the demo | Product owner | **Decided 2026-10-23**: not for the demo |
