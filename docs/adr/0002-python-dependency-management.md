@@ -1,6 +1,6 @@
 # ADR 0002: Plain requirements files with a verified constraints file
 
-- **Status:** Proposed (needs project lead approval)
+- **Status:** Accepted (project lead, 2026-10-28)
 - **Date:** 2026-10-06
 - **Related:** Build Plan "Stack"; [DECISIONS_PENDING.md](../DECISIONS_PENDING.md) #2
 

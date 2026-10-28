@@ -1,6 +1,6 @@
 # ADR 0001: Repository layout follows the Build Plan tree
 
-- **Status:** Proposed (needs project lead approval)
+- **Status:** Accepted (project lead, 2026-10-28)
 - **Date:** 2026-10-06
 - **Deciders:** TODO
 - **Related:** Build Plan "Stack and repo layout"; [DECISIONS_PENDING.md](../DECISIONS_PENDING.md) #1
