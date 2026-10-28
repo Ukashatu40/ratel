@@ -57,6 +57,22 @@ keep their numbers below; this queue is ordered by urgency.
 | 27 | **Outside the software team:** NCC SIM registration and KYC rules, number quarantine period, data retention, VAT rate | Compliance and finance. Ask now; the Week 6 security review and the pilot depend on them. |
 | 28 | Pilot environment (lab or new machines), PostgreSQL, Redis and MongoDB versions, GitHub plan (open items 9, 10, 11) | Decide before Week 7. |
 
+## Waiting on other people (project lead agreed the suggestion, 2026-10-28)
+
+Nothing here is decided. Each row is the project lead's position to take to the owner.
+
+| Question | Owner | Suggested answer |
+| -------- | ----- | ---------------- |
+| `end_reason` values (#26, PRODUCT_RULES 8) | @CaptRaven, @capitanaserdel | `completed`, `busy`, `no_answer`, `cancelled`, `declined`, `failed`, mapped from SIP outcomes. Only the network team can say what Kamailio produces. |
+| Call records in the demo (M-10, M-13) | Project lead, @CaptRaven | Decide by 2026-11-06. With no finished-call source by then, the demo shows data on the line page and calls only as working. |
+| Number quarantine (PRODUCT_RULES 4) | Compliance | Ask now. A setting, no built-in default; a short demo-only value for the demo. |
+| Data retention (PRODUCT_RULES 5) | Compliance | Keep everything and write no deletion code until they answer. |
+| VAT 7.5% (PRODUCT_RULES 7) | Finance | Keep the demo value; ask for confirmation. |
+| KYC rules and `id_type` (PRODUCT_RULES 2, 3) | Compliance | Demo is NIN only, labelled demo-only. |
+| Ki and OPc as 32 hex characters (items 14, 36) | SIM supplier | Ask them to confirm. |
+| Bar or delete on deactivate; re-activation (item 52, M-05) | Lab session 1, section B | Keep delete unless the lab shows the SIM does not attach again. |
+| Backup encryption of `open5gs`, VPN, bss-app host details (items 19, 27) | Network team | Deployment work. |
+
 ## Decisions I made as proposals (change them if you disagree)
 
 | # | Decision | Where | Why |
@@ -74,6 +90,14 @@ keep their numbers below; this queue is ordered by urgency.
 
 | Date | Decision | Where |
 | ---- | -------- | ----- |
+| 2026-10-28 | **Payments: Paystack is the gateway (item 11), and a payment stays open after Paystack's `abandoned` or `failed`.** Both can still be paid on the same payment; it ends only when reversed, cancelled or 24 hours old. Found by the sandbox check against Paystack's test mode. | [PRODUCT_RULES.md](PRODUCT_RULES.md) (Payments) |
+| 2026-10-28 | **Failure mid-transition (item 16, question 6): no retry loop inside a request;** the caller repeats with the same `Idempotency-Key`, and an alert fires after 3 failures in 10 minutes. | [PRODUCT_RULES.md](PRODUCT_RULES.md) |
+| 2026-10-28 | **`Idempotency-Key` (B9, item 35): kept for 24 hours; an opaque string of 1 to 128 characters.** | `bss_lines`, PR #131 |
+| 2026-10-28 | **Staff authentication (B13, question 8): cookie sessions** (scrypt hashes, server-side sessions, roles `agent` and `admin`), built in M-26. | PR #132, [PRODUCT_RULES.md](PRODUCT_RULES.md) |
+| 2026-10-28 | **Live changes (M-06, item 57): not built before the demo.** Changes apply at the next attach (airplane-mode fallback). Revisit after the lab answers section C. | [spike-live-changes.md](spike-live-changes.md) |
+| 2026-10-28 | **Contract behaviours accepted as built (items 40 to 44):** activating an active line with other settings updates it; a data change on a line that is not active answers 404; zero is refused as a speed, 10 Gbit/s is the maximum; `full` and `slow` need both speeds; 503 when voice is asked for and no template is set. Also item 34: a line may take its own released address back during the hold. | `contracts/openapi.yaml` |
+| 2026-10-28 | **ADRs 0001 to 0005 and 0008 are Accepted** (item 23). **The repository stays public for now** (item 22). **The pilot runs on the lab machines; new machines are for production only** (item 28). | `docs/adr/` |
+| 2026-10-28 | **Independent reviews (item 56, M-24, M-30):** the acceptance for lab test SIMs only stands. @CaptRaven reviews money (M-30) with PR #128. No customer key is imported before someone who did not write the code has read the key code. | R-17 |
 | 2026-10-23 | **The PRD does not exist; `docs/PRODUCT_RULES.md` takes its place** once the network lead and the frontend lead approve it. It records the Build Plan's rules, and the project lead's decisions on care-action reasons, failure mid-transition, demo staff roles, charging for minutes and the demo journeys. Demo values (quarantine period, VAT, id type) are marked as such. | [PRODUCT_RULES.md](PRODUCT_RULES.md) |
 | 2026-10-07 | **RatelLink encryption at rest for Ki and OPc** (was open question 1): AES-256-GCM envelope with a key id and per-record associated data, key in an owner-only file outside MongoDB, a replaceable `KeyProvider`, `cryptography` as the one new dependency, no default or fallback key. | [ADR 0006](adr/0006-ki-opc-encryption-at-rest.md) |
 | 2026-10-07 | **How RatelLink verifies API keys** (was open question 2): `Authorization: Bearer <key>`, one key per calling system with an internal `api_key_id`, only a SHA-256 hash stored, generic 401, 90-day lifetime with rotation by key generations, no new auth protocol. | [ADR 0007](adr/0007-api-key-verification-and-rotation.md) |
