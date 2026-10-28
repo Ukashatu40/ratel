@@ -2,20 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import ColumnElement, delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.bss_lines.models.lines import Customer, Line, Number, Plan, Sim
+from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
 from app.bss_lines.models.replay import IdempotentCreate
 from app.bss_lines.models.staff import StaffSession, StaffUser
 from app.bss_lines.repositories.desk_ports import (
+    AttentionRow,
     CustomerRecord,
+    CustomerRow,
     DuplicateCreate,
     DuplicateStaff,
+    HistoryRow,
     LineRecord,
+    LineRow,
     PlanRecord,
     SessionRecord,
     SimRecord,
@@ -334,3 +340,223 @@ class SqlLineSalesRepository:
     def get_line(self, line_id: int) -> LineRecord | None:
         row = self._session.get(Line, line_id)
         return None if row is None else _line(row)
+
+
+def _counted(rows: Iterable[Any]) -> dict[str, int]:
+    """(name, count) rows as a dict."""
+    return {name: int(n) for name, n in rows}
+
+
+def _like(q: str) -> str:
+    """`q` as a contains-pattern. `%`, `_` and the escape character in `q` match themselves."""
+    escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _contains(column: ColumnElement[str] | Any, q: str) -> ColumnElement[bool]:
+    return column.ilike(_like(q), escape="\\")
+
+
+class SqlDeskReadRepository:
+    """RatelDesk's read-only views. Never writes, never commits."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def list_customers(
+        self, *, q: str, kyc_status: str | None, offset: int, limit: int
+    ) -> tuple[list[CustomerRow], int, dict[str, int]]:
+        search = (
+            [
+                or_(
+                    _contains(Customer.name, q),
+                    _contains(Customer.phone, q),
+                    _contains(Customer.email, q),
+                )
+            ]
+            if q
+            else []
+        )
+        counts = _counted(
+            self._session.execute(
+                select(Customer.kyc_status, func.count())
+                .where(*search)
+                .group_by(Customer.kyc_status)
+            )
+        )
+        total = counts.get(kyc_status, 0) if kyc_status else sum(counts.values())
+        lines_count = (
+            select(func.count())
+            .where(Line.customer_id == Customer.customer_id)
+            .correlate(Customer)
+            .scalar_subquery()
+        )
+        statement = select(Customer, lines_count).where(*search)
+        if kyc_status:
+            statement = statement.where(Customer.kyc_status == kyc_status)
+        rows = self._session.execute(
+            statement.order_by(Customer.customer_id.desc()).offset(offset).limit(limit)
+        ).all()
+        return (
+            [
+                CustomerRow(
+                    customer_id=c.customer_id,
+                    name=c.name,
+                    phone=c.phone,
+                    email=c.email,
+                    kyc_status=c.kyc_status,
+                    blocked=c.blocked,
+                    lines_count=int(n),
+                )
+                for c, n in rows
+            ],
+            total,
+            counts,
+        )
+
+    def list_lines(
+        self, *, q: str, state: str | None, offset: int, limit: int
+    ) -> tuple[list[LineRow], int, dict[str, int]]:
+        search = (
+            [
+                or_(
+                    _contains(Line.msisdn, q),
+                    _contains(Line.iccid, q),
+                    _contains(Customer.name, q),
+                    Line.imsi == q,
+                )
+            ]
+            if q
+            else []
+        )
+        counts = _counted(
+            self._session.execute(
+                select(Line.state, func.count())
+                .join(Customer, Customer.customer_id == Line.customer_id)
+                .where(*search)
+                .group_by(Line.state)
+            )
+        )
+        total = counts.get(state, 0) if state else sum(counts.values())
+        statement = (
+            select(Line, Customer.name, Plan.name)
+            .join(Customer, Customer.customer_id == Line.customer_id)
+            .join(Plan, Plan.plan_id == Line.plan_id)
+            .where(*search)
+        )
+        if state:
+            statement = statement.where(Line.state == state)
+        rows = self._session.execute(
+            statement.order_by(Line.line_id.desc()).offset(offset).limit(limit)
+        ).all()
+        return (
+            [
+                LineRow(
+                    line_id=line.line_id,
+                    customer_id=line.customer_id,
+                    customer_name=customer_name,
+                    iccid=line.iccid,
+                    imsi=line.imsi,
+                    msisdn=line.msisdn,
+                    plan_id=line.plan_id,
+                    plan_name=plan_name,
+                    state=line.state,
+                    expires_at=None if line.expires_at is None else _utc(line.expires_at),
+                )
+                for line, customer_name, plan_name in rows
+            ],
+            total,
+            counts,
+        )
+
+    def line_history(
+        self, line_id: int, *, offset: int, limit: int
+    ) -> tuple[list[HistoryRow], int] | None:
+        if self._session.get(Line, line_id) is None:
+            return None
+        total = self._session.scalar(
+            select(func.count()).select_from(LineAudit).where(LineAudit.line_id == line_id)
+        )
+        rows = self._session.scalars(
+            select(LineAudit)
+            .where(LineAudit.line_id == line_id)
+            .order_by(LineAudit.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return (
+            [
+                HistoryRow(
+                    at=_utc(r.created_at),
+                    from_state=r.from_state,
+                    to_state=r.to_state,
+                    actor=r.actor,
+                    reason=r.reason,
+                )
+                for r in rows
+            ],
+            int(total or 0),
+        )
+
+    def line_state_counts(self) -> dict[str, int]:
+        return _counted(
+            self._session.execute(select(Line.state, func.count()).group_by(Line.state))
+        )
+
+    def kyc_pending_count(self) -> int:
+        return int(
+            self._session.scalar(
+                select(func.count()).select_from(Customer).where(Customer.kyc_status == "pending")
+            )
+            or 0
+        )
+
+    def attention(self, limit: int) -> list[AttentionRow]:
+        ran_out_at = (
+            select(func.max(LineAudit.created_at))
+            .where(LineAudit.line_id == Line.line_id, LineAudit.to_state == "out_of_data")
+            .correlate(Line)
+            .scalar_subquery()
+        )
+        out_of_data = self._session.execute(
+            select(Line, Customer.name, func.coalesce(ran_out_at, Line.updated_at))
+            .join(Customer, Customer.customer_id == Line.customer_id)
+            .where(Line.state == "out_of_data")
+            .order_by(func.coalesce(ran_out_at, Line.updated_at), Line.line_id)
+            .limit(limit)
+        ).all()
+        waiting = self._session.scalars(
+            select(Customer)
+            .where(Customer.kyc_status == "pending")
+            .order_by(Customer.created_at, Customer.customer_id)
+            .limit(limit)
+        ).all()
+        items = [
+            AttentionRow(
+                issue="out_of_data",
+                customer_id=line.customer_id,
+                line_id=line.line_id,
+                customer_name=name,
+                msisdn=line.msisdn,
+                since=_utc(since),
+            )
+            for line, name, since in out_of_data
+        ]
+        for customer in waiting:
+            newest = self._session.scalar(
+                select(Line)
+                .where(Line.customer_id == customer.customer_id)
+                .order_by(Line.line_id.desc())
+                .limit(1)
+            )
+            items.append(
+                AttentionRow(
+                    issue="pending_kyc",
+                    customer_id=customer.customer_id,
+                    line_id=None if newest is None else newest.line_id,
+                    customer_name=customer.name,
+                    msisdn=None if newest is None else newest.msisdn,
+                    since=_utc(customer.created_at),
+                )
+            )
+        return items

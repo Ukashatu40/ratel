@@ -7,3 +7,5 @@
 # Remove a line in the same PR that implements the operation.
 meter_get_calls
 
+# RatelDesk's reads and terminate, drafted 2026-10-28. Each line goes when its route lands.
+bss_get_line_calls

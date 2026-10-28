@@ -7,6 +7,7 @@ provides one) the Idempotency store, not a session.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -130,10 +131,13 @@ def _run(
     idempotency_key: str,
     on_exhaustion: OnExhaustion | None = None,
     state_before_suspension: LineState | None = None,
+    also: Callable[[Line], None] | None = None,
 ) -> LifecycleResult:
     """Replay if the key was seen for this line; otherwise do the move.
 
-    On the first call: load, validate, call RatelLink, save, audit, commit.
+    On the first call: load, validate, call RatelLink, save, audit, commit. `also` runs after the
+    audit entry and before the commit, so what it writes is committed with the state change and
+    before the result is remembered: a repeat can never find the result without the side effect.
     """
     replayed = _replay(idempotency, endpoint, idempotency_key, line_id)
     if replayed is not None:
@@ -222,6 +226,8 @@ def _run(
         actor=actor,
         reason=reason_for_audit,
     )
+    if also is not None:
+        also(line)
     lines.commit()
 
     result = LifecycleResult(line.line_id, transition.from_state, transition.to_state)
@@ -341,7 +347,7 @@ def terminate_line(
     after termination is compliance's call (PRODUCT_RULES.md, decision 4); the
     period is undecided, so this function does not touch the number's state.
     """
-    result = _run(
+    return _run(
         lines,
         client,
         idempotency,
@@ -352,14 +358,8 @@ def terminate_line(
         reason=reason,
         reason_text=reason_text,
         idempotency_key=idempotency_key,
+        also=lambda line: lines.retire_sim(line.iccid),
     )
-
-    line = lines.get(line_id)
-    if line is not None and line.state == LineState.TERMINATED.value:
-        lines.retire_sim(line.iccid)
-        lines.commit()
-
-    return result
 
 
 def mark_out_of_data(
