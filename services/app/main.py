@@ -85,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.idempotency_store = RedisIdempotencyStore(
             redis.Redis.from_url(settings.redis_url.get_secret_value())
         )
+
     @contextmanager
     def payment_scope() -> Iterator[PaymentRepositories]:
         # One transaction per step; the step commits on a normal return (refusals included).
