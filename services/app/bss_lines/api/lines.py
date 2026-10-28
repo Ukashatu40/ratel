@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.bss_lines.api.deps import get_db, get_settings, require
+from app.bss_lines.api.deps import get_db, get_settings, now_utc, require
 from app.bss_lines.api.desk import LineOut, line_out
 from app.bss_lines.domain.staff import Permission
 from app.bss_lines.models.lines import Line
@@ -27,6 +27,7 @@ from app.bss_lines.repositories.idempotency import (
     IdempotencyConflictError,
     IdempotencyStore,
 )
+from app.bss_lines.repositories.ports import PaidPlanCheck
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services import line_sales
 from app.bss_lines.services.activation import ActivationError, activate_line
@@ -79,6 +80,17 @@ def get_idempotency_store(request: Request) -> IdempotencyStore:
     if store is None:
         raise HTTPException(status_code=503, detail="Idempotency store not configured")
     return store  # type: ignore[no-any-return]
+
+
+def get_paid_plan_check(
+    request: Request, session: Annotated[Session, Depends(get_db)]
+) -> PaidPlanCheck:
+    """Whether a line has paid for data, answered by BSS: money (wired in create_app)."""
+    factory = getattr(request.app.state, "paid_plan_check", None)
+    if factory is None:
+        # Fail closed: without the answer a line must not be activated.
+        raise HTTPException(status_code=503, detail="Payment check not configured")
+    return factory(session)  # type: ignore[no-any-return]
 
 
 Reason = Literal["fraud", "non_payment", "customer_request", "lost_sim", "other"]
@@ -138,6 +150,7 @@ def _the_line(session: Session, line_id: int) -> LineOut:
 
 @router.post("/lines/{line_id}/activate", response_model=LineOut)
 def activate(
+    request: Request,
     line_id: LineId,
     body: ActivateLineRequest,
     staff: Annotated[StaffRecord, Depends(require(Permission.ACTIVATE_LINE))],
@@ -145,6 +158,7 @@ def activate(
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
     idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
+    paid_plan: Annotated[PaidPlanCheck, Depends(get_paid_plan_check)],
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> LineOut:
     """Activate a line (contract `bss_activate_line`).
@@ -163,6 +177,8 @@ def activate(
             line_id,
             actor=f"staff:{staff.staff_id}",
             idempotency_key=_key(idempotency_key),
+            paid_plan=paid_plan,
+            now=now_utc(request),
         )
     except ActivationLineNotFound:
         raise _not_found() from None

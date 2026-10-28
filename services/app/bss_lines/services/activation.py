@@ -10,6 +10,7 @@ Idempotency store (repositories/idempotency.py), not through a database session.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 from app.bss_lines.domain.state_machine import (
@@ -22,7 +23,7 @@ from app.bss_lines.repositories.idempotency import (
     IdempotencyStore,
     StoredResult,
 )
-from app.bss_lines.repositories.ports import LinesRepository
+from app.bss_lines.repositories.ports import LinesRepository, PaidPlanCheck
 
 
 class RatelLinkClientProto(Protocol):
@@ -81,8 +82,14 @@ def activate_line(
     *,
     actor: str,
     idempotency_key: str,
+    paid_plan: PaidPlanCheck,
+    now: datetime,
 ) -> ActivationResult:
     """Run the sell-to-activate flow for one line.
+
+    Refused unless KYC is verified and a plan has been paid for: the line must hold an allowance
+    with data left (PRODUCT_RULES.md, line lifecycle). How the first plan is paid for at the
+    counter is still open, but every way ends in a purchase, which creates the allowance.
 
     A repeat with the same Idempotency-Key for the same line returns the first
     result and changes nothing (M-26). A repeat for a *different* line raises
@@ -107,6 +114,9 @@ def activate_line(
         transition = validate_transition(LineState(line.state), LineState.ACTIVE)
     except InvalidTransition as exc:
         raise ActivationError(str(exc)) from exc
+
+    if not paid_plan.has_paid_allowance(line.line_id, now):
+        raise ActivationError("No plan has been paid for; activation is refused")
 
     for call in transition.calls:
         if call.endpoint == "/activate":

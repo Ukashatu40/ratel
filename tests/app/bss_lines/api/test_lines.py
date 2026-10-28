@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,9 +14,26 @@ from sqlalchemy.orm import sessionmaker
 from app.bss_lines.api.lines import get_client
 from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
 from app.bss_lines.services.ratel_link_client import RatelLinkError
+from app.bss_money.models.allowance import AllowanceBucket
+from app.bss_money.models.ledger import LedgerEntry, Wallet
 from app.db import Base
 from tests.app.bss_lines.desk_helpers import add_staff, make_app, signed_in
 from tests.app.bss_lines.fakes import FakeRatelLinkClient
+
+
+def _bucket(line_id: int, **changes: object) -> AllowanceBucket:
+    """A paid-for allowance: 1 GB, none used, valid for the next 30 days."""
+    now = datetime.now(UTC)
+    values: dict[str, object] = {
+        "line_id": line_id,
+        "source_kind": "plan",
+        "source_id": 1,
+        "data_bytes_total": 1_000_000_000,
+        "data_bytes_used": 0,
+        "valid_from": now - timedelta(days=1),
+        "valid_to": now + timedelta(days=30),
+    }
+    return AllowanceBucket(**{**values, **changes})
 
 
 @pytest.fixture
@@ -70,6 +88,8 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
             state="awaiting_activation",
         )
         s.add(line)
+        s.flush()
+        s.add(_bucket(line.line_id))
         s.commit()
         line_id = line.line_id
 
@@ -169,6 +189,97 @@ def test_a_missing_sign_in_is_401_before_the_body_is_read(
     anonymous = TestClient(client_with_seeded_line.app)
     response = anonymous.post(f"/v1/lines/1/{action}", json={"reason": "not-on-the-list"})
     assert response.status_code == 401
+
+
+def _replace_allowance(client, **changes: object) -> None:  # type: ignore[no-untyped-def]
+    """Swap the seeded line's allowance for one with `changes`; none at all if changes is None."""
+    with client.app.state.session_factory() as session, session.begin():
+        for bucket in session.query(AllowanceBucket).all():
+            session.delete(bucket)
+        if changes != {"none": True}:
+            session.add(_bucket(client.seeded_line_id, **changes))
+
+
+@pytest.mark.parametrize(
+    "allowance",
+    [
+        {"none": True},
+        {"data_bytes_used": 1_000_000_000},  # all of it used
+        {
+            "valid_from": datetime(2020, 1, 1, tzinfo=UTC),
+            "valid_to": datetime(2020, 2, 1, tzinfo=UTC),
+        },
+    ],
+    ids=["no allowance", "used up", "expired"],
+)
+def test_activate_is_refused_while_no_plan_is_paid_for(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient, allowance: dict
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _replace_allowance(client_with_seeded_line, **allowance)
+    response = _activate(client_with_seeded_line, line_id)
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "conflict"
+    assert "paid" in response.json()["error"]["message"]
+    assert fake_client.calls == []
+    assert _line_state(client_with_seeded_line, line_id) == "awaiting_activation"
+
+
+def test_another_lines_allowance_does_not_count(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _replace_allowance(client_with_seeded_line, none=True)
+    with client_with_seeded_line.app.state.session_factory() as session, session.begin():
+        session.add(_bucket(line_id + 1000))
+    assert _activate(client_with_seeded_line, line_id).status_code == 409
+    assert fake_client.calls == []
+
+
+def test_an_allowance_that_starts_later_counts_as_paid_for(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    soon = datetime.now(UTC) + timedelta(days=1)
+    _replace_allowance(client_with_seeded_line, valid_from=soon, valid_to=soon + timedelta(days=7))
+    assert _activate(client_with_seeded_line, line_id).status_code == 200
+
+
+def test_paying_after_a_refusal_lets_the_same_key_through(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _replace_allowance(client_with_seeded_line, none=True)
+    assert _activate(client_with_seeded_line, line_id, "same").status_code == 409
+    _replace_allowance(client_with_seeded_line)
+    assert _activate(client_with_seeded_line, line_id, "same").status_code == 200
+    assert len(fake_client.calls) == 1
+
+
+def test_the_whole_counter_journey_top_up_buy_the_plan_then_activate(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _replace_allowance(client_with_seeded_line, none=True)
+    assert _activate(client_with_seeded_line, line_id, "a1").status_code == 409  # nothing paid
+
+    with client_with_seeded_line.app.state.session_factory() as session, session.begin():
+        session.add(Wallet(line_id=line_id, balance_kobo=1_000))
+        session.flush()
+        session.add(
+            LedgerEntry(line_id=line_id, amount_kobo=1_000, kind="top_up", reference="pay-1")
+        )
+    bought = client_with_seeded_line.post(
+        f"/v1/lines/{line_id}/purchases",
+        json={"offer_kind": "plan", "offer_id": 1},
+        headers={"Idempotency-Key": "buy-1"},
+    )
+    assert bought.status_code == 200, bought.text
+
+    activated = _activate(client_with_seeded_line, line_id, "a2")
+    assert activated.status_code == 200
+    assert activated.json()["state"] == "active"
+    assert len(fake_client.calls) == 1
 
 
 def test_activate_calls_ratellink_once(
