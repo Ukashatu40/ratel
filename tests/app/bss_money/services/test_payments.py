@@ -248,7 +248,7 @@ def test_a_success_for_another_amount_or_currency_is_not_credited(
     assert (pay.row().status, pay.balance()) == ("failed", None)
 
 
-def test_a_payment_the_customer_has_not_finished_stays_pending_and_is_credited_when_they_do(
+def test_an_unfinished_or_retried_payment_stays_pending_and_is_credited_when_it_succeeds(
     pay: Pay,
 ) -> None:
     pay.start()
