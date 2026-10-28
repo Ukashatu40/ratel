@@ -158,9 +158,7 @@ def test_activate_endpoint_calls_ratellink_once(
 # --- M-26 line lookup ------------------------------------------------------------
 #
 # The 100,000-row database is seeded once per module (scope="module"), with bulk
-# inserts rather than per-row ORM adds. Four lookups (by id, msisdn, iccid, imsi)
-# then prove each is under a second with a large table in place. Per-test seeding
-# would be seven times slower for no extra evidence.
+# inserts rather than per-row ORM adds.
 
 
 @pytest.fixture(scope="module")
@@ -197,7 +195,6 @@ def client_with_100k_lines(tmp_path_factory) -> Iterator[TestClient]:
         s.add_all([customer, plan])
         s.flush()
 
-        # Bulk inserts: 300,000 rows in a few seconds, not per-row ORM adds.
         s.execute(
             insert(Sim),
             [
@@ -237,11 +234,6 @@ def client_with_100k_lines(tmp_path_factory) -> Iterator[TestClient]:
         yield client
 
 
-# The identifiers for the line seeded at n=50000:
-#   line_id  = 50001  (SQLite autoincrement starts at 1)
-#   msisdn   = "234" + f"{50000:010d}" = "2340000050000"
-#   iccid    = "89"  + f"{50000:018d}" = "89000000000000050000"
-#   imsi     = "621" + f"{50000:012d}" = "621000000050000"
 SEEDED_LINE_ID = 50001
 SEEDED_MSISDN = "2340000050000"
 SEEDED_ICCID = "89000000000000050000"
