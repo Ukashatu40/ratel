@@ -136,7 +136,7 @@ def test_an_unreadable_answer_is_a_gateway_error(paystack: Paystack) -> None:
         ("success", Outcome.SUCCESS),
         ("SUCCESS", Outcome.SUCCESS),
         ("failed", Outcome.FAILED),
-        ("abandoned", Outcome.FAILED),
+        ("abandoned", Outcome.PENDING),  # not paid yet; Paystack says this while checkout is open
         ("reversed", Outcome.FAILED),
         ("pending", Outcome.PENDING),
         ("ongoing", Outcome.PENDING),

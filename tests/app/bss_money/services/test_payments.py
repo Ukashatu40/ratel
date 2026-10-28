@@ -248,6 +248,22 @@ def test_a_success_for_another_amount_or_currency_is_not_credited(
     assert (pay.row().status, pay.balance()) == ("failed", None)
 
 
+def test_a_payment_the_customer_has_not_finished_stays_pending_and_is_credited_when_they_do(
+    pay: Pay,
+) -> None:
+    pay.start()
+    reference = pay.reference()
+    now = pay.soon(300)
+
+    pay.gateway.outcome = Outcome.PENDING  # still at the checkout page
+    early = settle_payment(pay.scope, pay.gateway, reference, now)
+    assert (early, pay.row().status, pay.balance()) == (SettleStatus.PENDING, "pending", None)
+
+    pay.gateway.outcome = Outcome.SUCCESS  # they paid
+    later = settle_payment(pay.scope, pay.gateway, reference, now)
+    assert (later, pay.balance()) == (SettleStatus.CREDITED, 150_000)
+
+
 def test_an_unknown_reference_is_acknowledged_and_changes_nothing(pay: Pay) -> None:
     assert settle_payment(pay.scope, pay.gateway, "rp-nobody", T0) is SettleStatus.UNKNOWN
     assert pay.gateway.verified == []
