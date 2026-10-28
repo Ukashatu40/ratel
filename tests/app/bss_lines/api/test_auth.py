@@ -7,9 +7,12 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.bss_lines.api.lines import get_client
 from app.config import Settings
+from app.db import Base
 from app.main import create_app
 from tests.app.bss_lines.fakes import FakeRatelLinkClient
 
@@ -39,9 +42,15 @@ def fake_client() -> FakeRatelLinkClient:
 
 
 @pytest.fixture
-def client(fake_client: FakeRatelLinkClient) -> Iterator[TestClient]:
+def client(tmp_path, fake_client: FakeRatelLinkClient) -> Iterator[TestClient]:
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine, expire_on_commit=False)
+
     app = create_app(Settings(ratel_env="test", bss_api_key=SecretStr(TEST_KEY)))
+    app.state.session_factory = factory
     app.dependency_overrides[get_client] = lambda: fake_client
+
     with TestClient(app) as c:
         yield c
 
@@ -74,9 +83,14 @@ def test_a_write_route_with_the_right_key_reaches_the_route(
     assert response.status_code == 400
 
 
-def test_no_key_configured_is_503(fake_client: FakeRatelLinkClient) -> None:
+def test_no_key_configured_is_503(tmp_path, fake_client: FakeRatelLinkClient) -> None:
     """A local app with no key refuses every write with 503, not 401."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine, expire_on_commit=False)
+
     app = create_app(Settings(ratel_env="test"))
+    app.state.session_factory = factory
     app.dependency_overrides[get_client] = lambda: fake_client
     with TestClient(app) as c:
         response = c.post(
@@ -87,8 +101,13 @@ def test_no_key_configured_is_503(fake_client: FakeRatelLinkClient) -> None:
     assert response.status_code == 503
 
 
-def test_lookup_routes_do_not_require_a_key(fake_client: FakeRatelLinkClient) -> None:
+def test_lookup_routes_do_not_require_a_key(tmp_path, fake_client: FakeRatelLinkClient) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine, expire_on_commit=False)
+
     app = create_app(Settings(ratel_env="test"))
+    app.state.session_factory = factory
     app.dependency_overrides[get_client] = lambda: fake_client
     with TestClient(app) as c:
         assert c.get("/v1/lines/lookup?msisdn=2340000050000").status_code == 404
