@@ -24,7 +24,10 @@ class SqlLinesRepository:
         self._request_commits = request_commits
 
     def get(self, line_id: int) -> Line | None:
-        return self._session.get(Line, line_id)
+        # Held until the transaction ends, so two requests changing the same line take turns and
+        # the second sees the state the first left. `populate_existing` re-reads a line this
+        # session already loaded. (SQLite has no row locks; PostgreSQL does.)
+        return self._session.get(Line, line_id, with_for_update=True, populate_existing=True)
 
     def find_by_identifier(
         self,

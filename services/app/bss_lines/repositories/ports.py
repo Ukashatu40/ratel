@@ -14,7 +14,10 @@ from app.bss_lines.models.lines import Line
 
 class LinesRepository(Protocol):
     def get(self, line_id: int) -> Line | None:
-        """Load a line by its id. None if not found."""
+        """Load a line by its id to change it. None if not found.
+
+        The line is locked until the transaction ends, so two changes to one line take turns.
+        """
         ...
 
     def find_by_identifier(
