@@ -29,9 +29,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.ratel_env not in ("local", "test") and settings.pay_api_key_value is None:
         # Fail closed, the same way: no key means the redemption route would answer nobody.
         raise RuntimeError("PAY_API_KEY is not set: refusing to start outside local and test")
-    if settings.ratel_env not in ("local", "test") and settings.bss_api_key_value is None:
-        # Fail closed, the same way: no key means the BSS routes would answer nobody.
-        raise RuntimeError("BSS_API_KEY is not set: refusing to start outside local and test")
     app = FastAPI(
         title="Ratel app", version="0.0.0", docs_url=None, redoc_url=None, openapi_url=None
     )

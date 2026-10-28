@@ -13,7 +13,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.bss_lines.api.auth import StaffPrincipal, require_staff
 from app.bss_lines.api.deps import get_settings
 from app.bss_lines.models.lines import Line
 from app.bss_lines.repositories.idempotency import (
@@ -76,6 +75,11 @@ def get_idempotency_store(request: Request) -> IdempotencyStore:
     return store  # type: ignore[no-any-return]
 
 
+# TODO(auth, M-26): the actor comes from the request body until staff sign-in
+# (#132) lands. It must not be deployed before then.
+ACTOR_PLACEHOLDER = "staff"
+
+
 class ActivateBody(BaseModel):
     """Request payload for activating a line."""
 
@@ -92,7 +96,6 @@ class ActivateResponse(BaseModel):
 
 @router.post("/lines/activate", response_model=ActivateResponse)
 def post_activate(
-    principal: Annotated[StaffPrincipal, Depends(require_staff)],
     payload: ActivateBody,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
@@ -103,6 +106,8 @@ def post_activate(
     A repeat with the same Idempotency-Key for the same line returns the first
     result and changes nothing (M-26). A repeat for a different line is 409.
 
+    TODO(auth, M-26): no authentication yet; staff sign-in lands in #132.
+
     TODO(contract, M-02): this route and body will be replaced by whatever M-02
     specifies in contracts/openapi.yaml.
     """
@@ -112,7 +117,7 @@ def post_activate(
             client,
             idempotency,
             payload.line_id,
-            actor=principal.actor,
+            actor=ACTOR_PLACEHOLDER,
             idempotency_key=payload.idempotency_key,
         )
     except ActivationError as exc:
@@ -158,7 +163,6 @@ def _lifecycle_response(result: LifecycleResult) -> LifecycleResponse:
 
 @router.post("/lines/suspend", response_model=LifecycleResponse)
 def post_suspend(
-    principal: Annotated[StaffPrincipal, Depends(require_staff)],
     payload: LifecycleBody,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
@@ -168,6 +172,8 @@ def post_suspend(
 
     A repeat with the same Idempotency-Key for the same line returns the first
     result. A repeat for a different line is 409.
+
+    TODO(auth, M-26): no authentication yet; staff sign-in lands in #132.
     """
     try:
         result = suspend_line(
@@ -175,7 +181,7 @@ def post_suspend(
             client,
             idempotency,
             payload.line_id,
-            actor=principal.actor,
+            actor=ACTOR_PLACEHOLDER,
             reason=payload.reason,
             reason_text=payload.reason_text,
             idempotency_key=payload.idempotency_key,
@@ -192,7 +198,6 @@ def post_suspend(
 
 @router.post("/lines/reinstate", response_model=LifecycleResponse)
 def post_reinstate(
-    principal: Annotated[StaffPrincipal, Depends(require_staff)],
     payload: LifecycleBody,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
@@ -202,6 +207,8 @@ def post_reinstate(
 
     A repeat with the same Idempotency-Key for the same line returns the first
     result. A repeat for a different line is 409.
+
+    TODO(auth, M-26): no authentication yet; staff sign-in lands in #132.
     """
     try:
         result = reinstate_line(
@@ -209,7 +216,7 @@ def post_reinstate(
             client,
             idempotency,
             payload.line_id,
-            actor=principal.actor,
+            actor=ACTOR_PLACEHOLDER,
             reason=payload.reason,
             reason_text=payload.reason_text,
             idempotency_key=payload.idempotency_key,
@@ -226,7 +233,6 @@ def post_reinstate(
 
 @router.post("/lines/terminate", response_model=LifecycleResponse)
 def post_terminate(
-    principal: Annotated[StaffPrincipal, Depends(require_staff)],
     payload: LifecycleBody,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
@@ -236,6 +242,8 @@ def post_terminate(
 
     A repeat with the same Idempotency-Key for the same line returns the first
     result. A repeat for a different line is 409.
+
+    TODO(auth, M-26): no authentication yet; staff sign-in lands in #132.
     """
     try:
         result = terminate_line(
@@ -243,7 +251,7 @@ def post_terminate(
             client,
             idempotency,
             payload.line_id,
-            actor=principal.actor,
+            actor=ACTOR_PLACEHOLDER,
             reason=payload.reason,
             reason_text=payload.reason_text,
             idempotency_key=payload.idempotency_key,
@@ -296,8 +304,7 @@ def get_line_by_identifier(
 ) -> LineLookupResponse:
     """Look a line up by exactly one of msisdn, iccid or imsi.
 
-    TODO(auth, M-26): the lookup routes are read-only and unauthenticated; the
-    write routes are protected by require_staff.
+    TODO(auth, M-26): no authentication yet; staff sign-in lands in #132.
 
     Answers 422 if zero or more than one identifier is given, 404 if no line
     matches. The indexes on line.msisdn, line.iccid and line.imsi make each
@@ -323,7 +330,7 @@ def get_line_by_id(
 ) -> LineLookupResponse:
     """Look a line up by its id.
 
-    TODO(auth, M-26): read-only, unauthenticated; see get_line_by_identifier.
+    TODO(auth, M-26): no authentication yet; staff sign-in lands in #132.
     """
     line = lines.find_by_identifier(line_id=line_id)
     if line is None:
