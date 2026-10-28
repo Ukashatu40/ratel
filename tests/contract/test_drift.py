@@ -29,12 +29,6 @@ OPERATIONAL = {
     ("GET", "/healthz"),
     ("GET", "/readyz"),
     ("POST", "/v1/lines/activate"),
-    ("POST", "/v1/lines/suspend"),
-    ("POST", "/v1/lines/reinstate"),
-    ("POST", "/v1/lines/terminate"),
-    # Internal lookup, promoted to the contract as bss_get_line in M-26.
-    # It lives at /v1/lines/lookup... so the paths do not collide with the
-    # contract's GET /v1/lines/{line_id}.
     ("GET", "/v1/lines/lookup"),
     ("GET", "/v1/lines/lookup/{line_id}"),
 }

@@ -637,6 +637,8 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_activate_line
+      security:
+        - StaffSession: []
       summary: Activate a line. First plan paid for and KYC verified.
       description: |
         Calls RatelLink's `/activate` with the plan's speeds and voice true (PRODUCT_RULES.md,
@@ -664,6 +666,8 @@ paths:
                 $ref: "#/components/schemas/Line"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -676,6 +680,8 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_suspend_line
+      security:
+        - StaffSession: []
       summary: Suspend a line with a reason. Customer care action.
       description: |
         `active` or `out_of_data` -> `suspended`. Calls RatelLink's `/deactivate`. Writes an audit
@@ -702,6 +708,8 @@ paths:
                 $ref: "#/components/schemas/Line"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -714,6 +722,8 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_reinstate_line
+      security:
+        - StaffSession: []
       summary: Reinstate a suspended line. Customer care action.
       description: |
         `suspended` -> the state it had before (`state_before_suspension`). Calls RatelLink's
@@ -739,6 +749,49 @@ paths:
                 $ref: "#/components/schemas/Line"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/terminate:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_terminate_line
+      security:
+        - StaffSession: []
+      summary: Terminate a line. Customer care action or end of contract.
+      description: |
+        Any state except `terminated` -> `terminated`. Calls RatelLink's `/deactivate`. The SIM is
+        retired. The line's number is left in `in_use`: quarantine of the number after termination
+        is compliance's call (PRODUCT_RULES.md, decision 4), and the period is undecided, so the
+        number's state does not change here.
+        A line that is already `terminated` answers `409` (invalid transition).
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerminateLineRequest"
+      responses:
+        "200":
+          description: Terminated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -1664,6 +1717,17 @@ components:
           maxLength: 200
           description: Free text recorded in the audit entry.
     ReinstateLineRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          enum: [fraud, non_payment, customer_request, lost_sim, other]
+        reason_text:
+          type: string
+          maxLength: 200
+    TerminateLineRequest:
       type: object
       required: [reason]
       additionalProperties: false

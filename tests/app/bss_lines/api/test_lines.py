@@ -1,4 +1,7 @@
-"""End-to-end test through POST /v1/lines/activate with the fake client."""
+"""End-to-end tests through the BSS line routes with the fake client.
+
+Uses the signed-in staff session from #132 (`tests.app.bss_lines.desk_helpers`).
+"""
 
 from __future__ import annotations
 
@@ -7,14 +10,26 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, insert, select
 from sqlalchemy.orm import sessionmaker
 
 from app.bss_lines.api.lines import get_client
 from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
 from app.db import Base
-from tests.app.bss_lines.desk_helpers import add_staff, make_app, signed_in
+from tests.app.bss_lines.desk_helpers import PASSWORD, add_staff, make_app, signed_in
 from tests.app.bss_lines.fakes import FakeRatelLinkClient
+
+
+def _switch_user(client: TestClient, email: str) -> None:
+    """Sign out, then sign in as `email`, on the same client.
+
+    `signed_in` opens a second TestClient on the same app, and a second lifespan
+    disposes the fixture's engine. Signing in on the fixture's client keeps one
+    app and one lifespan.
+    """
+    client.post("/v1/auth/logout")
+    response = client.post("/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert response.status_code == 200, response.text
 
 
 @pytest.fixture
@@ -82,6 +97,9 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
         yield client
 
 
+# --- activate (internal route, line_id in the body) -------------------------------
+
+
 def test_activate_endpoint_returns_active(client_with_seeded_line) -> None:
     line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
     response = client_with_seeded_line.post(
@@ -93,11 +111,20 @@ def test_activate_endpoint_returns_active(client_with_seeded_line) -> None:
     assert response.json()["line_id"] == line_id
 
 
+def test_activate_endpoint_calls_ratellink_once(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    client_with_seeded_line.post(
+        "/v1/lines/activate",
+        json={"line_id": line_id, "idempotency_key": "key-1"},
+    )
+    assert len(fake_client.calls) == 1
+
+
 def test_the_audit_actor_is_the_signed_in_member_whatever_the_body_says(
     client_with_seeded_line,
 ) -> None:
-    from sqlalchemy import select
-
     line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
     client_with_seeded_line.post(
         "/v1/lines/activate",
@@ -109,13 +136,89 @@ def test_the_audit_actor_is_the_signed_in_member_whatever_the_body_says(
     assert actors == ["staff:1"]  # the signed-in member, not the 999 the body claimed
 
 
+# --- lifecycle routes (contract paths, line_id in the path) ----------------------
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/v1/lines/{line_id}/suspend", {"idempotency_key": "k", "reason": "fraud"}),
+        ("/v1/lines/{line_id}/reinstate", {"idempotency_key": "k", "reason": "fraud"}),
+        ("/v1/lines/{line_id}/terminate", {"idempotency_key": "k", "reason": "fraud"}),
+    ],
+)
+def test_a_lifecycle_route_refuses_an_unknown_line(
+    client_with_seeded_line, path: str, body: dict
+) -> None:
+    """A line that doesn't exist answers 400 from the service (line not found)."""
+    email = add_staff(client_with_seeded_line.app.state.session_factory, "admin")
+    _switch_user(client_with_seeded_line, email)
+    response = client_with_seeded_line.post(path.format(line_id=999999), json=body)
+    assert response.status_code == 400
+    assert "not found" in response.text
+
+
+def test_suspend_on_the_contract_path_suspends_and_audits(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    # Activate first so the line is in `active`, the only state suspend accepts.
+    client_with_seeded_line.post(
+        "/v1/lines/activate",
+        json={"line_id": line_id, "idempotency_key": "key-1"},
+    )
+    response = client_with_seeded_line.post(
+        f"/v1/lines/{line_id}/suspend",
+        json={"idempotency_key": "k-suspend", "reason": "fraud"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["from_state"] == "active"
+    assert body["to_state"] == "suspended"
+    assert body["line_id"] == line_id
+
+    factory = client_with_seeded_line.app.state.session_factory
+    with factory() as session:
+        reasons = session.scalars(
+            select(LineAudit.reason).where(LineAudit.to_state == "suspended")
+        ).all()
+    assert reasons == ["fraud"]
+    assert len(fake_client.calls) == 2
+
+
+def test_terminate_on_the_contract_path_retires_the_sim(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    client_with_seeded_line.post(
+        "/v1/lines/activate",
+        json={"line_id": line_id, "idempotency_key": "key-1"},
+    )
+    email = add_staff(client_with_seeded_line.app.state.session_factory, "admin")
+    _switch_user(client_with_seeded_line, email)
+    response = client_with_seeded_line.post(
+        f"/v1/lines/{line_id}/terminate",
+        json={"idempotency_key": "k-terminate", "reason": "non_payment"},
+    )
+    assert response.status_code == 200
+    assert response.json()["to_state"] == "terminated"
+
+    factory = client_with_seeded_line.app.state.session_factory
+    with factory() as session:
+        sim = session.get(Sim, "8923400000000000001")
+        assert sim is not None and sim.state == "retired"
+
+
+# --- auth on the write routes ----------------------------------------------------
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [
         ("post", "/v1/lines/activate"),
-        ("post", "/v1/lines/suspend"),
-        ("post", "/v1/lines/reinstate"),
-        ("post", "/v1/lines/terminate"),
+        ("post", "/v1/lines/1/suspend"),
+        ("post", "/v1/lines/1/reinstate"),
+        ("post", "/v1/lines/1/terminate"),
         ("get", "/v1/lines/lookup?msisdn=2348000000001"),
         ("get", "/v1/lines/lookup/1"),
     ],
@@ -134,25 +237,22 @@ def test_care_may_not_terminate_a_line_but_an_admin_may(
     client_with_seeded_line, fake_client: FakeRatelLinkClient
 ) -> None:
     line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
-    body = {"line_id": line_id, "idempotency_key": "k-t", "reason": "fraud"}
-    refused = client_with_seeded_line.post("/v1/lines/terminate", json=body)
-    assert refused.status_code == 403
-    assert fake_client.calls == []
-
-    app = client_with_seeded_line.app
-    admin = signed_in(app, add_staff(app.state.session_factory, "admin"))
-    assert admin.post("/v1/lines/terminate", json=body).status_code == 200
-
-
-def test_activate_endpoint_calls_ratellink_once(
-    client_with_seeded_line, fake_client: FakeRatelLinkClient
-) -> None:
-    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
     client_with_seeded_line.post(
         "/v1/lines/activate",
         json={"line_id": line_id, "idempotency_key": "key-1"},
     )
-    assert len(fake_client.calls) == 1
+    calls_before = len(fake_client.calls)
+    body = {"idempotency_key": "k-t", "reason": "fraud"}
+
+    refused = client_with_seeded_line.post(f"/v1/lines/{line_id}/terminate", json=body)
+    assert refused.status_code == 403
+    assert len(fake_client.calls) == calls_before
+
+    email = add_staff(client_with_seeded_line.app.state.session_factory, "admin")
+    _switch_user(client_with_seeded_line, email)
+    assert (
+        client_with_seeded_line.post(f"/v1/lines/{line_id}/terminate", json=body).status_code == 200
+    )
 
 
 # --- M-26 line lookup ------------------------------------------------------------
