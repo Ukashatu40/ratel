@@ -1,8 +1,7 @@
-import { Navigate, RouterProvider, createBrowserRouter, useLocation } from "react-router";
+import { RouterProvider, createBrowserRouter } from "react-router";
 import { AppShell } from "./components/layout/AppShell";
 import { RequireAuth } from "./components/layout/RequireAuth";
-import { useAuth } from "./lib/authContext";
-import { SignInScreen } from "./screens/SignInScreen"; // your existing screen (named export)
+import { LoginRoute } from "./components/layout/LoginRoute";
 import DashboardScreen from "./screens/dashboard/DashboardScreen";
 import CustomersScreen from "./screens/customers/CustomersScreen";
 import LineDetailScreen from "./screens/line-detail/LineDetailScreen";
@@ -14,14 +13,6 @@ import StaffScreen from "./screens/staff/StaffScreen";
 import StockScreen from "./screens/stock/StockScreen";
 import WalletScreen from "./screens/wallet/WalletScreen";
 import PlaceholderScreen from "./screens/PlaceholderScreen";
-
-// Connects your SignInScreen to the router: after sign-in, go where the visitor wanted, or to the dashboard.
-function LoginRoute() {
-  const { user, signIn } = useAuth();
-  const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
-  if (user) return <Navigate to={from} replace />; // already signed in (or just signed in): go on
-  return <SignInScreen onLoginSuccess={signIn} />;
-}
 
 // URL -> screen map. Everything except /login sits behind RequireAuth.
 const router = createBrowserRouter([

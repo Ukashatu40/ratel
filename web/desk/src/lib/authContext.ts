@@ -1,7 +1,12 @@
 import { createContext, useContext } from "react";
 
 export interface AuthUser { name: string; email: string; role: "Customer Care" | "Super Admin" }
-export interface AuthValue { user: AuthUser | null; signIn: (email: string) => void; signOut: () => void }
+export interface AuthValue {
+  user: AuthUser | null;
+  ready: boolean; // false until we know whether a session exists (the page just loaded)
+  signIn: (email: string, password: string) => Promise<void>; // throws ApiError when refused
+  signOut: () => Promise<void>;
+}
 
 export const AuthContext = createContext<AuthValue | null>(null);
 

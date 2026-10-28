@@ -41,7 +41,7 @@ function Header() {
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search phone number, ICCID or IMSI" aria-label="Search lines" />
       </form>
       <span className="header__chip">WAT {formatClock(now)}</span>
-      <button className="header__account" onClick={signOut} title="Sign out">
+      <button className="header__account" onClick={() => void signOut()} title="Sign out">
         <div className="header__avatar">{initials(user.name)}</div>
         <div className="header__user"><b>{user.name}</b><span>{user.role}</span></div>
       </button>
