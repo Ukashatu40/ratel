@@ -9,7 +9,7 @@ Oct 7):
 | ---- | ----- |
 | Repository | `Ukashatu40/ratel`, **public** (see "Repository visibility" below) |
 | Collaborators | All six people have write access; @Ukashatu40 is admin |
-| Ruleset `main-protection` | Applied, active, no bypass actors. Squash only, 1 approval, code-owner review, last-push approval, conversations resolved, linear history, required checks `ci-success`, `critical-review-gate`, `secret-scan` |
+| Ruleset `main-protection` | Applied, active, no bypass actors. Squash only, **0 approvals** (ADR 0011, 2026-10-28), conversations resolved, linear history, required checks `ci-success`, `secret-scan` |
 | Labels | Applied (36). This change adds `type:onboarding`, `area:repository` and `good first issue`: run `scripts/github/setup_labels.sh` again (it is safe to repeat) |
 | Labels | Applied (36) |
 | `CODEOWNERS` | Active, with real usernames (this change fixes the single-owner deadlock) |
@@ -25,7 +25,7 @@ Oct 7):
 | ---- | ------- | -------- |
 | `.github/workflows/ci.yml` | lint, types, tests, contract, config checks, PR title/branch check, aggregate `ci-success` | Runs once pushed |
 | `.github/workflows/security.yml` | `secret-scan` (gitleaks, pinned and checksum-verified), dependency audits | Runs once pushed |
-| `.github/workflows/critical-review-gate.yml` | Two approvals on RatelLink and BSS money paths | Runs once pushed |
+| `.github/workflows/critical-review-gate.yml` | Two approvals on RatelLink and BSS money paths. **Information only since 2026-10-28**, not a required check | Runs once pushed |
 | `.github/CODEOWNERS` | Review routing. Every rule has two or more owners (a test enforces it) | Active |
 | `.github/critical-paths.txt`, `critical-reviewers.txt` | Paths needing two reviewers; named required reviewers (@Ukashatu40, @CaptRaven) | Active once merged |
 | `.github/rulesets/main-protection.json` | Branch rules for `main` | Applied |
@@ -69,19 +69,23 @@ So the repository stays public for now, and the sensitive document is out of it:
 ## What the ruleset enforces
 
 `main-protection` (target: default branch, no bypass actors): blocks deletion and force pushes;
-requires linear history; requires a pull request with **1 approval**, code-owner review, approval of
-the latest push by someone other than the pusher, stale approvals dismissed on push, review
-conversations resolved, **squash merge only**; requires status checks `ci-success`,
-`critical-review-gate`, `secret-scan` with the branch up to date.
+requires linear history; requires a pull request with **no approval** (the project lead decides what merges,
+[ADR 0011](adr/0011-sole-approver-for-merges.md)), review conversations resolved, **squash merge
+only**; requires status checks `ci-success` and `secret-scan` with the branch up to date.
 
-Not in the ruleset because GitHub cannot express it: "2 reviewers for these paths". That is the
-`critical-review-gate` workflow, see [ADR 0004](adr/0004-two-reviewer-enforcement.md).
+Until 2026-10-28 it required one approval, code-owner review, approval of the latest push and the
+`critical-review-gate` check. To turn that back on, restore those lines from Git history
+(`.github/rulesets/main-protection.json`) and run `scripts/github/apply_ruleset.sh`.
+
+"2 reviewers for these paths" is the `critical-review-gate` workflow, see
+[ADR 0004](adr/0004-two-reviewer-enforcement.md). It still runs and is red on a RatelLink or money
+PR with fewer than two approvals, but it does not block a merge.
 
 **Caveats. Checked on PR #10 (Oct 7):** the gate re-ran on `pull_request_review`, failed after the first approval and turned green after the second without a re-push, so that works. Still open:
 
 - The ruleset has **no bypass actors**: not even admins can merge around it. Decide whether you want an emergency bypass for the project lead (TODO, see [DECISIONS_PENDING.md](DECISIONS_PENDING.md)).
 - Rulesets on **private** repositories need a paid GitHub plan. On a free private repo, branch protection is not available at all (see "Repository visibility").
-- **Merging a change that touches `/.github/` or the gate files.** Those need an approval from a code owner other than the author. If the project lead writes it, @capitanaserdel (or @CaptRaven for the gate files) approves. If the lead is the only possible approver the PR cannot merge, because the ruleset has no bypass. That is by design.
+- **Merging a change that touches `/.github/` or the gate files** needs no approval since 2026-10-28 (ADR 0011). Take extra care: this is the file that decides what can reach `main`.
 
 ### Fallback: classic branch protection
 
