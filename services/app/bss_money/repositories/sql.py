@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import case, exists, func, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
@@ -24,7 +24,7 @@ from app.bss_lines.models.lines import Bundle as BundleRow
 from app.bss_lines.models.lines import Line
 from app.bss_lines.models.lines import Plan as PlanRow
 from app.bss_money.domain.allowance import Bucket
-from app.bss_money.domain.entries import Posting
+from app.bss_money.domain.entries import EntryKind, Posting
 from app.bss_money.domain.plans import Bundle as BundleOffer
 from app.bss_money.domain.plans import OnExhaustion, Plan
 from app.bss_money.domain.purchase import OfferKind
@@ -40,6 +40,9 @@ from app.bss_money.repositories.ports import (
     BalanceOutOfRange,
     DuplicateEntry,
     DuplicateKey,
+    LedgerRow,
+    LineUsageRow,
+    MoneyMoved,
     NewVoucher,
     RatedLine,
     StoredEntry,
@@ -529,3 +532,133 @@ class SqlBundleCatalog:
         # TODO(M-25): the bundle table has no state column yet, so every bundle is on sale.
         rows = self._session.scalars(select(BundleRow).order_by(BundleRow.bundle_id))
         return [_bundle_offer(row) for row in rows]
+
+
+class SqlMoneyReadRepository:
+    """Read-only views for RatelDesk: wallets, the ledger and a line's usage."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def line_imsi(self, line_id: int) -> str | None:
+        return self._session.scalar(select(Line.imsi).where(Line.line_id == line_id))
+
+    def wallet_figures(self, line_id: int) -> tuple[int, int]:
+        balance = self._session.scalar(select(Wallet.balance_kobo).where(Wallet.line_id == line_id))
+        total = self._session.scalar(
+            select(func.coalesce(func.sum(LedgerEntry.amount_kobo), 0)).where(
+                LedgerEntry.line_id == line_id
+            )
+        )
+        return int(balance or 0), int(total or 0)
+
+    def ledger_page(
+        self, *, line_id: int | None, kind: str | None, offset: int, limit: int
+    ) -> tuple[list[LedgerRow], int]:
+        conditions = []
+        if line_id is not None:
+            conditions.append(LedgerEntry.line_id == line_id)
+        if kind:
+            conditions.append(LedgerEntry.kind == kind)
+        total = self._session.scalar(
+            select(func.count()).select_from(LedgerEntry).where(*conditions)
+        )
+        rows = self._session.execute(
+            select(LedgerEntry, Line.msisdn)
+            .join(Line, Line.line_id == LedgerEntry.line_id)
+            .where(*conditions)
+            .order_by(LedgerEntry.entry_id.desc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        return (
+            [
+                LedgerRow(
+                    entry_id=e.entry_id,
+                    line_id=e.line_id,
+                    msisdn=msisdn,
+                    amount_kobo=e.amount_kobo,
+                    kind=e.kind,
+                    reference=e.reference,
+                    created_at=_utc(e.created_at),
+                )
+                for e, msisdn in rows
+            ],
+            int(total or 0),
+        )
+
+    def ledger_kind_counts(self, line_id: int | None) -> dict[str, int]:
+        statement = select(LedgerEntry.kind, func.count()).group_by(LedgerEntry.kind)
+        if line_id is not None:
+            statement = statement.where(LedgerEntry.line_id == line_id)
+        return {kind: int(n) for kind, n in self._session.execute(statement)}
+
+    def wallet_totals(self) -> tuple[int, int]:
+        total, holding = self._session.execute(
+            select(
+                func.coalesce(func.sum(Wallet.balance_kobo), 0),
+                func.count(case((Wallet.balance_kobo > 0, 1))),
+            )
+        ).one()
+        return int(total), int(holding)
+
+    def moved_between(self, start: datetime, end: datetime) -> MoneyMoved:
+        money_in, money_out, entries = self._session.execute(
+            select(
+                func.coalesce(
+                    func.sum(case((LedgerEntry.amount_kobo > 0, LedgerEntry.amount_kobo), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((LedgerEntry.amount_kobo < 0, -LedgerEntry.amount_kobo), else_=0)
+                    ),
+                    0,
+                ),
+                func.count(),
+            ).where(LedgerEntry.created_at >= start, LedgerEntry.created_at < end)
+        ).one()
+        return MoneyMoved(int(money_in), int(money_out), int(entries))
+
+    def topped_up_between(self, start: datetime, end: datetime) -> int:
+        return int(
+            self._session.scalar(
+                select(func.coalesce(func.sum(LedgerEntry.amount_kobo), 0)).where(
+                    LedgerEntry.kind == EntryKind.TOP_UP.value,
+                    LedgerEntry.created_at >= start,
+                    LedgerEntry.created_at < end,
+                )
+            )
+            or 0
+        )
+
+    def line_usage(
+        self,
+        imsi: str,
+        *,
+        start: datetime,
+        end: datetime,
+        before: datetime | None,
+        limit: int,
+    ) -> list[LineUsageRow]:
+        rated = exists().where(UsageRating.usage_record_id == UsageRecordModel.id)
+        statement = select(UsageRecordModel, rated).where(
+            UsageRecordModel.imsi == imsi,
+            UsageRecordModel.period_start >= start,
+            UsageRecordModel.period_start <= end,
+        )
+        if before is not None:
+            statement = statement.where(UsageRecordModel.period_start < before)
+        rows = self._session.execute(
+            statement.order_by(UsageRecordModel.period_start.desc()).limit(limit)
+        ).all()
+        return [
+            LineUsageRow(
+                period_start=_utc(r.period_start),
+                period_end=_utc(r.period_end),
+                bytes_up=r.bytes_up,
+                bytes_down=r.bytes_down,
+                rated=bool(is_rated),
+            )
+            for r, is_rated in rows
+        ]

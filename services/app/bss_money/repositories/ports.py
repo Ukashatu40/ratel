@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.bss_lines.domain.state_machine import LineState
+from app.bss_lines.repositories.desk_ports import DeskReadRepository
 from app.bss_money.domain.allowance import Bucket
 from app.bss_money.domain.entries import Posting
 from app.bss_money.domain.plans import Bundle, Plan
@@ -283,3 +284,90 @@ class BundleCatalog(Protocol):
 
 CatalogScope = Callable[[], AbstractContextManager[BundleCatalog]]
 """Opens one read-only transaction and yields the catalog."""
+
+
+@dataclass(frozen=True)
+class LedgerRow:
+    entry_id: int
+    line_id: int
+    msisdn: str
+    amount_kobo: int
+    kind: str
+    reference: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class LineUsageRow:
+    period_start: datetime
+    period_end: datetime
+    bytes_up: int
+    bytes_down: int
+    rated: bool
+
+
+@dataclass(frozen=True)
+class MoneyMoved:
+    """Money that moved in a stretch of time. Both figures are positive kobo."""
+
+    in_kobo: int
+    out_kobo: int
+    entries: int
+
+
+class MoneyReadRepository(Protocol):
+    """Read-only views of the wallets, the ledger and usage, for RatelDesk. Never writes."""
+
+    def line_imsi(self, line_id: int) -> str | None:
+        """The line's IMSI, or None if there is no such line."""
+        ...
+
+    def wallet_figures(self, line_id: int) -> tuple[int, int]:
+        """The wallet's balance and the sum of the line's entries. Zero for both if none."""
+        ...
+
+    def ledger_page(
+        self, *, line_id: int | None, kind: str | None, offset: int, limit: int
+    ) -> tuple[list[LedgerRow], int]:
+        """Newest first, with the total matching."""
+        ...
+
+    def ledger_kind_counts(self, line_id: int | None) -> dict[str, int]:
+        """Entries per kind for the line (or all lines), ignoring any kind filter."""
+        ...
+
+    def wallet_totals(self) -> tuple[int, int]:
+        """The sum of every balance and the number of wallets holding more than zero."""
+        ...
+
+    def moved_between(self, start: datetime, end: datetime) -> MoneyMoved:
+        """Entries made at or after `start` and before `end`."""
+        ...
+
+    def topped_up_between(self, start: datetime, end: datetime) -> int:
+        """Kobo of `top_up` entries made at or after `start` and before `end`."""
+        ...
+
+    def line_usage(
+        self,
+        imsi: str,
+        *,
+        start: datetime,
+        end: datetime,
+        before: datetime | None,
+        limit: int,
+    ) -> list[LineUsageRow]:
+        """Records with `start <= period_start <= end` (and before `before`), newest first."""
+        ...
+
+
+@dataclass(frozen=True)
+class DeskReads:
+    """What RatelDesk's read-only money screens use, on one transaction."""
+
+    money: MoneyReadRepository
+    lines: DeskReadRepository
+
+
+DeskReadScope = Callable[[], AbstractContextManager[DeskReads]]
+"""Opens one read-only transaction and yields the views."""

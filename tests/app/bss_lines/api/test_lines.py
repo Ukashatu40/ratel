@@ -146,7 +146,7 @@ def test_a_body_that_names_an_actor_is_refused(client_with_seeded_line) -> None:
         ("post", "/v1/lines/1/activate"),
         ("post", "/v1/lines/1/suspend"),
         ("post", "/v1/lines/1/reinstate"),
-        ("post", "/v1/lines/terminate"),
+        ("post", "/v1/lines/1/terminate"),
         ("get", "/v1/lines/lookup?msisdn=2348000000001"),
         ("get", "/v1/lines/lookup/1"),
     ],
@@ -155,33 +155,20 @@ def test_the_line_routes_refuse_a_caller_who_is_not_signed_in(
     client_with_seeded_line, fake_client: FakeRatelLinkClient, method: str, path: str
 ) -> None:
     anonymous = TestClient(client_with_seeded_line.app)
-    body = {"line_id": 1, "idempotency_key": "k", "reason": "fraud"}
-    response = getattr(anonymous, method)(path, **({"json": body} if method == "post" else {}))
+    response = getattr(anonymous, method)(
+        path, **({"json": {"reason": "fraud"}} if method == "post" else {})
+    )
     assert response.status_code == 401
     assert fake_client.calls == []  # RatelLink was not called
 
 
-@pytest.mark.parametrize("action", ["activate", "suspend", "reinstate"])
+@pytest.mark.parametrize("action", ["activate", "suspend", "reinstate", "terminate"])
 def test_a_missing_sign_in_is_401_before_the_body_is_read(
     client_with_seeded_line, action: str
 ) -> None:
     anonymous = TestClient(client_with_seeded_line.app)
     response = anonymous.post(f"/v1/lines/1/{action}", json={"reason": "not-on-the-list"})
     assert response.status_code == 401
-
-
-def test_care_may_not_terminate_a_line_but_an_admin_may(
-    client_with_seeded_line, fake_client: FakeRatelLinkClient
-) -> None:
-    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
-    body = {"line_id": line_id, "idempotency_key": "k-t", "reason": "fraud"}
-    refused = client_with_seeded_line.post("/v1/lines/terminate", json=body)
-    assert refused.status_code == 403
-    assert fake_client.calls == []
-
-    app = client_with_seeded_line.app
-    admin = signed_in(app, add_staff(app.state.session_factory, "admin"))
-    assert admin.post("/v1/lines/terminate", json=body).status_code == 200
 
 
 def test_activate_calls_ratellink_once(
@@ -366,11 +353,92 @@ def test_reinstating_a_line_whose_stored_state_is_wrong_is_500_and_not_a_retry(
     assert fake_client.calls == []
 
 
-def test_an_agent_may_suspend_and_reinstate_but_not_terminate(client_with_seeded_line) -> None:
+def _admin(client):  # type: ignore[no-untyped-def]
+    app = client.app
+    return signed_in(app, add_staff(app.state.session_factory, "admin"))
+
+
+def _sim_state(client, iccid: str = "8923400000000000001") -> str:  # type: ignore[no-untyped-def]
+    with client.app.state.session_factory() as session:
+        return session.get(Sim, iccid).state
+
+
+def test_an_agent_may_suspend_and_reinstate_but_not_terminate(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
     line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
     _activate(client_with_seeded_line, line_id)
     assert _care(client_with_seeded_line, "suspend", line_id, "s").status_code == 200
     assert _care(client_with_seeded_line, "reinstate", line_id, "r").status_code == 200
+    calls_before = len(fake_client.calls)
+    refused = _care(client_with_seeded_line, "terminate", line_id, "t")
+    assert refused.status_code == 403
+    assert len(fake_client.calls) == calls_before
+    assert _line_state(client_with_seeded_line, line_id) == "active"
+    assert _sim_state(client_with_seeded_line) == "in_use"
+
+
+def test_an_admin_terminates_a_line_and_its_sim_is_retired(client_with_seeded_line) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+    admin = _admin(client_with_seeded_line)
+    response = _care(admin, "terminate", line_id, "t1", "lost_sim", reason_text="stolen")
+    assert response.status_code == 200
+    assert response.json()["state"] == "terminated"
+    assert _line_state(client_with_seeded_line, line_id) == "terminated"
+    assert _sim_state(client_with_seeded_line) == "retired"
+    with client_with_seeded_line.app.state.session_factory() as session:
+        last = session.query(LineAudit).order_by(LineAudit.id.desc()).first()
+        assert (last.from_state, last.to_state) == ("active", "terminated")
+        assert last.reason == "lost_sim: stolen"
+        assert last.actor.startswith("staff:")
+
+
+def test_terminating_twice_with_the_same_key_answers_the_first_result(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+    admin = _admin(client_with_seeded_line)
+    first = _care(admin, "terminate", line_id, "same")
+    calls = len(fake_client.calls)
+    second = _care(admin, "terminate", line_id, "same")
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert second.json() == first.json()
+    assert len(fake_client.calls) == calls
+
+
+def test_a_terminated_line_cannot_be_terminated_again(client_with_seeded_line) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+    admin = _admin(client_with_seeded_line)
+    assert _care(admin, "terminate", line_id, "t1").status_code == 200
+    again = _care(admin, "terminate", line_id, "t2")
+    assert again.status_code == 409
+    assert again.json()["error"]["code"] == "conflict"
+
+
+def test_terminating_an_unknown_line_is_404(client_with_seeded_line) -> None:
+    admin = _admin(client_with_seeded_line)
+    assert _care(admin, "terminate", 99999, "t").status_code == 404
+
+
+def test_when_ratellink_fails_terminate_changes_nothing_and_the_retry_goes_through(
+    client_with_seeded_line, fake_client: FakeRatelLinkClient
+) -> None:
+    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
+    _activate(client_with_seeded_line, line_id)
+    admin = _admin(client_with_seeded_line)
+    fake_client.fail_on_deactivate = RatelLinkError("secret detail 621000000000001", status=503)
+    failed = _care(admin, "terminate", line_id, "t")
+    assert failed.status_code == 502
+    assert "621000000000001" not in failed.text
+    assert _line_state(client_with_seeded_line, line_id) == "active"
+    assert _sim_state(client_with_seeded_line) == "in_use"
+
+    fake_client.fail_on_deactivate = None
+    assert _care(admin, "terminate", line_id, "t").status_code == 200
+    assert _sim_state(client_with_seeded_line) == "retired"
 
 
 # --- M-26 line lookup ------------------------------------------------------------

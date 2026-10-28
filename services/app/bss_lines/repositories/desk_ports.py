@@ -185,3 +185,79 @@ class LineSalesRepository(Protocol):
         ...
 
     def get_line(self, line_id: int) -> LineRecord | None: ...
+
+
+@dataclass(frozen=True)
+class CustomerRow:
+    """A customer in a list: no NIN, no address."""
+
+    customer_id: int
+    name: str
+    phone: str
+    email: str
+    kyc_status: str
+    blocked: bool
+    lines_count: int
+
+
+@dataclass(frozen=True)
+class LineRow:
+    line_id: int
+    customer_id: int
+    customer_name: str
+    iccid: str
+    imsi: str
+    msisdn: str
+    plan_id: int
+    plan_name: str
+    state: str
+    expires_at: datetime | None
+
+
+@dataclass(frozen=True)
+class HistoryRow:
+    at: datetime
+    from_state: str
+    to_state: str
+    actor: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class AttentionRow:
+    issue: str  # "out_of_data" | "pending_kyc"
+    customer_id: int
+    line_id: int | None
+    customer_name: str
+    msisdn: str | None
+    since: datetime
+
+
+class DeskReadRepository(Protocol):
+    """Read-only views for RatelDesk's lists, a line's history and the front page."""
+
+    def list_customers(
+        self, *, q: str, kyc_status: str | None, offset: int, limit: int
+    ) -> tuple[list[CustomerRow], int, dict[str, int]]:
+        """A page, the total matching, and the count per `kyc_status` for `q` alone."""
+        ...
+
+    def list_lines(
+        self, *, q: str, state: str | None, offset: int, limit: int
+    ) -> tuple[list[LineRow], int, dict[str, int]]:
+        """A page, the total matching, and the count per `state` for `q` alone."""
+        ...
+
+    def line_history(
+        self, line_id: int, *, offset: int, limit: int
+    ) -> tuple[list[HistoryRow], int] | None:
+        """Newest first, with the total. None if there is no such line."""
+        ...
+
+    def line_state_counts(self) -> dict[str, int]: ...
+
+    def kyc_pending_count(self) -> int: ...
+
+    def attention(self, limit: int) -> list[AttentionRow]:
+        """Up to `limit` of each issue, the longest waiting first."""
+        ...

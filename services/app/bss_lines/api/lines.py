@@ -1,8 +1,8 @@
-"""FastAPI endpoints for the line lifecycle: activate, suspend, reinstate (contract) and terminate.
+"""FastAPI endpoints for the line lifecycle: activate, suspend, reinstate and terminate.
 
-`/lines/{line_id}/activate|suspend|reinstate` are the contract's `bss_activate_line`,
-`bss_suspend_line` and `bss_reinstate_line`. Terminate and the lookups are internal to RatelBSS and
-not in contracts/openapi.yaml yet.
+`/lines/{line_id}/activate|suspend|reinstate|terminate` are the contract's `bss_activate_line`,
+`bss_suspend_line`, `bss_reinstate_line` and `bss_terminate_line`. The lookups are internal to
+RatelBSS and not in contracts/openapi.yaml.
 
 Every route needs a signed-in staff member whose role allows the action (`api/deps.py`), and the
 audit `actor` is taken from that session, never from the request.
@@ -33,7 +33,6 @@ from app.bss_lines.services.activation import ActivationError, activate_line
 from app.bss_lines.services.activation import LineNotFoundError as ActivationLineNotFound
 from app.bss_lines.services.lifecycle import (
     LifecycleError,
-    LifecycleResult,
     LineNotFoundError,
     StoredDataError,
     reinstate_line,
@@ -252,64 +251,38 @@ def reinstate(
     return _the_line(session, line_id)
 
 
-# Terminate is not in the contract yet, so it keeps its internal body-based route.
-class LifecycleBody(BaseModel):
-    """Request payload for terminate."""
-
-    line_id: int
-    idempotency_key: str = Field(min_length=1, max_length=120)
-    reason: str = Field(min_length=1, max_length=40)
-    reason_text: str | None = Field(default=None, max_length=200)
-
-
-class LifecycleResponse(BaseModel):
-    """Response returned after a lifecycle change."""
-
-    line_id: int
-    from_state: str
-    to_state: str
-
-
-def _lifecycle_response(result: LifecycleResult) -> LifecycleResponse:
-    return LifecycleResponse(
-        line_id=result.line_id,
-        from_state=result.from_state.value,
-        to_state=result.to_state.value,
-    )
-
-
-@router.post("/lines/terminate", response_model=LifecycleResponse)
-def post_terminate(
-    payload: LifecycleBody,
+@router.post("/lines/{line_id}/terminate", response_model=LineOut)
+def terminate(
+    line_id: LineId,
+    body: CareActionRequest,
     staff: Annotated[StaffRecord, Depends(require(Permission.TERMINATE_LINE))],
+    session: Db,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
     idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
-) -> LifecycleResponse:
-    """Terminate a line.
-
-    A repeat with the same Idempotency-Key for the same line returns the first
-    result. A repeat for a different line is 409.
-    """
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> LineOut:
+    """Terminate a line, admin only (contract `bss_terminate_line`). The SIM is retired with it."""
     try:
-        result = terminate_line(
+        terminate_line(
             lines,
             client,
             idempotency,
-            payload.line_id,
+            line_id,
             actor=f"staff:{staff.staff_id}",
-            reason=payload.reason,
-            reason_text=payload.reason_text,
-            idempotency_key=payload.idempotency_key,
+            reason=body.reason,
+            reason_text=body.reason_text,
+            idempotency_key=_key(idempotency_key),
         )
+    except LineNotFoundError:
+        raise _not_found() from None
     except LifecycleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except IdempotencyConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except RatelLinkError as exc:
-        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
-
-    return _lifecycle_response(result)
+        raise _refused(exc) from None
+    except IdempotencyConflictError:
+        raise _same_key_other_line() from None
+    except RatelLinkError:
+        raise _network_said_no() from None
+    return _the_line(session, line_id)
 
 
 # --- M-26 line lookup ------------------------------------------------------------

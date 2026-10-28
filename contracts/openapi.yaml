@@ -444,6 +444,45 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_customers
+      security:
+        - StaffSession: []
+      summary: Customers, one page at a time, for RatelDesk's customer list.
+      description: |
+        Newest first (`customer_id` descending). A row carries no `id_number` and no `address`:
+        a list is read in bulk and shows more people than the task needs. Open one customer
+        (`bss_get_customer`) to see those.
+        `q` matches part of the name, the phone number or the email. TODO(contract): the fields `q`
+        searches. Staff type personal data into `q`, and a GET puts it in the URL: the reverse
+        proxy's access log must not record query strings.
+        `counts` is for the current `q`, ignoring `kyc_status`: one number per tab.
+      parameters:
+        - $ref: "#/components/parameters/SearchText"
+        - name: kyc_status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, verified, rejected]
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: One page of customers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/customers/{customer_id}:
     get:
       tags: [RatelBSS]
@@ -603,6 +642,44 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_lines
+      security:
+        - StaffSession: []
+      summary: Lines, one page at a time, for RatelDesk's lines list.
+      description: |
+        Newest first (`line_id` descending). Each row names the customer and the plan so the list
+        needs no second call per row.
+        `q` matches part of the MSISDN, the ICCID or the customer's name; an exact IMSI also
+        matches. TODO(contract): the fields `q` searches. Staff type personal data into `q`: the
+        reverse proxy's access log must not record query strings.
+        `counts` is for the current `q`, ignoring `state`: one number per tab.
+      parameters:
+        - $ref: "#/components/parameters/SearchText"
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [awaiting_activation, active, out_of_data, expired, suspended, terminated]
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: One page of lines.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/lines/{line_id}:
     get:
       tags: [RatelBSS]
@@ -635,6 +712,8 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_activate_line
+      security:
+        - StaffSession: []
       summary: Activate a line. First plan paid for and KYC verified.
       description: |
         Calls RatelLink's `/activate` with the plan's speeds and voice true (PRODUCT_RULES.md,
@@ -662,6 +741,8 @@ paths:
                 $ref: "#/components/schemas/Line"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -674,6 +755,8 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_suspend_line
+      security:
+        - StaffSession: []
       summary: Suspend a line with a reason. Customer care action.
       description: |
         `active` or `out_of_data` -> `suspended`. Calls RatelLink's `/deactivate`. Writes an audit
@@ -700,6 +783,8 @@ paths:
                 $ref: "#/components/schemas/Line"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -712,6 +797,8 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_reinstate_line
+      security:
+        - StaffSession: []
       summary: Reinstate a suspended line. Customer care action.
       description: |
         `suspended` -> the state it had before (`state_before_suspension`). Calls RatelLink's
@@ -737,12 +824,289 @@ paths:
                 $ref: "#/components/schemas/Line"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/terminate:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_terminate_line
+      security:
+        - StaffSession: []
+      summary: Terminate a line. Admin action.
+      description: |
+        Any state except `terminated` -> `terminated`. Calls RatelLink's `/deactivate`. The SIM is
+        retired. The line's number stays `in_use`: quarantine of a number after termination is
+        compliance's call (PRODUCT_RULES.md, decision 4) and its period is undecided, so the
+        number's state does not change here. Writes an audit entry with the reason.
+        Only an `admin` may terminate; an `agent` gets `403`. A line that is already `terminated`
+        answers `409` (invalid transition). Terminating is final: there is no way back.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerminateLineRequest"
+      responses:
+        "200":
+          description: Terminated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Line"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/history:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_line_history
+      security:
+        - StaffSession: []
+      summary: The line's audit trail - every state change, who made it and why (ACC-3).
+      description: |
+        Newest first. Read-only: entries are written by the state machine and never edited.
+        `actor` is `staff:<staff_id>` for a person, or the name of the system that acted.
+        TODO(contract): whether RatelDesk is to see a staff member's name or email instead of the
+        id. That is staff personal data in a customer's history, so it is not done by default.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: One page of the audit trail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineHistory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/usage:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_line_usage
+      security:
+        - StaffSession: []
+      summary: The line's data usage records, with whether each has been rated.
+      description: |
+        The 300-second records of `meter_get_usage` for this line's IMSI, plus `rated`: whether
+        RatelBSS has taken the record off the customer's allowance. Staff have a session cookie
+        and no RatelMeter key, so RatelDesk reads usage here; the IMSI never leaves RatelBSS.
+        Newest first, with `next_cursor` for the rest.
+        `from` and `to` are both inclusive and filter on `period_start`, as `meter_get_usage` does.
+        TODO(contract): the same open point as `meter_get_usage`.
+        `next_cursor` is opaque; send it back unchanged. 500 records per response.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Usage records.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineUsageList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/calls:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_line_calls
+      security:
+        - StaffSession: []
+      summary: The line's call records.
+      description: |
+        The records of `meter_get_calls` for this line's MSISDN, as calls it made or received.
+        Call records are personal data: same access rules as customer records.
+        Not buildable yet: the call record's fields wait on the network team (`meter_get_calls`).
+        The fields RatelDesk's call tab shows beyond the record (`qci1Bearer`) are not in
+        Contract 2 and are not added here. TODO(contract): after `meter_get_calls` is agreed.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Call records.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/wallet:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_line_wallet
+      security:
+        - StaffSession: []
+      summary: A line's wallet balance, next to the sum of its ledger entries.
+      description: |
+        The two numbers are equal while the books are right (ADR 0009); showing both is how a
+        mismatch is seen. A line that exists but has no wallet yet answers zero for both.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+      responses:
+        "200":
+          description: The wallet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineWallet"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/ledger:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_ledger
+      security:
+        - StaffSession: []
+      summary: Ledger entries, newest first. Read-only.
+      description: |
+        The ledger is append-only and nothing here changes it; a correction is a new entry made by
+        the system. Money in is positive, money out is negative, in whole kobo.
+        `counts` is for the selected line (or all lines), ignoring `kind`: `all` and one number per
+        kind that has entries.
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          description: TODO(contract) - the entry kinds are not fixed (PRODUCT_RULES.md, wallet and ledger).
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 30
+        - name: line_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: One page of ledger entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/wallet/summary:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_wallet_summary
+      security:
+        - StaffSession: []
+      summary: Totals across all wallets, for RatelDesk's wallet screen.
+      description: |
+        `daily` has the last 7 days, oldest first. A day runs midnight to midnight in
+        Africa/Lagos (UTC+1, no daylight saving) and `date` is that day as `YYYY-MM-DD`.
+        TODO(contract, finance): that the day is a Lagos day. The wire rule is UTC; a report that
+        finance reads by calendar day needs a stated boundary.
+        The seven-day trend lines the screen draws are not here: RatelBSS keeps no daily balance
+        history. TODO(PRD).
+      responses:
+        "200":
+          description: The summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/dashboard:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_dashboard
+      security:
+        - StaffSession: []
+      summary: What RatelDesk's front page shows.
+      description: |
+        Lines by state, customers waiting for KYC, top-ups, and the things that need someone.
+        "Top-ups" are ledger entries of the kind that puts money in (`top_up`), TODO(PRD): the kinds
+        are not fixed. Days are Lagos days, as in `bss_wallet_summary`.
+        `attention` lists at most 20 items, the longest-waiting first. TODO(contract): the order
+        and the cap, and any other issue worth listing.
+        The 7-day trend lines the screen draws are not here: RatelBSS keeps no daily snapshots of
+        line counts. TODO(PRD).
+      responses:
+        "200":
+          description: The dashboard.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/pay/vouchers/redeem:
@@ -1043,6 +1407,33 @@ components:
       schema:
         type: string
         minLength: 1
+    SearchText:
+      name: q
+      in: query
+      required: false
+      description: Part of what to look for. Empty or absent means everything.
+      schema:
+        type: string
+        maxLength: 100
+    Page:
+      name: page
+      in: query
+      required: false
+      description: First page is 1.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: TODO(contract) - the largest page RatelDesk needs. 200 is a placeholder.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
   responses:
     OkEmpty:
       description: |
@@ -1832,3 +2223,365 @@ components:
           type: [integer, "null"]
           minimum: 0
           description: Unix epoch seconds, UTC.
+    TerminateLineRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          enum: [fraud, non_payment, customer_request, lost_sim, other]
+        reason_text:
+          type: string
+          maxLength: 200
+    CustomerRow:
+      type: object
+      required: [customer_id, name, phone, email, kyc_status, blocked, lines_count]
+      additionalProperties: false
+      description: |
+        A customer in a list. Personal data, but not the NIN or the address (see `Customer`).
+      properties:
+        customer_id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        kyc_status:
+          type: string
+          enum: [pending, verified, rejected]
+        blocked:
+          type: boolean
+        lines_count:
+          type: integer
+          minimum: 0
+    CustomerList:
+      type: object
+      required: [customers, total, counts]
+      additionalProperties: false
+      properties:
+        customers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerRow"
+        total:
+          type: integer
+          minimum: 0
+          description: Rows matching the filters, over all pages.
+        counts:
+          type: object
+          required: [all, pending, verified, rejected]
+          additionalProperties: false
+          properties:
+            all:
+              type: integer
+              minimum: 0
+            pending:
+              type: integer
+              minimum: 0
+            verified:
+              type: integer
+              minimum: 0
+            rejected:
+              type: integer
+              minimum: 0
+    LineRow:
+      type: object
+      required: [line_id, customer_id, customer_name, iccid, imsi, msisdn, plan_id, plan_name, state, expires_at]
+      additionalProperties: false
+      properties:
+        line_id:
+          type: integer
+          minimum: 1
+        customer_id:
+          type: integer
+          minimum: 1
+        customer_name:
+          type: string
+        iccid:
+          type: string
+          maxLength: 20
+        imsi:
+          $ref: "#/components/schemas/Imsi"
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        plan_id:
+          type: integer
+          minimum: 1
+        plan_name:
+          type: string
+        state:
+          type: string
+          enum: [awaiting_activation, active, out_of_data, expired, suspended, terminated]
+        expires_at:
+          type: [integer, "null"]
+          minimum: 0
+          description: Unix epoch seconds, UTC. Null until the line is activated.
+    LineList:
+      type: object
+      required: [lines, total, counts]
+      additionalProperties: false
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineRow"
+        total:
+          type: integer
+          minimum: 0
+          description: Rows matching the filters, over all pages.
+        counts:
+          $ref: "#/components/schemas/LineCounts"
+    LineCounts:
+      type: object
+      required: [all, awaiting_activation, active, out_of_data, expired, suspended, terminated]
+      additionalProperties: false
+      properties:
+        all:
+          type: integer
+          minimum: 0
+        awaiting_activation:
+          type: integer
+          minimum: 0
+        active:
+          type: integer
+          minimum: 0
+        out_of_data:
+          type: integer
+          minimum: 0
+        expired:
+          type: integer
+          minimum: 0
+        suspended:
+          type: integer
+          minimum: 0
+        terminated:
+          type: integer
+          minimum: 0
+    LineHistoryEntry:
+      type: object
+      required: [at, from_state, to_state, actor, reason]
+      additionalProperties: false
+      properties:
+        at:
+          type: integer
+          minimum: 0
+          description: Unix epoch seconds, UTC.
+        from_state:
+          type: string
+          enum: [awaiting_activation, active, out_of_data, expired, suspended, terminated]
+        to_state:
+          type: string
+          enum: [awaiting_activation, active, out_of_data, expired, suspended, terminated]
+        actor:
+          type: string
+          maxLength: 120
+        reason:
+          type: string
+          maxLength: 200
+          description: The reason code and, when given, the free text.
+    LineHistory:
+      type: object
+      required: [entries, total]
+      additionalProperties: false
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineHistoryEntry"
+        total:
+          type: integer
+          minimum: 0
+    LineUsageRecord:
+      type: object
+      required: [period_start, period_end, bytes_up, bytes_down, rated]
+      additionalProperties: false
+      description: A `UsageRecord` without the IMSI, plus whether it has been rated.
+      properties:
+        period_start:
+          type: integer
+          minimum: 0
+          description: Unix epoch seconds, UTC. Aligned to the 300-second clock.
+        period_end:
+          type: integer
+          minimum: 0
+        bytes_up:
+          type: integer
+          minimum: 0
+        bytes_down:
+          type: integer
+          minimum: 0
+        rated:
+          type: boolean
+    LineUsageList:
+      type: object
+      required: [records, next_cursor]
+      additionalProperties: false
+      properties:
+        records:
+          type: array
+          maxItems: 5000
+          items:
+            $ref: "#/components/schemas/LineUsageRecord"
+        next_cursor:
+          type: [string, "null"]
+    LineWallet:
+      type: object
+      required: [line_id, balance_kobo, ledger_sum_kobo]
+      additionalProperties: false
+      properties:
+        line_id:
+          type: integer
+          minimum: 1
+        balance_kobo:
+          type: integer
+          description: Whole kobo. The wallet's running balance.
+        ledger_sum_kobo:
+          type: integer
+          description: Whole kobo. The sum of the line's ledger entries.
+    LedgerEntry:
+      type: object
+      required: [entry_id, line_id, msisdn, amount_kobo, kind, reference, created_at]
+      additionalProperties: false
+      properties:
+        entry_id:
+          type: integer
+          minimum: 1
+        line_id:
+          type: integer
+          minimum: 1
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        amount_kobo:
+          type: integer
+          description: Whole kobo. Positive money in, negative money out. Never zero.
+        kind:
+          type: string
+          maxLength: 30
+          x-todo: The entry kinds are not fixed (PRODUCT_RULES.md). The code has top_up, purchase, vat and correction; RatelDesk's mock names others.
+        reference:
+          type: string
+          maxLength: 120
+        created_at:
+          type: integer
+          minimum: 0
+          description: Unix epoch seconds, UTC.
+    LedgerPage:
+      type: object
+      required: [entries, total, counts]
+      additionalProperties: false
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEntry"
+        total:
+          type: integer
+          minimum: 0
+        counts:
+          type: object
+          required: [all]
+          additionalProperties:
+            type: integer
+            minimum: 0
+          properties:
+            all:
+              type: integer
+              minimum: 0
+    DailyMoney:
+      type: object
+      required: [date, in_kobo, out_kobo]
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        in_kobo:
+          type: integer
+          minimum: 0
+        out_kobo:
+          type: integer
+          minimum: 0
+          description: Money out as a positive number of kobo.
+    WalletSummary:
+      type: object
+      required: [total_balance_kobo, wallets_with_balance, entries_today, daily]
+      additionalProperties: false
+      properties:
+        total_balance_kobo:
+          type: integer
+        wallets_with_balance:
+          type: integer
+          minimum: 0
+        entries_today:
+          type: integer
+          minimum: 0
+        daily:
+          type: array
+          maxItems: 7
+          items:
+            $ref: "#/components/schemas/DailyMoney"
+    AttentionItem:
+      type: object
+      required: [issue, customer_id, line_id, customer_name, msisdn, since]
+      additionalProperties: false
+      properties:
+        issue:
+          type: string
+          enum: [out_of_data, pending_kyc]
+        customer_id:
+          type: integer
+          minimum: 1
+        line_id:
+          type: [integer, "null"]
+          minimum: 1
+          description: Null for a customer who has no line yet.
+        customer_name:
+          type: string
+        msisdn:
+          type: [string, "null"]
+        since:
+          type: integer
+          minimum: 0
+          description: Unix epoch seconds, UTC. When the line ran out of data, or the customer was registered.
+    Dashboard:
+      type: object
+      required: [line_counts, kyc_pending, topups_today_kobo, topups_yesterday_kobo, topups_last_7_days, attention]
+      additionalProperties: false
+      properties:
+        line_counts:
+          $ref: "#/components/schemas/LineCounts"
+        kyc_pending:
+          type: integer
+          minimum: 0
+        topups_today_kobo:
+          type: integer
+          minimum: 0
+        topups_yesterday_kobo:
+          type: integer
+          minimum: 0
+        topups_last_7_days:
+          type: array
+          maxItems: 7
+          description: Oldest first.
+          items:
+            type: object
+            required: [date, amount_kobo]
+            additionalProperties: false
+            properties:
+              date:
+                type: string
+                pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              amount_kobo:
+                type: integer
+                minimum: 0
+        attention:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/AttentionItem"
