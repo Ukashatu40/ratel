@@ -39,6 +39,7 @@ Structured JSON. Never contains Ki, OPc, PINs, or full IMSIs/ICCIDs.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Activation refused: KYC not verified | `customer.kyc_status != 'verified'` | Desk re-verifies KYC. |
+| Activation refused: no plan has been paid for (409) | The line has no allowance with data left that has not expired | Top up the line's wallet (voucher or payment), then buy the plan: `POST /v1/lines/{line_id}/purchases`, or `python -m app.bss_money.ops_cli buy` on bss-app. Then activate again. A lab test line needs this too. |
 | Activation refused: wrong state | Line not in `awaiting_activation` | Check `line.state` and the `line_audit` history. |
 | `/activate` returns 502 | RatelLink unreachable or 5xx | Check RatelLink health on core-cp. |
 | `AlreadyTaken` | Someone else took the SIM/number first | Retry with a different one. The exception carries no identifier. |

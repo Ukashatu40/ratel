@@ -131,3 +131,13 @@ class FakeRatelLinkClient:
 
     def get_line(self, imsi: str) -> dict[str, object]:
         return {"status": "active", "imsi": imsi}
+
+
+@dataclass
+class FakePaidPlan:
+    """Stands in for BSS: money's answer to "has this line paid for data?"."""
+
+    paid: bool = True
+
+    def has_paid_allowance(self, line_id: int, now: object) -> bool:
+        return self.paid

@@ -27,6 +27,7 @@ from app.bss_money.repositories.sql import (
     SqlLedgerRepository,
     SqlLineLookup,
     SqlMoneyReadRepository,
+    SqlPaidPlanCheck,
     SqlPaymentRepository,
     SqlPurchaseRepository,
     SqlVoucherRepository,
@@ -115,6 +116,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
     app.state.desk_read_scope = desk_read_scope
+
+    # BSS: lines asks BSS: money whether a line has paid for data, and may not import it, so the
+    # answer is wired here. Given a session, it returns the checker (services/activation.py).
+    app.state.paid_plan_check = SqlPaidPlanCheck
 
     @contextmanager
     def purchase_scope() -> Iterator[PurchaseRepositories]:

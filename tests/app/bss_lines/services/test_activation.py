@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -15,7 +17,22 @@ from app.bss_lines.repositories.idempotency import (
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.activation import ActivationError, activate_line
 from app.db import Base
-from tests.app.bss_lines.fakes import FakeRatelLinkClient
+from tests.app.bss_lines.fakes import FakePaidPlan, FakeRatelLinkClient
+
+NOW = datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
+
+
+def _activate(repo, client, store, line_id, *, actor, idempotency_key, paid=True):  # type: ignore[no-untyped-def]
+    return activate_line(
+        repo,
+        client,
+        store,
+        line_id,
+        actor=actor,
+        idempotency_key=idempotency_key,
+        paid_plan=FakePaidPlan(paid),
+        now=NOW,
+    )
 
 
 @pytest.fixture
@@ -94,7 +111,7 @@ def test_activation_calls_activate_exactly_once(
 ) -> None:
     line = _make_line(session)
     client = FakeRatelLinkClient()
-    activate_line(repo, client, store, line.line_id, actor="staff:test", idempotency_key="key-1")
+    _activate(repo, client, store, line.line_id, actor="staff:test", idempotency_key="key-1")
     assert len(client.calls) == 1
     call = client.calls[0]
     assert call.imsi == line.imsi
@@ -111,11 +128,11 @@ def test_activation_repeat_with_same_key_returns_the_first_result(
     line = _make_line(session)
     client = FakeRatelLinkClient()
 
-    first = activate_line(repo, client, store, line.line_id, actor="a", idempotency_key="key-1")
+    first = _activate(repo, client, store, line.line_id, actor="a", idempotency_key="key-1")
     assert first.to_state is LineState.ACTIVE
     assert len(client.calls) == 1
 
-    second = activate_line(repo, client, store, line.line_id, actor="a", idempotency_key="key-1")
+    second = _activate(repo, client, store, line.line_id, actor="a", idempotency_key="key-1")
     assert second.line_id == first.line_id
     assert second.from_state is first.from_state
     assert second.to_state is first.to_state
@@ -127,9 +144,9 @@ def test_a_different_key_on_an_activated_line_is_refused(
 ) -> None:
     line = _make_line(session)
     client = FakeRatelLinkClient()
-    activate_line(repo, client, store, line.line_id, actor="a", idempotency_key="k1")
+    _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k1")
     with pytest.raises(ActivationError):
-        activate_line(repo, client, store, line.line_id, actor="a", idempotency_key="k2")
+        _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k2")
     assert len(client.calls) == 1
 
 
@@ -141,11 +158,11 @@ def test_the_same_key_for_a_different_line_is_409(
     second = _make_line(session, tag=2)
     client = FakeRatelLinkClient()
 
-    activate_line(repo, client, store, first.line_id, actor="a", idempotency_key="k")
+    _activate(repo, client, store, first.line_id, actor="a", idempotency_key="k")
     assert len(client.calls) == 1
 
     with pytest.raises(IdempotencyConflictError):
-        activate_line(repo, client, store, second.line_id, actor="a", idempotency_key="k")
+        _activate(repo, client, store, second.line_id, actor="a", idempotency_key="k")
     assert len(client.calls) == 1  # no second RatelLink call
     session.refresh(second)
     assert second.state == LineState.AWAITING_ACTIVATION.value  # untouched
@@ -186,8 +203,33 @@ def test_activation_refused_without_kyc(
     line = _make_line(session, kyc_status="pending")
     client = FakeRatelLinkClient()
     with pytest.raises(ActivationError, match="KYC"):
-        activate_line(repo, client, store, line.line_id, actor="a", idempotency_key="k")
+        _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k")
     assert client.calls == []
+
+
+def test_activation_refused_when_no_plan_has_been_paid_for(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    line = _make_line(session)
+    client = FakeRatelLinkClient()
+    with pytest.raises(ActivationError, match="paid"):
+        _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k", paid=False)
+    assert client.calls == []
+    session.refresh(line)
+    assert line.state == LineState.AWAITING_ACTIVATION.value
+    assert session.query(LineAudit).count() == 0
+
+
+def test_a_refused_activation_is_not_remembered_so_a_retry_after_paying_goes_through(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    line = _make_line(session)
+    client = FakeRatelLinkClient()
+    with pytest.raises(ActivationError):
+        _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k", paid=False)
+    result = _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k")
+    assert result.to_state is LineState.ACTIVE
+    assert len(client.calls) == 1
 
 
 def test_activation_writes_audit_entry(
@@ -195,7 +237,7 @@ def test_activation_writes_audit_entry(
 ) -> None:
     line = _make_line(session)
     client = FakeRatelLinkClient()
-    activate_line(repo, client, store, line.line_id, actor="alice", idempotency_key="k")
+    _activate(repo, client, store, line.line_id, actor="alice", idempotency_key="k")
     audits = session.query(LineAudit).all()
     assert len(audits) == 1
     assert audits[0].actor == "alice"
@@ -209,7 +251,7 @@ def test_activation_refused_from_wrong_state(
     line = _make_line(session, state="terminated")
     client = FakeRatelLinkClient()
     with pytest.raises(ActivationError):
-        activate_line(repo, client, store, line.line_id, actor="a", idempotency_key="k")
+        _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k")
     assert client.calls == []
 
 
@@ -221,6 +263,6 @@ def test_activation_refused_when_ratellink_errors(
     line = _make_line(session)
     client = FakeRatelLinkClient(fail_on_activate=RatelLinkError("boom", status=503))
     with pytest.raises(RatelLinkError):
-        activate_line(repo, client, store, line.line_id, actor="a", idempotency_key="k")
+        _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k")
     session.refresh(line)
     assert line.state == LineState.AWAITING_ACTIVATION.value

@@ -723,6 +723,9 @@ paths:
         `Idempotency-Key` (PRODUCT_RULES.md, failure in the middle of a transition).
         A line whose `kyc_status` is not `verified`, or that is not in `awaiting_activation`,
         answers `409` (the line is in a state where it cannot be activated).
+        A line with no paid-for allowance answers `409` too: it must hold an allowance with data
+        left that has not expired (one that starts later counts). A plan is bought with
+        `bss_buy_offer`. TODO(PRD): how the first plan is paid for at the counter.
       parameters:
         - $ref: "#/components/parameters/LineId"
         - $ref: "#/components/parameters/IdempotencyKey"

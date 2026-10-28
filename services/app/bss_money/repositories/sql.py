@@ -662,3 +662,23 @@ class SqlMoneyReadRepository:
             )
             for r, is_rated in rows
         ]
+
+
+class SqlPaidPlanCheck:
+    """Answers BSS: lines' question "has this line paid for data?" from the allowance buckets."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def has_paid_allowance(self, line_id: int, now: datetime) -> bool:
+        return bool(
+            self._session.scalar(
+                select(
+                    exists().where(
+                        AllowanceBucket.line_id == line_id,
+                        AllowanceBucket.data_bytes_used < AllowanceBucket.data_bytes_total,
+                        AllowanceBucket.valid_to > now,
+                    )
+                )
+            )
+        )
