@@ -41,7 +41,7 @@ Both talk only to RatelBSS's own API (M-02, not specified yet), coded first agai
 ## Security implications
 
 - RatelDesk shows personal data (name, phone, KYC status). No third-party code runs in the page. TODO(project lead): staff sign-in is a mock today. The real design (server-side sessions as in DECISIONS_PENDING item 13, and no token in `localStorage`) is a separate decision before any real customer data is shown.
-- RatelPay shows nothing personal about a line's owner (TOP-2) and handles a voucher code once, at submit. The code never goes in a URL, a log or the page source. Rate limiting and webhook signature checks are RatelBSS's job.
+- RatelPay shows nothing personal about a line's owner (TOP-2) and handles a voucher code once, at submit. The code never goes in a URL, a log or the page source. The page sends no API key: the reverse proxy adds it on each exact public path (today only `/v1/pay/vouchers/redeem`) and replaces anything the browser sent (#116). Rate limiting and webhook signature checks are RatelBSS's job.
 - Each npm package widens the supply chain. The lockfile is committed and the audit job must stay green.
 
 ## Data implications
@@ -50,4 +50,4 @@ Neither front end stores business data. Money and time handling follow the rules
 
 ## Operational implications
 
-Nothing runs from Node on bss-app. RatelDesk is built on a developer machine or in CI, and its static files are served by the reverse proxy to the VPN only. RatelPay's single file is served by RatelBSS on the public path. TODO(frontend lead and project lead): confirm this and where the build happens, because bss-app has no deployment files yet (`deploy/bss-app/`).
+Nothing runs from Node on bss-app. RatelDesk is built on a developer machine or in CI, and its static files are served by the reverse proxy to the VPN only. RatelPay's single file is served by RatelBSS on the public path. `deploy/bss-app/` now holds the reverse proxy template, which adds RatelPay's key (#116). TODO(frontend lead and project lead): confirm how the RatelPay page itself is served (nothing serves it yet) and where RatelDesk's build happens.
