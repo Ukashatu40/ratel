@@ -271,3 +271,15 @@ class PurchaseRepositories:
 
 PurchaseScope = Callable[[], AbstractContextManager[PurchaseRepositories]]
 """Opens one transaction and yields the repositories on it: commit on exit, rollback on error."""
+
+
+class BundleCatalog(Protocol):
+    """Read-only storage for the list of bundles RatelPay shows."""
+
+    def bundles_on_sale(self) -> list[Bundle]:
+        """Every bundle that can be bought now, in `bundle_id` order."""
+        ...
+
+
+CatalogScope = Callable[[], AbstractContextManager[BundleCatalog]]
+"""Opens one read-only transaction and yields the catalog."""

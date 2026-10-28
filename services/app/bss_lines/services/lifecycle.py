@@ -62,6 +62,14 @@ class LifecycleError(Exception):
     """A legitimate refusal: wrong state, RatelLink said no, or corrupt stored data."""
 
 
+class LineNotFoundError(LifecycleError):
+    """There is no line with this id."""
+
+
+class StoredDataError(LifecycleError):
+    """The stored data is wrong, so retrying cannot help (reinstate answers 500)."""
+
+
 @dataclass(frozen=True)
 class LifecycleResult:
     line_id: int
@@ -133,7 +141,7 @@ def _run(
 
     line = lines.get(line_id)
     if line is None:
-        raise LifecycleError(f"line {line_id} not found")
+        raise LineNotFoundError(f"line {line_id} not found")
 
     try:
         transition = validate_transition(
@@ -187,7 +195,7 @@ def _run(
                     else line.plan.speed_dl_mbps
                 )
                 if speeds_ul is None or speeds_dl is None:
-                    raise LifecycleError(
+                    raise StoredDataError(
                         f"plan {line.plan_id} has on_exhaustion=slow but no slow speeds"
                     )
                 client.data(
@@ -226,7 +234,7 @@ def _on_exhaustion_of(line: Line) -> OnExhaustion:
     try:
         return OnExhaustion(line.plan.on_exhaustion)
     except ValueError:
-        raise LifecycleError(
+        raise StoredDataError(
             f"plan {line.plan_id} has unknown on_exhaustion {line.plan.on_exhaustion!r}"
         ) from None
 
@@ -279,7 +287,7 @@ def reinstate_line(
 
     line = lines.get(line_id)
     if line is None:
-        raise LifecycleError(f"line {line_id} not found")
+        raise LineNotFoundError(f"line {line_id} not found")
 
     if line.state != LineState.SUSPENDED.value:
         raise LifecycleError(
@@ -288,13 +296,13 @@ def reinstate_line(
 
     previous_raw = line.state_before_suspension
     if previous_raw is None:
-        raise LifecycleError(
+        raise StoredDataError(
             "line is suspended but state_before_suspension is not set; the stored data is wrong"
         )
     try:
         previous = LineState(previous_raw)
     except ValueError as exc:
-        raise LifecycleError(
+        raise StoredDataError(
             f"state_before_suspension {previous_raw!r} is not a known state"
         ) from exc
 
@@ -369,7 +377,7 @@ def mark_out_of_data(
     """
     line = lines.get(line_id)
     if line is None:
-        raise LifecycleError(f"line {line_id} not found")
+        raise LineNotFoundError(f"line {line_id} not found")
     return _run(
         lines,
         client,

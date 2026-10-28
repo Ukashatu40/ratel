@@ -22,15 +22,11 @@ from tests.route_walk import effective_routes
 # cross-system contract. The contract covers only RatelLink, RatelMeter and
 # RatelBSS's own API; operational endpoints are out of scope by design.
 #
-# The three lifecycle routes (/suspend, /reinstate, /terminate) and /activate are internal
-# helpers today. Their contract versions (bss_suspend_line, bss_reinstate_line,
-# bss_activate_line) are documented under RatelBSS in M-02 and implemented in M-26.
+# /terminate is an internal helper: it has no contract operation yet. Activate, suspend and
+# reinstate are the contract's own `/v1/lines/{line_id}/...` operations.
 OPERATIONAL = {
     ("GET", "/healthz"),
     ("GET", "/readyz"),
-    ("POST", "/v1/lines/activate"),
-    ("POST", "/v1/lines/suspend"),
-    ("POST", "/v1/lines/reinstate"),
     ("POST", "/v1/lines/terminate"),
     # Internal lookup, promoted to the contract as bss_get_line in M-26.
     # It lives at /v1/lines/lookup... so the paths do not collide with the
