@@ -135,6 +135,16 @@ says only that usage intervals align to UTC.
 and sessions follow decision 13 in [DECISIONS_PENDING.md](DECISIONS_PENDING.md). The real roles are
 reviewed before the pilot.
 
+**Decided 2026-10-27 (project lead), first release, M-26:** staff sign in with an email and a
+password; the server keeps the session and sets an `HttpOnly`, `Secure`, `SameSite=Strict` cookie.
+A session lasts 8 hours at most and ends after 30 minutes without use. Five wrong passwords in a
+row lock the account for 15 minutes. A password is at least 12 characters. There is no sign-up: an
+admin makes accounts with `staff_cli` on bss-app. An `agent` sells and looks after lines (register a
+customer, sell a SIM, activate, suspend, reinstate). Only an `admin` registers a customer as already
+`verified` or terminates a line. TODO(PRD): the permission split, the lockout and the session
+lengths are the project lead's choices for the first release, to be confirmed with the product
+owner and compliance before the pilot.
+
 ## SIMs
 
 **Decided 2026-10-10 (DECISIONS_PENDING.md item 4):** importing a SIM for an IMSI that already exists

@@ -1,20 +1,24 @@
 """FastAPI endpoints for the sell-to-activate flow.
 
-These endpoints are internal to RatelBSS. They are NOT part of
-contracts/openapi.yaml, which describes RatelLink and RatelMeter only.
+These endpoints are internal to RatelBSS and are not in contracts/openapi.yaml; the contract's
+versions (bss_activate_line, bss_suspend_line, bss_reinstate_line) replace them.
+
+Every route needs a signed-in staff member whose role allows the action (`api/deps.py`), and the
+audit `actor` is taken from that session, never from the request.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from functools import lru_cache
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.bss_lines.api.deps import get_db, get_settings, require
+from app.bss_lines.domain.staff import Permission
 from app.bss_lines.models.lines import Line
+from app.bss_lines.repositories.desk_ports import StaffRecord
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.activation import ActivationError, activate_line
 from app.bss_lines.services.lifecycle import (
@@ -27,21 +31,9 @@ from app.bss_lines.services.lifecycle import (
 from app.bss_lines.services.ratel_link_client import RatelLinkClient, RatelLinkError
 from app.config import Settings
 
+__all__ = ["get_client", "get_db", "get_lines_repo", "get_settings", "router"]
+
 router = APIRouter(prefix="/v1")
-
-
-def get_db(request: Request) -> Iterator[Session]:
-    """Provide a database session for the duration of the request."""
-    factory = request.app.state.session_factory
-
-    with factory() as session, session.begin():
-        yield session
-
-
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """Application settings, read once per process."""
-    return Settings()
 
 
 def get_client(
@@ -66,14 +58,13 @@ def get_lines_repo(
     session: Annotated[Session, Depends(get_db)],
 ) -> SqlLinesRepository:
     """Wrap the session in the repository the service expects."""
-    return SqlLinesRepository(session)
+    return SqlLinesRepository(session, request_commits=True)
 
 
 class ActivateBody(BaseModel):
     """Request payload for activating a line."""
 
     line_id: int
-    actor: str = Field(min_length=1, max_length=120)
     idempotency_key: str = Field(min_length=1, max_length=120)
 
 
@@ -87,14 +78,13 @@ class ActivateResponse(BaseModel):
 @router.post("/lines/activate", response_model=ActivateResponse)
 def post_activate(
     payload: ActivateBody,
+    staff: Annotated[StaffRecord, Depends(require(Permission.ACTIVATE_LINE))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> ActivateResponse:
     """Activate a line through the RatelLink client.
 
-    TODO(auth, M-26): this route has no authentication and takes the audit
-    ``actor`` from the request body. That must not be deployed before M-26 adds
-    staff authentication.
+    The audit actor is the signed-in staff member.
 
     TODO(contract, M-02): this route and body will be replaced by whatever M-02
     specifies in contracts/openapi.yaml.
@@ -104,7 +94,7 @@ def post_activate(
             lines,
             client,
             payload.line_id,
-            actor=payload.actor,
+            actor=f"staff:{staff.staff_id}",
             idempotency_key=payload.idempotency_key,
         )
     except ActivationError as exc:
@@ -125,7 +115,6 @@ class LifecycleBody(BaseModel):
     """Request payload for suspend, reinstate and terminate."""
 
     line_id: int
-    actor: str = Field(min_length=1, max_length=120)
     idempotency_key: str = Field(min_length=1, max_length=120)
     reason: str = Field(min_length=1, max_length=40)
     reason_text: str | None = Field(default=None, max_length=200)
@@ -150,6 +139,7 @@ def _lifecycle_response(result: LifecycleResult) -> LifecycleResponse:
 @router.post("/lines/suspend", response_model=LifecycleResponse)
 def post_suspend(
     payload: LifecycleBody,
+    staff: Annotated[StaffRecord, Depends(require(Permission.SUSPEND_LINE))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> LifecycleResponse:
@@ -159,7 +149,7 @@ def post_suspend(
             lines,
             client,
             payload.line_id,
-            actor=payload.actor,
+            actor=f"staff:{staff.staff_id}",
             reason=payload.reason,
             reason_text=payload.reason_text,
             idempotency_key=payload.idempotency_key,
@@ -175,6 +165,7 @@ def post_suspend(
 @router.post("/lines/reinstate", response_model=LifecycleResponse)
 def post_reinstate(
     payload: LifecycleBody,
+    staff: Annotated[StaffRecord, Depends(require(Permission.SUSPEND_LINE))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> LifecycleResponse:
@@ -184,7 +175,7 @@ def post_reinstate(
             lines,
             client,
             payload.line_id,
-            actor=payload.actor,
+            actor=f"staff:{staff.staff_id}",
             reason=payload.reason,
             reason_text=payload.reason_text,
             idempotency_key=payload.idempotency_key,
@@ -200,6 +191,7 @@ def post_reinstate(
 @router.post("/lines/terminate", response_model=LifecycleResponse)
 def post_terminate(
     payload: LifecycleBody,
+    staff: Annotated[StaffRecord, Depends(require(Permission.TERMINATE_LINE))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
 ) -> LifecycleResponse:
@@ -209,7 +201,7 @@ def post_terminate(
             lines,
             client,
             payload.line_id,
-            actor=payload.actor,
+            actor=f"staff:{staff.staff_id}",
             reason=payload.reason,
             reason_text=payload.reason_text,
             idempotency_key=payload.idempotency_key,
@@ -253,14 +245,13 @@ def _line_lookup_response(line: Line) -> LineLookupResponse:
 
 @router.get("/lines/lookup", response_model=LineLookupResponse)
 def get_line_by_identifier(
+    _staff: Annotated[StaffRecord, Depends(require(Permission.READ))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     msisdn: str | None = None,
     iccid: str | None = None,
     imsi: str | None = None,
 ) -> LineLookupResponse:
     """Look a line up by exactly one of msisdn, iccid or imsi.
-
-    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
 
     Answers 422 if zero or more than one identifier is given, 404 if no line
     matches. The indexes on line.msisdn, line.iccid and line.imsi make each
@@ -282,12 +273,10 @@ def get_line_by_identifier(
 @router.get("/lines/lookup/{line_id}", response_model=LineLookupResponse)
 def get_line_by_id(
     line_id: int,
+    _staff: Annotated[StaffRecord, Depends(require(Permission.READ))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
 ) -> LineLookupResponse:
-    """Look a line up by its id.
-
-    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
-    """
+    """Look a line up by its id."""
     line = lines.find_by_identifier(line_id=line_id)
     if line is None:
         raise HTTPException(status_code=404, detail=f"No line with id {line_id}")

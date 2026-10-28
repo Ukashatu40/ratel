@@ -15,6 +15,10 @@ limit_req_zone $binary_remote_addr zone=ratel_redeem:1m rate=30r/m;
 limit_req_zone $binary_remote_addr zone=ratel_pay:1m rate=30r/m;
 limit_req_zone $binary_remote_addr zone=ratel_webhook:1m rate=120r/m;
 
+# Staff sign-in. The app locks an account after 5 wrong passwords; this limits one address trying
+# many accounts.
+limit_req_zone $binary_remote_addr zone=ratel_login:1m rate=10r/m;
+
 # The access log records who called and the result, never the path: paths contain IMSIs.
 log_format ratel_app_privacy '$time_iso8601 $remote_addr "$request_method" $status $request_length $request_time';
 
@@ -102,6 +106,19 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_read_timeout 30s;
+    }
+
+    # Staff sign-in: office and VPN only, and slow. An exact match so nothing else gets this limit.
+    location = /v1/auth/login {
+        allow <office-and-vpn-range>;
+        deny  all;
+        limit_req zone=ratel_login burst=5 nodelay;
+        limit_req_status 429;
+        client_max_body_size 4k;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 10s;
     }
 
     # The rest of the API: staff only.

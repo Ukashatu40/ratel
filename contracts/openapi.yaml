@@ -15,6 +15,8 @@ info:
     - Plain REST, standard HTTP status codes, JSON bodies.
     - Errors: `{"error": {"code": "...", "message": "..."}}`.
     - Every call carries an API key in the `Authorization` header, one key per calling system.
+      The one exception is RatelDesk's staff: a person signs in (`bss_staff_login`) and the browser
+      then sends the session cookie `StaffSession` instead. Those operations say so in `security`.
       RatelPay's public paths keep this rule. The page is a static file in a browser and cannot
       keep a key secret, so it sends none: the reverse proxy adds the key on each public path and
       replaces anything the browser sent.
@@ -332,10 +334,84 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/auth/login:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_staff_login
+      security: []
+      summary: Sign a staff member in to RatelDesk.
+      description: |
+        Takes an email and a password. On success sets the session cookie `ratel_desk`
+        (`HttpOnly`, `Secure`, `SameSite=Strict`; it lasts 8 hours at most and ends after 30
+        minutes without use) and answers who signed in. The cookie's value is never in a body.
+        Every refusal (unknown email, wrong password, disabled or locked account) is the same
+        `401`, so the answer says nothing about which. Five wrong passwords in a row lock the
+        account for 15 minutes. Sign-in is open by definition; the proxy limits its rate per
+        address. TODO(PRD, decision 11): lockout and session lengths are the project lead's
+        choices of 2026-10-27 for the first release.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffLoginRequest"
+      responses:
+        "200":
+          description: Signed in. The session cookie is set.
+          headers:
+            Set-Cookie:
+              description: The session cookie `ratel_desk`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMe"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/auth/logout:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_staff_logout
+      security: []
+      summary: End this staff session.
+      description: |
+        Ends the session on the server and clears the cookie. Always `204`, signed in or not, so
+        a page can call it without checking first.
+      responses:
+        "204":
+          description: Signed out.
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/auth/me:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_staff_me
+      security:
+        - StaffSession: []
+      summary: Who is signed in.
+      description: RatelDesk asks this when it loads, to know whether to show the sign-in page.
+      responses:
+        "200":
+          description: The signed-in staff member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMe"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/customers:
     post:
       tags: [RatelBSS]
       operationId: bss_create_customer
+      security:
+        - StaffSession: []
       summary: Register a customer. KYC verified before any line is activated.
       description: |
         Creates a customer. `kyc_status` is pending, verified or rejected; no line activates until
@@ -362,6 +438,8 @@ paths:
                 $ref: "#/components/schemas/Customer"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -372,6 +450,8 @@ paths:
     get:
       tags: [RatelBSS]
       operationId: bss_get_customer
+      security:
+        - StaffSession: []
       summary: Read one customer. KYC status and identity data are personal data.
       description: |
         Returns one customer. Used by RatelDesk, which is reachable only over the VPN.
@@ -387,6 +467,8 @@ paths:
                 $ref: "#/components/schemas/Customer"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         default:
@@ -395,6 +477,8 @@ paths:
     get:
       tags: [RatelBSS]
       operationId: bss_list_plans
+      security:
+        - StaffSession: []
       summary: Plans on sale, for the sell-a-SIM journey.
       description: |
         Returns plans in state `on_sale`. Pagination is TODO(contract): the Build Plan gives no
@@ -408,12 +492,16 @@ paths:
                 $ref: "#/components/schemas/PlanList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/stock/sims:
     get:
       tags: [RatelBSS]
       operationId: bss_list_stock_sims
+      security:
+        - StaffSession: []
       summary: Free SIMs, for the sell-a-SIM journey.
       description: |
         Returns SIMs in state `in_stock`. Never returns Ki or OPc: SIM stock in RatelBSS holds
@@ -437,6 +525,8 @@ paths:
                 $ref: "#/components/schemas/SimList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationError"
         default:
@@ -445,6 +535,8 @@ paths:
     get:
       tags: [RatelBSS]
       operationId: bss_list_stock_numbers
+      security:
+        - StaffSession: []
       summary: Free numbers, for the sell-a-SIM journey.
       description: |
         Returns numbers in state `available`. The stored form is 234 and ten digits
@@ -467,6 +559,8 @@ paths:
                 $ref: "#/components/schemas/NumberList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationError"
         default:
@@ -475,6 +569,8 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_create_line
+      security:
+        - StaffSession: []
       summary: Attach a customer, a SIM, a number and a plan as a line, awaiting activation.
       description: |
         Takes a free SIM and a free number atomically (PRODUCT_RULES.md: a SIM or number cannot be
@@ -499,6 +595,8 @@ paths:
                 $ref: "#/components/schemas/Line"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -511,6 +609,8 @@ paths:
     get:
       tags: [RatelBSS]
       operationId: bss_get_line
+      security:
+        - StaffSession: []
       summary: One line's state and, when suspended, the state it was suspended from.
       description: |
         Returns the line's state (`awaiting_activation`, `active`, `out_of_data`, `expired`,
@@ -527,6 +627,8 @@ paths:
                 $ref: "#/components/schemas/Line"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         default:
@@ -850,6 +952,18 @@ components:
       description: |
         One API key per calling system, rotated every 90 days. Keys never live in the repository.
         Sent as `Authorization: Bearer <key>`. A missing or invalid key gets 401.
+    StaffSession:
+      type: apiKey
+      in: cookie
+      name: ratel_desk
+      description: |
+        A RatelDesk staff member's session, set by `bss_staff_login`. The cookie is `HttpOnly`,
+        `Secure` and `SameSite=Strict`. Every request that changes something must also carry the
+        header `X-Ratel-Desk` (any value): a page on another site cannot add it, which stops a
+        forged request even from a browser that ignores `SameSite`. A missing or stale session
+        gets 401; a role that may not do the action gets 403. The audit entry of a line change
+        names the signed-in staff member (`staff:<id>`), never a name sent in the request.
+        Roles: `agent` and `admin` (TODO(PRD, decision 11)).
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -940,8 +1054,20 @@ components:
         application/json:
           schema:
             type: object
+    Forbidden:
+      description: |
+        The caller is signed in but their role may not do this, or a changing request lacks the
+        `X-Ratel-Desk` header (staff operations only).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: forbidden, message: "Your role may not do this."}
     Unauthorized:
-      description: Missing or invalid Bearer API key.
+      description: |
+        Missing or invalid credential: a Bearer API key, or for staff operations the session
+        cookie.
       content:
         application/json:
           schema:
@@ -1052,6 +1178,37 @@ components:
           example:
             error: {code: internal_error, message: "Internal error"}
   schemas:
+    StaffLoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          minLength: 3
+          maxLength: 120
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          writeOnly: true
+    StaffMe:
+      type: object
+      required: [staff_id, email, name, role]
+      additionalProperties: false
+      properties:
+        staff_id:
+          type: integer
+          minimum: 1
+        email:
+          type: string
+          maxLength: 120
+        name:
+          type: string
+          maxLength: 120
+        role:
+          type: string
+          enum: [agent, admin]
     Error:
       type: object
       required: [error]
