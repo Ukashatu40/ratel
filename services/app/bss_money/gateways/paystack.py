@@ -32,11 +32,12 @@ from app.bss_money.domain.payments import (
 )
 
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-# "abandoned" is not here on purpose: Paystack says it for a payment the customer has not finished
-# yet (found against its test mode, 2026-10-28). Failing it would be final, and a customer still at
-# the checkout page, or on their bank's code page, would pay for nothing. An unfinished payment
-# stays pending until ABANDON_AFTER_SECONDS gives it up.
-_FAILED = {"failed", "reversed", "cancelled"}
+# Only a payment Paystack has given back (or cancelled) is over. "abandoned" (not finished yet) and
+# "failed" (the last card attempt was declined) are not here on purpose: the customer can still try
+# another card on the same payment, and a failure marked final would leave them charged for nothing
+# (decided 2026-10-28; "abandoned" found against Paystack's test mode). Such a payment stays pending
+# until ABANDON_AFTER_SECONDS gives it up, and is never credited without a verified success.
+_FAILED = {"reversed", "cancelled"}
 
 
 class PaystackGateway:
