@@ -1,6 +1,6 @@
 # ADR 0005: Contract drift ratchet and mock server
 
-- **Status:** Proposed (needs project lead approval)
+- **Status:** Accepted (project lead, 2026-10-28)
 - **Date:** 2026-10-06
 - **Related:** Build Plan "Day one: openapi.yaml and a mock server", "CI runs ... Schemathesis"; [DECISIONS_PENDING.md](../DECISIONS_PENDING.md) #5
 

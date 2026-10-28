@@ -1,6 +1,6 @@
 # ADR 0008: Code organisation inside each component
 
-- **Status:** Proposed (requested by the project lead; needs the lead's approval and review by the two RatelLink reviewers, because it moves RatelLink's code)
+- **Status:** Accepted (project lead, 2026-10-28)
 - **Date:** 2026-10-08
 - **Deciders:** Project lead
 - **Related:** [ADR 0001](0001-repository-layout.md) (what sits where in the repository); [DEPENDENCIES.md](../DEPENDENCIES.md); [ARCHITECTURE.md](../ARCHITECTURE.md); `tests/architecture/test_layers.py`

@@ -1,6 +1,6 @@
 # ADR 0003: A small shared `common` library
 
-- **Status:** Proposed (needs project lead approval)
+- **Status:** Accepted (project lead, 2026-10-28)
 - **Date:** 2026-10-06
 - **Related:** Build Plan "Engineering rules" (logs, time, money); [DECISIONS_PENDING.md](../DECISIONS_PENDING.md) #3
 
