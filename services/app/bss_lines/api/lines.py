@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,10 @@ from app.bss_lines.api.deps import get_db, get_settings, require
 from app.bss_lines.domain.staff import Permission
 from app.bss_lines.models.lines import Line
 from app.bss_lines.repositories.desk_ports import StaffRecord
+from app.bss_lines.repositories.idempotency import (
+    IdempotencyConflictError,
+    IdempotencyStore,
+)
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.activation import ActivationError, activate_line
 from app.bss_lines.services.lifecycle import (
@@ -61,6 +65,14 @@ def get_lines_repo(
     return SqlLinesRepository(session, request_commits=True)
 
 
+def get_idempotency_store(request: Request) -> IdempotencyStore:
+    """The Idempotency-Key store, set on app.state by create_app."""
+    store = getattr(request.app.state, "idempotency_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Idempotency store not configured")
+    return store  # type: ignore[no-any-return]
+
+
 class ActivateBody(BaseModel):
     """Request payload for activating a line."""
 
@@ -81,8 +93,12 @@ def post_activate(
     staff: Annotated[StaffRecord, Depends(require(Permission.ACTIVATE_LINE))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
 ) -> ActivateResponse:
     """Activate a line through the RatelLink client.
+
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result and changes nothing (M-26). A repeat for a different line is 409.
 
     The audit actor is the signed-in staff member.
 
@@ -93,12 +109,15 @@ def post_activate(
         result = activate_line(
             lines,
             client,
+            idempotency,
             payload.line_id,
             actor=f"staff:{staff.staff_id}",
             idempotency_key=payload.idempotency_key,
         )
     except ActivationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RatelLinkError as exc:
         raise HTTPException(
             status_code=502,
@@ -142,12 +161,18 @@ def post_suspend(
     staff: Annotated[StaffRecord, Depends(require(Permission.SUSPEND_LINE))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
 ) -> LifecycleResponse:
-    """Suspend a line with a reason."""
+    """Suspend a line with a reason.
+
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result. A repeat for a different line is 409.
+    """
     try:
         result = suspend_line(
             lines,
             client,
+            idempotency,
             payload.line_id,
             actor=f"staff:{staff.staff_id}",
             reason=payload.reason,
@@ -156,6 +181,8 @@ def post_suspend(
         )
     except LifecycleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RatelLinkError as exc:
         raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
 
@@ -168,12 +195,18 @@ def post_reinstate(
     staff: Annotated[StaffRecord, Depends(require(Permission.SUSPEND_LINE))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
 ) -> LifecycleResponse:
-    """Reinstate a suspended line."""
+    """Reinstate a suspended line.
+
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result. A repeat for a different line is 409.
+    """
     try:
         result = reinstate_line(
             lines,
             client,
+            idempotency,
             payload.line_id,
             actor=f"staff:{staff.staff_id}",
             reason=payload.reason,
@@ -182,6 +215,8 @@ def post_reinstate(
         )
     except LifecycleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RatelLinkError as exc:
         raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
 
@@ -194,12 +229,18 @@ def post_terminate(
     staff: Annotated[StaffRecord, Depends(require(Permission.TERMINATE_LINE))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
 ) -> LifecycleResponse:
-    """Terminate a line."""
+    """Terminate a line.
+
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result. A repeat for a different line is 409.
+    """
     try:
         result = terminate_line(
             lines,
             client,
+            idempotency,
             payload.line_id,
             actor=f"staff:{staff.staff_id}",
             reason=payload.reason,
@@ -208,6 +249,8 @@ def post_terminate(
         )
     except LifecycleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RatelLinkError as exc:
         raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
 

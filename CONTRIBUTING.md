@@ -45,8 +45,9 @@ secret-free anyway, because history is permanent.
 - Keep PRs small enough to review properly. Split by deliverable, not by file.
 - You own the PR. You must be able to explain what changed, why, how it works, what you assumed,
   what could fail, and how you tested it. AI-generated code gets no discount.
-- Reviewers: one for most changes. **Two for RatelLink and RatelBSS: money** (enforced by the
-  `critical-review-gate` check). Review standard: [docs/CODE_REVIEW_GUIDELINES.md](docs/CODE_REVIEW_GUIDELINES.md).
+- Reviewers: the project lead decides what merges and no approval is required (ADR 0011). Asking
+  for one is still wise, and **two for RatelLink and RatelBSS: money** is the standard the
+  `critical-review-gate` check reports on (information only). Review standard: [docs/CODE_REVIEW_GUIDELINES.md](docs/CODE_REVIEW_GUIDELINES.md).
 - Touching the network? Show it working against the lab and say so in the PR.
 - Changing API behavior? Update `contracts/openapi.yaml` (and `contracts/not_implemented.txt`) in the same PR.
 

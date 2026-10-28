@@ -105,7 +105,7 @@ says only that usage intervals align to UTC.
 
 ## Payments
 
-- One gateway for the first release: **Paystack**, in test mode until the project lead says otherwise (decision 6, closed 2026-10-28). OPay comes after the demo.
+- One gateway for the first release: **Paystack**, in test mode until the project lead says otherwise (decision 6, closed 2026-10-28; see [DECISIONS_PENDING.md](DECISIONS_PENDING.md) item 11). OPay comes after the demo.
 - A payment is final only when Paystack reports it reversed or cancelled, or when it is still unfinished 24 hours after it started. Paystack's `abandoned` (not finished yet) and `failed` (a declined card attempt) leave it open, because the customer can try another card on the same payment. A payment is never credited without a verified success.
 - Credit a payment only after verifying the webhook's signature and re-querying the transaction with the provider.
 - `provider_ref` is unique, so a webhook delivered twice credits once.
@@ -208,7 +208,7 @@ the PRD" run through the screens without anyone touching the API by hand, but do
 | 3 | Allowed `id_type` values and the address format | Compliance, RatelBSS developers | Open. Demo values above |
 | 4 | Number quarantine period after termination | Compliance | Open. No value set; code must not default one |
 | 5 | Data retention for customer, usage and call records | Compliance | Open |
-| 6 | Payment provider | Project lead, finance | **Closed 2026-10-28: Paystack** (OPay after the demo) |
+| 6 | Payment provider | Project lead, finance | **Closed 2026-10-28: Paystack** (OPay after the demo; finance still to confirm fees) |
 | 7 | VAT rate | Finance | Open. Demo value above |
 | 8 | `end_reason` values and the meaning of from and to in a call record | Network team, RatelMeter developers | Open |
 | 9 | Reason values for care actions | Customer care, RatelBSS developers | **Decided 2026-10-23** (starting list above) |

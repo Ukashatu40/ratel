@@ -7,11 +7,14 @@ from fastapi import FastAPI, Request, Response
 from app.bss_lines.api.desk import router as desk_router
 from app.bss_lines.api.lines import router as bss_lines_router
 from app.bss_lines.api.staff import router as staff_router
+from app.bss_money.api.payments import router as payments_router
 from app.bss_money.api.vouchers import router as bss_money_router
-from app.bss_money.repositories.ports import RedemptionRepositories
+from app.bss_money.gateways.paystack import PaystackGateway
+from app.bss_money.repositories.ports import PaymentRepositories, RedemptionRepositories
 from app.bss_money.repositories.sql import (
     SqlLedgerRepository,
     SqlLineLookup,
+    SqlPaymentRepository,
     SqlVoucherRepository,
 )
 from app.config import Settings
@@ -66,6 +69,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.redemption_scope = redemption_scope
 
+    # Idempotency-Key store (M-26). In local and test a per-process dict is
+    # enough; everywhere else it must be Redis, so a restart does not turn a
+    # repeat into a new operation.
+    from app.bss_lines.repositories.idempotency import (
+        InMemoryIdempotencyStore,
+        RedisIdempotencyStore,
+    )
+
+    if settings.ratel_env in ("local", "test"):
+        app.state.idempotency_store = InMemoryIdempotencyStore()
+    else:
+        import redis
+
+        app.state.idempotency_store = RedisIdempotencyStore(
+            redis.Redis.from_url(settings.redis_url.get_secret_value())
+        )
+
+    @contextmanager
+    def payment_scope() -> Iterator[PaymentRepositories]:
+        # One transaction per step; the step commits on a normal return (refusals included).
+        with app.state.session_factory() as session, session.begin():
+            yield PaymentRepositories(
+                payments=SqlPaymentRepository(session),
+                ledger=SqlLedgerRepository(session),
+                lines=SqlLineLookup(session),
+            )
+
+    app.state.payment_scope = payment_scope
+    secret = settings.paystack_secret_key_value
+    app.state.payment_gateway = (
+        PaystackGateway(secret, base_url=settings.paystack_base_url) if secret else None
+    )
+
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
         # Liveness only. TODO: readiness check (PostgreSQL, Redis) once models exist.
@@ -85,5 +121,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(bss_lines_router)
     app.include_router(desk_router)
     app.include_router(bss_money_router)
+    app.include_router(payments_router)
     app.include_router(meter_api_router)
     return app
