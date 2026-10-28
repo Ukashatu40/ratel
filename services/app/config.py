@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     # The key the reverse proxy adds to the public voucher redemption route, which RatelPay's page
     # calls without one (a browser cannot keep a secret). Same rules as meter_api_key.
     pay_api_key: SecretStr | None = None
+    # The staff cookie is sent over HTTPS only. Off for local and test, where there is no TLS.
+    staff_cookie_secure: bool = True
     # VAT in basis points (750 = 7.5%), recorded as its own ledger entry on every purchase.
     # TODO(finance): the rate is finance's to confirm (decision 7).
     vat_rate_bps: int = Field(default=750, ge=0, le=10_000)

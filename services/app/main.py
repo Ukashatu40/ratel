@@ -4,7 +4,9 @@ from typing import Any, cast
 
 from fastapi import FastAPI, Request, Response
 
+from app.bss_lines.api.desk import router as desk_router
 from app.bss_lines.api.lines import router as bss_lines_router
+from app.bss_lines.api.staff import router as staff_router
 from app.bss_money.api.vouchers import router as bss_money_router
 from app.bss_money.repositories.ports import RedemptionRepositories
 from app.bss_money.repositories.sql import (
@@ -95,7 +97,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Network access rules (RatelDesk and API only over the WireGuard VPN; RatelPay and the
     # payment webhook are the only public paths) are enforced at the reverse proxy and
     # documented in deploy/bss-app/README.md.
+    app.include_router(staff_router)
+    # Before the desk router: /v1/lines/lookup must be tried before /v1/lines/{line_id}.
     app.include_router(bss_lines_router)
+    app.include_router(desk_router)
     app.include_router(bss_money_router)
     app.include_router(meter_api_router)
     return app

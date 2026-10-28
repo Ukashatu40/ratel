@@ -90,6 +90,32 @@ What it does, and does not do:
 - Never roll the `usage_rating` table back by hand. Those rows are the only record of what has been deducted,
   and deleting them makes the next run deduct the same usage again. The migration refuses to downgrade while they exist.
 
+## Staff accounts (RatelDesk)
+
+Staff sign in to RatelDesk with an email and a password (`POST /v1/auth/login`). There is no sign-up and no
+default account: an admin makes them with `python -m app.bss_lines.staff_cli`, run by a person on bss-app
+with the same `sudo -u ratelbss ... bash -c 'set -a; . /etc/ratel-app/ratel-app.env; ...'` wrapper as the
+rating job. **The password is never an argument.** It is typed twice at a prompt (or one line on standard
+input with `--password-stdin`).
+
+| Task | Command (after `staff_cli`) |
+| ---- | --------------------------- |
+| First admin | `create --email E --name NAME --role admin` |
+| An agent | `create --email E --name NAME --role agent` |
+| Forgotten password | `reset-password --email E` (ends every session of that account) |
+| Someone leaves | `disable --email E` (ends their sessions at once); `enable --email E` brings them back |
+| Who exists | `list` (id, role, state, email; never a password) |
+
+- Passwords are at least 12 characters and are stored only as a salted scrypt hash.
+- Five wrong passwords lock an account for 15 minutes. The log shows `staff.locked_out` with the account's
+  number, never the email. A locked person waits, or an admin runs `reset-password`.
+- A session lasts 8 hours at most and ends after 30 minutes without use. Sessions are rows in `staff_session`
+  (only a hash of the cookie is stored); deleting the rows signs everyone out.
+- Every line change is audited as `staff:<number>`, taken from the session and never from the request.
+- The cookie needs HTTPS (`STAFF_COOKIE_SECURE=true`, the default). Over plain HTTP the browser drops it and
+  nobody can stay signed in.
+- Sign-in is rate limited per address at the proxy (`ratel_login` in `nginx/ratel-app.conf.example`).
+
 ## Vouchers
 
 Prepaid cards are made and moved along by `python -m app.bss_money.voucher_cli`, run by a person on bss-app, and
