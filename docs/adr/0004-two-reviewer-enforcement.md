@@ -1,6 +1,6 @@
 # ADR 0004: Enforce "two reviewers" for critical paths with a status check
 
-- **Status:** Proposed (needs project lead approval and a test on the first real PR)
+- **Status:** Accepted (project lead, 2026-10-28)
 - **Date:** 2026-10-06
 - **Related:** Build Plan "Engineering rules: Review"; [GITHUB_SETUP.md](../GITHUB_SETUP.md); [DECISIONS_PENDING.md](../DECISIONS_PENDING.md) #4
 
