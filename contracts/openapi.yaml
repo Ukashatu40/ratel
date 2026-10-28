@@ -1119,28 +1119,28 @@ components:
         Megabits per second. The core stores whole numbers, so the value must be a whole number of
         bits per second (1.5 is stored as 1500 Kbps). Zero is refused.
       x-todo: The maximum (10 Gbit/s) is a sanity limit chosen here. The Build Plan gives none.
-      DataRequest:
-        type: object
-        required: [mode]
-        additionalProperties: false
-        properties:
-          mode:
-            type: string
-            enum: [full, slow, "off"]
-          speed_ul_mbps:
-            $ref: "#/components/schemas/SpeedMbps"
-          speed_dl_mbps:
-            $ref: "#/components/schemas/SpeedMbps"
-        anyOf:
-          - properties:
-              mode:
-                const: "off"
-          - properties:
-              mode:
-                enum: [full, slow]
-            required: [speed_ul_mbps, speed_dl_mbps]
-        description: |
-          `full` and `slow` need both speeds. `off` ignores them.
+    DataRequest:
+      type: object
+      required: [mode]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [full, slow, "off"]
+        speed_ul_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+        speed_dl_mbps:
+          $ref: "#/components/schemas/SpeedMbps"
+      anyOf:
+        - properties:
+            mode:
+              const: "off"
+        - properties:
+            mode:
+              enum: [full, slow]
+          required: [speed_ul_mbps, speed_dl_mbps]
+      description: |
+        `full` and `slow` need both speeds. `off` ignores them.
     DeactivateRequest:
       type: object
       required: [reason]

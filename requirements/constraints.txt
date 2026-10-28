@@ -9,7 +9,7 @@ ast_serialize==0.12.1
 attrs==26.1.0
 boolean.py==5.0
 CacheControl==0.14.4
-certifi==2026.10.19
+certifi==2026.10.23
 cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
@@ -17,7 +17,7 @@ coverage==7.16.2
 cryptography==50.0.2
 cyclonedx-python-lib==11.12.0
 defusedxml==0.7.1
-dnspython==2.8.0
+dnspython==2.9.0
 fastapi==0.142.2
 filelock==4.2.1
 graphql-core==3.2.13
@@ -64,7 +64,7 @@ pydantic-settings==2.15.0
 pydantic_core==2.46.5
 Pygments==2.21.0
 PyJWT==2.15.1
-pymongo==4.18.2
+pymongo==4.19.0
 pyparsing==3.3.3
 pyrate-limiter==4.5.0
 pytest==9.1.1
