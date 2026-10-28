@@ -1,7 +1,7 @@
 """money: payment, the top-ups made through a gateway (Paystack first)
 
 Revision ID: 27c13d2d79bc
-Revises: e75e719550b6
+Revises: 4f6279e32deb
 Create Date: 2026-10-27 15:00:00.000000+00:00
 
 One row per provider transaction. `provider_ref` and `public_id` and `idempotency_key` are unique, so a
@@ -21,7 +21,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "27c13d2d79bc"
-down_revision = "e75e719550b6"
+down_revision = "4f6279e32deb"
 branch_labels = None
 depends_on = None
 
