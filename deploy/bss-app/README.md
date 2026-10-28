@@ -127,6 +127,16 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    `RATING_AUTO_RENEW` and `VAT_RATE_BPS` there too (docs/runbooks/bss-app.md says what each does). A timer that
    missed its time while the host was off runs once as soon as the host is back (the nightly power cut).
 
+10. **The first admin** (after the migrations). RatelDesk's staff sign in with an email and a password; there is no
+    sign-up and no default account. Make the first admin by hand, typing the password at the prompt (it is never an
+    argument), then check you can sign in through the proxy. More accounts and the day-to-day tasks are in
+    docs/runbooks/bss-app.md, "Staff accounts":
+    ```bash
+    sudo -u ratelbss env PYTHONPATH=/opt/ratel-app/current/services \
+      bash -c 'set -a; . /etc/ratel-app/ratel-app.env; set +a; exec "$@"' _ \
+      /opt/ratel-app/current/venv/bin/python -m app.bss_lines.staff_cli create --email <you> --name "<your name>" --role admin
+    ```
+
 ## Upgrade and rollback
 
 Upgrade: build a new release (step 3), install it (step 4), run the migrations if the release has new ones

@@ -15,10 +15,11 @@ async function request<T>(method: string, path: string, body?: unknown, idempote
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey; // every state-changing call accepts one
+  if (method !== "GET") headers["X-Ratel-Desk"] = "1"; // the API refuses a changing request without it (a forged page cannot add it)
   const res = await fetch(BASE + path, {
     method,
     headers,
-    credentials: "include", // TODO: confirm the sign-in method (cookie session or token) with the team lead
+    credentials: "include", // the staff session cookie (POST /v1/auth/login sets it)
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) {
