@@ -330,7 +330,8 @@ def terminate_line(
     """Any state except terminated -> terminated. Calls /deactivate.
 
     The SIM is retired and the line's number left in_use. Quarantine of the number
-    after termination is compliance's call (PRODUCT_RULES.md, decision 4).
+    after termination is compliance's call (PRODUCT_RULES.md, decision 4); the
+    period is undecided, so this function does not touch the number's state.
     """
     result = _run(
         lines,
@@ -363,7 +364,8 @@ def mark_out_of_data(
 ) -> LifecycleResult:
     """active -> out_of_data, the allowance is used up. Calls /data with the plan's mode.
 
-    The `idempotency` store is optional: the rating job does not pass one.
+    The `idempotency` store is optional: the rating job does not pass one (a
+    fresh key per run means replay never applies), and any other caller may.
     """
     line = lines.get(line_id)
     if line is None:
@@ -412,18 +414,22 @@ def restore_line(
     line_id: int,
     *,
     idempotency_key: str,
+    idempotency: IdempotencyStore | None = None,
 ) -> LifecycleResult:
-    """out_of_data -> active (RatelLink /data at full speed), or expired -> active (/activate).
+    """expired -> active, a plan or bundle bought from the wallet. Calls /activate.
 
-    Done by the rating job when a purchase has given the line allowance again, not by a person.
+    `bss_money`'s rating job asks for this when the wallet covers a renewal, so
+    a top-up brings data back by itself. The state machine and the RatelLink call
+    stay here, in `bss_lines` (docs/DEPENDENCIES.md).
+
+    The `idempotency` store is optional, same reason as mark_out_of_data.
     """
-    line = lines.get(line_id)
-    if line is None:
-        raise LifecycleError(f"line {line_id} not found")
     return _run(
         lines,
         client,
+        idempotency,
         line_id,
+        endpoint="/restore",
         target=LineState.ACTIVE,
         actor=RATING_JOB,
         reason="allowance_restored",
