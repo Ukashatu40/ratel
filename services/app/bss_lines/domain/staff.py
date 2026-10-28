@@ -39,6 +39,7 @@ class Permission(StrEnum):
     CREATE_CUSTOMER = "create_customer"
     VERIFY_KYC = "verify_kyc"  # create a customer whose KYC is already verified
     CREATE_LINE = "create_line"
+    SELL_OFFER = "sell_offer"  # buy a plan or bundle for a line from its wallet
     ACTIVATE_LINE = "activate_line"
     SUSPEND_LINE = "suspend_line"
     TERMINATE_LINE = "terminate_line"
@@ -51,6 +52,7 @@ _AGENT = frozenset(
         Permission.READ,
         Permission.CREATE_CUSTOMER,
         Permission.CREATE_LINE,
+        Permission.SELL_OFFER,
         Permission.ACTIVATE_LINE,
         Permission.SUSPEND_LINE,
     }

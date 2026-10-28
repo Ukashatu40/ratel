@@ -51,6 +51,10 @@ class OfferNotAvailable(PurchaseError):
     pass
 
 
+class ReferenceReused(PurchaseError):
+    """This reference already paid for something else."""
+
+
 class InsufficientFunds(PurchaseError):
     def __init__(self, shortfall_kobo: int) -> None:
         super().__init__("the wallet does not cover the price")
@@ -155,6 +159,8 @@ def _buy_locked(
         earlier_vat = repositories.ledger.find(line_id, "vat", reference)
         net_paid = -earlier.amount_kobo
         vat_paid = 0 if earlier_vat is None else -earlier_vat.amount_kobo
+        if net_paid + vat_paid != price:  # the same key cannot stand for a different offer
+            raise ReferenceReused("this reference paid for something else")
         balance_now = repositories.ledger.balance(line_id) or 0
         return PurchaseResult(
             net_paid + vat_paid, net_paid, vat_paid, balance_now, None, None, replayed=True

@@ -1010,6 +1010,52 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/lines/{line_id}/purchases:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_buy_offer
+      security:
+        - StaffSession: []
+      summary: Buy a plan or a bundle for a line, paid from the line's wallet.
+      description: |
+        Debits the wallet by the price: the price less VAT is a `purchase` entry and the VAT is its
+        own `vat` entry (PRODUCT_RULES.md, wallet and ledger). The line gets an allowance bucket.
+        A line that is `out_of_data` or `expired` is brought back by the rating job's next run, not
+        by this call. A `suspended` or `terminated` line cannot buy.
+        `Idempotency-Key` is required and is the purchase's identity: a repeat returns the first
+        purchase (`replayed` true) and changes nothing; the same key for a different price answers
+        `409`. A wallet that does not cover the price answers `409` with code `insufficient_funds`
+        and the shortfall in the message.
+        Staff only. RatelPay cannot call this. TODO(PRD): whether and how a customer may buy
+        from their own wallet, and how the first plan is paid for at the counter.
+      parameters:
+        - $ref: "#/components/parameters/LineId"
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PurchaseRequest"
+      responses:
+        "200":
+          description: Bought, or the first purchase for this key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Purchase"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/ledger:
     get:
       tags: [RatelBSS]
@@ -1352,6 +1398,15 @@ components:
         type: string
         minLength: 1
         maxLength: 120
+    RequiredIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Required here, because it is the identity of the money movement. 1 to 100 characters.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
     PaymentId:
       name: payment_id
       in: path
@@ -2585,3 +2640,38 @@ components:
           maxItems: 20
           items:
             $ref: "#/components/schemas/AttentionItem"
+    PurchaseRequest:
+      type: object
+      required: [offer_kind, offer_id]
+      additionalProperties: false
+      properties:
+        offer_kind:
+          type: string
+          enum: [plan, bundle]
+        offer_id:
+          type: integer
+          minimum: 1
+    Purchase:
+      type: object
+      required: [price_kobo, net_kobo, vat_kobo, balance_kobo, valid_to, replayed]
+      additionalProperties: false
+      description: Whole kobo. `price_kobo` is `net_kobo` plus `vat_kobo`.
+      properties:
+        price_kobo:
+          type: integer
+          minimum: 1
+        net_kobo:
+          type: integer
+          minimum: 0
+        vat_kobo:
+          type: integer
+          minimum: 0
+        balance_kobo:
+          type: integer
+          description: The wallet after the purchase.
+        valid_to:
+          type: [integer, "null"]
+          minimum: 0
+          description: Unix epoch seconds, UTC. When the allowance ends. Null on a repeat.
+        replayed:
+          type: boolean

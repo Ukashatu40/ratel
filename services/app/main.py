@@ -12,12 +12,14 @@ from app.bss_lines.repositories.desk_sql import SqlDeskReadRepository
 from app.bss_money.api.bundles import router as bundles_router
 from app.bss_money.api.desk import router as money_desk_router
 from app.bss_money.api.payments import router as payments_router
+from app.bss_money.api.purchases import router as purchases_router
 from app.bss_money.api.vouchers import router as bss_money_router
 from app.bss_money.gateways.paystack import PaystackGateway
 from app.bss_money.repositories.ports import (
     BundleCatalog,
     DeskReads,
     PaymentRepositories,
+    PurchaseRepositories,
     RedemptionRepositories,
 )
 from app.bss_money.repositories.sql import (
@@ -26,6 +28,7 @@ from app.bss_money.repositories.sql import (
     SqlLineLookup,
     SqlMoneyReadRepository,
     SqlPaymentRepository,
+    SqlPurchaseRepository,
     SqlVoucherRepository,
 )
 from app.config import Settings
@@ -114,6 +117,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.desk_read_scope = desk_read_scope
 
     @contextmanager
+    def purchase_scope() -> Iterator[PurchaseRepositories]:
+        # One transaction per purchase: the debit, its VAT entry and the bucket go together or not.
+        with app.state.session_factory() as session, session.begin():
+            yield PurchaseRepositories(
+                purchases=SqlPurchaseRepository(session), ledger=SqlLedgerRepository(session)
+            )
+
+    app.state.purchase_scope = purchase_scope
+
+    @contextmanager
     def payment_scope() -> Iterator[PaymentRepositories]:
         # One transaction per step; the step commits on a normal return (refusals included).
         with app.state.session_factory() as session, session.begin():
@@ -150,6 +163,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(desk_reads_router)
     app.include_router(bss_money_router)
     app.include_router(money_desk_router)
+    app.include_router(purchases_router)
     app.include_router(payments_router)
     app.include_router(bundles_router)
     app.include_router(meter_api_router)
