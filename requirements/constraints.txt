@@ -78,7 +78,7 @@ requests==2.34.2
 rfc3339-validator==0.1.4
 rich==15.0.0
 rpds-py==2026.9.1
-ruff==0.16.10
+ruff==0.17.2
 schemathesis==4.29.4
 shellcheck_py==0.11.0.1
 six==1.17.0

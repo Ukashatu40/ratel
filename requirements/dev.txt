@@ -4,7 +4,7 @@
 -r app.txt
 pytest>=9.0.3,<10
 pytest-cov>=5,<7
-ruff>=0.6
+ruff>=0.17.2
 mypy>=1.11
 schemathesis>=3.34
 openapi-spec-validator>=0.7
