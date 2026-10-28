@@ -21,13 +21,21 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.ratel_link_client import RatelLinkClient
-from app.bss_money.repositories.ports import PurchaseRepositories, RatingRepository
+from app.bss_money.gateways.paystack import PaystackGateway
+from app.bss_money.repositories.ports import (
+    PaymentRepositories,
+    PurchaseRepositories,
+    RatingRepository,
+)
 from app.bss_money.repositories.sql import (
     SqlLedgerRepository,
+    SqlLineLookup,
+    SqlPaymentRepository,
     SqlPurchaseRepository,
     SqlRatingRepository,
 )
 from app.bss_money.services.line_control import LifecycleLineControl
+from app.bss_money.services.payments import settle_pending
 from app.bss_money.services.purchase import renew_plan_if_covered
 from app.bss_money.services.rating_job import run_rating
 from app.config import Settings
@@ -58,6 +66,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             yield SqlLinesRepository(session)
 
     @contextmanager
+    def payment_scope() -> Iterator[PaymentRepositories]:
+        with sessions() as session, session.begin():
+            yield PaymentRepositories(
+                payments=SqlPaymentRepository(session),
+                ledger=SqlLedgerRepository(session),
+                lines=SqlLineLookup(session),
+            )
+
+    @contextmanager
     def purchase_scope() -> Iterator[PurchaseRepositories]:
         with sessions() as session, session.begin():
             yield PurchaseRepositories(
@@ -65,6 +82,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
 
     now = datetime.now(UTC)
+    paystack_key = settings.paystack_secret_key_value
+    gateway = (
+        PaystackGateway(paystack_key, base_url=settings.paystack_base_url) if paystack_key else None
+    )
+
+    def settle() -> int:
+        assert gateway is not None
+        return settle_pending(payment_scope, gateway, now)
 
     def renew(line_id: int) -> bool:
         bought = renew_plan_if_covered(
@@ -78,6 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             scope,
             LifecycleLineControl(lines_scope, client),
             now=now,
+            settle=settle if gateway is not None else None,
             renew=renew if settings.rating_auto_renew else None,
         )
     except SQLAlchemyError as exc:
