@@ -90,6 +90,10 @@ Nothing here is decided. Each row is the project lead's position to take to the 
 
 | Date | Decision | Where |
 | ---- | -------- | ----- |
+| 2026-10-28 | **Activation needs a paid-for plan:** a line is activated only when it holds an allowance with data left that has not expired (PRODUCT_RULES.md already said so). How the first plan is paid for at the counter is still open; every way ends in a wallet purchase. | PR #151, [PRODUCT_RULES.md](PRODUCT_RULES.md) |
+| 2026-10-28 | **Staff buy a plan or bundle for a line from its wallet** (`POST /v1/lines/{line_id}/purchases`, `Idempotency-Key` required). RatelPay cannot buy: letting an anonymous caller spend a customer's wallet is not decided. | PR #150, `contracts/openapi.yaml` (`bss_buy_offer`) |
+| 2026-10-28 | **RatelDesk's reads (project lead: "go with the recommendations"):** ledger entry kinds stay free text until the PRD fixes them; a line's usage is read through RatelBSS (the staff session has no RatelMeter key); money figures count Lagos days (UTC+1) **TODO(finance) to confirm**; search text goes in the URL, so the proxy log must not record query strings (the example nginx config already does not). | PR #149, `contracts/openapi.yaml` |
+| 2026-10-28 | **Changes to one line take turns** (a row lock held while RatelLink answers). Found by a PostgreSQL test: two activations at once both succeeded. | [ADR 0012](adr/0012-changes-to-one-line-take-turns.md) (proposed), PR #153 |
 | 2026-10-28 | **Payments: Paystack is the gateway (item 11), and a payment stays open after Paystack's `abandoned` or `failed`.** Both can still be paid on the same payment; it ends only when reversed, cancelled or 24 hours old. Found by the sandbox check against Paystack's test mode. | [PRODUCT_RULES.md](PRODUCT_RULES.md) (Payments) |
 | 2026-10-28 | **Failure mid-transition (item 16, question 6): no retry loop inside a request;** the caller repeats with the same `Idempotency-Key`, and an alert fires after 3 failures in 10 minutes. | [PRODUCT_RULES.md](PRODUCT_RULES.md) |
 | 2026-10-28 | **`Idempotency-Key` (B9, item 35): kept for 24 hours; an opaque string of 1 to 128 characters.** | `bss_lines`, PR #131 |

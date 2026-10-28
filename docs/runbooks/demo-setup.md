@@ -63,14 +63,16 @@ after the rehearsals.
 
 ## 4. The line's first allowance
 
-Until RatelBSS's sell flow buys the first plan itself, give the line its first allowance by hand (the line must
-already exist and be active; find its id in RatelDesk or `GET /v1/lines/lookup?msisdn=...`):
+Activation is refused until a plan is paid for, so a new line gets its first allowance **before** it is
+activated. Do it in RatelDesk's sell flow (top up with a voucher, then buy the plan), or by hand on bss-app (the
+line must already exist; find its id in RatelDesk or `GET /v1/lines/lookup?msisdn=...`). Then activate it:
 
 ```bash
 bss app.bss_money.ops_cli wallet credit --line-id 1 --amount-kobo 100000 --reference demo-first --operator "<your name>"
 bss app.bss_money.ops_cli buy --line-id 1 --plan-id 1 --reference demo-first-plan
 ```
 
+Staff can do the same over HTTP with `POST /v1/lines/{line_id}/purchases` (an `Idempotency-Key` is required).
 `wallet credit` puts money in a wallet by hand and the ledger never forgets it: use it for the lab and
 rehearsals only, and use a new `--reference` each time (the same one is a harmless no-op).
 
