@@ -211,7 +211,13 @@ def test_nothing_secret_reaches_a_log_line(
     for _ in range(5):  # and locked out
         redeem(session, other.card_number, wrong_pin(other.pin))
 
-    text = " ".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records)
+    # Only what the service put on each record. The stdlib's own fields (created,
+    # relativeCreated, thread...) are numbers that can contain any four digits.
+    plain = vars(logging.makeLogRecord({}))
+    text = " ".join(
+        f"{r.getMessage()} { {k: v for k, v in vars(r).items() if k not in plain} }"
+        for r in caplog.records
+    )
     assert "voucher.redeemed" in text
     assert "voucher.refused" in text
     assert "voucher.locked_out" in text
