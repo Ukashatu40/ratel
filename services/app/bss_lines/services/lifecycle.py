@@ -412,10 +412,12 @@ def restore_line(
     line_id: int,
     *,
     idempotency_key: str,
+    idempotency: IdempotencyStore | None = None,
 ) -> LifecycleResult:
     """out_of_data -> active (RatelLink /data at full speed), or expired -> active (/activate).
 
     Done by the rating job when a purchase has given the line allowance again, not by a person.
+    The `idempotency` store is optional, same reason as mark_out_of_data.
     """
     line = lines.get(line_id)
     if line is None:
@@ -423,7 +425,9 @@ def restore_line(
     return _run(
         lines,
         client,
+        idempotency,
         line_id,
+        endpoint="/restore",
         target=LineState.ACTIVE,
         actor=RATING_JOB,
         reason="allowance_restored",
