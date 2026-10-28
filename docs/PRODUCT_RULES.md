@@ -105,7 +105,7 @@ says only that usage intervals align to UTC.
 
 ## Payments
 
-- One gateway for the first release. Which one is open (decision 6; candidates and the sandbox requirement are in [DECISIONS_PENDING.md](DECISIONS_PENDING.md) item 11).
+- One gateway for the first release: **Paystack**, decided 2026-10-27 by the project lead (decision 6; see [DECISIONS_PENDING.md](DECISIONS_PENDING.md) item 11). OPay is wanted too and comes after the demo, as a second adapter behind the same interface.
 - Credit a payment only after verifying the webhook's signature and re-querying the transaction with the provider.
 - `provider_ref` is unique, so a webhook delivered twice credits once.
 - One payment row per provider transaction, with provider, `amount_kobo`, status and `line_id`.
@@ -207,7 +207,7 @@ the PRD" run through the screens without anyone touching the API by hand, but do
 | 3 | Allowed `id_type` values and the address format | Compliance, RatelBSS developers | Open. Demo values above |
 | 4 | Number quarantine period after termination | Compliance | Open. No value set; code must not default one |
 | 5 | Data retention for customer, usage and call records | Compliance | Open |
-| 6 | Payment provider | Project lead, finance | Open |
+| 6 | Payment provider | Project lead, finance | Decided 2026-10-27: Paystack first, OPay after the demo (finance still to confirm fees) |
 | 7 | VAT rate | Finance | Open. Demo value above |
 | 8 | `end_reason` values and the meaning of from and to in a call record | Network team, RatelMeter developers | Open |
 | 9 | Reason values for care actions | Customer care, RatelBSS developers | **Decided 2026-10-23** (starting list above) |

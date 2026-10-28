@@ -824,22 +824,27 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_start_payment
-      summary: "DRAFT: start a payment through the gateway, for RatelPay."
+      summary: Start a payment through the gateway (Paystack), for RatelPay.
       description: |
-        DRAFT. TODO(contract): the payment provider is not chosen (PRODUCT_RULES decision 6), so
-        this operation's fields will change. Do not build against it yet.
-        Starts a payment of `amount_kobo` for the line with this number. Nothing is credited here:
-        the wallet is credited only after the provider's webhook is verified and the transaction
-        is re-queried with the provider (PRODUCT_RULES, Payments).
+        Starts a payment of `amount_kobo` for the line with this number and answers where the
+        customer pays (`checkout_url`, the gateway's own page). Nothing is credited here: the wallet
+        is credited only after the gateway's notification is verified and the transaction has been
+        re-queried with the gateway (PRODUCT_RULES, Payments), and then exactly once.
+        `Idempotency-Key` is required: the page sends the same key when it retries (a lost reply on
+        3G), and gets the same payment back instead of a second one. A new attempt after a failed one
+        needs a new key.
+        Every refusal for the number (unknown, terminated) and the amount (outside the allowed range)
+        is the same `400`, so the answer says nothing about the line. `503` when payments are not
+        configured or the gateway cannot be reached; the payment is then marked failed and nothing
+        is charged.
+        The gateway needs an email for every payment. RatelPay shows nothing personal (TOP-2), so a
+        fixed address of ours is sent, never the customer's.
         Called for RatelPay through the reverse proxy, which adds the key (see info.description).
       x-todo:
-        - What the page needs to send the customer to the provider (a checkout link or similar) depends on the provider.
-        - Lowest and highest amount.
-        - The error when the provider cannot be reached.
-        - Whether Idempotency-Key must be required here (a retried payment must not start twice); confirm with the M-19 owner.
-        - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
+        - TODO(PRD) the lowest and highest amount. They are settings of the deployment (PAYMENT_MIN_KOBO, PAYMENT_MAX_KOBO).
+        - Exposing this path publicly at the proxy, and its rate limit, are in deploy/bss-app/nginx.
       parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/PaymentIdempotencyKey"
       requestBody:
         required: true
         content:
@@ -848,31 +853,33 @@ paths:
               $ref: "#/components/schemas/PaymentStartRequest"
       responses:
         "200":
-          description: The payment was started.
+          description: "The payment was started, or the first payment if this key was used before."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Payment"
+        "400":
+          $ref: "#/components/responses/PaymentRefused"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/PaymentsUnavailable"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/pay/payments/{payment_id}:
     get:
       tags: [RatelBSS]
       operationId: bss_get_payment
-      summary: "DRAFT: a payment's status, for RatelPay."
+      summary: A payment's status, for RatelPay.
       description: |
-        DRAFT. TODO(contract): the payment provider is not chosen (PRODUCT_RULES decision 6), so
-        this operation's fields will change. Do not build against it yet.
-        Anyone who reaches the page and has the `payment_id` can call this, so the response holds
-        nothing about the line or its owner (TOP-2), and the id must be impossible to guess.
+        `pending`, `succeeded` (verified with the gateway and credited, once) or `failed`. Anyone
+        who has the `payment_id` can call this, so the response holds nothing about the line or its
+        owner (TOP-2), and the id cannot be guessed (24 random bytes).
+        A payment that is still pending after 15 seconds is checked with the gateway on this call,
+        so the page does not depend on the gateway's notification arriving.
         Called for RatelPay through the reverse proxy, which adds the key (see info.description).
-      x-todo:
-        - The status values depend on the provider.
-        - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
       parameters:
         - $ref: "#/components/parameters/PaymentId"
       responses:
@@ -881,11 +888,60 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Payment"
+                $ref: "#/components/schemas/PaymentStatus"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/webhooks/paystack:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_paystack_webhook
+      summary: Paystack's notification that a charge went through.
+      description: |
+        Called by Paystack, not by RatelPay. The body is Paystack's, as sent. Its `x-paystack-signature`
+        (HMAC-SHA512 of the raw body, keyed with the secret key) is checked first, in constant time,
+        and an unsigned or wrongly signed request is refused with `401` before anything in it is read.
+        A notification is never believed on its own: for a `charge.success` the transaction is
+        re-queried with Paystack, and only a success for the same amount in naira is credited.
+        Delivered twice, or at the same moment twice, it credits once. Other events are
+        acknowledged and ignored. `503` makes Paystack deliver it again later.
+        Like every call here it carries the proxy's key (the proxy adds it); Paystack does not send an
+        `Idempotency-Key`, and the transaction reference is what makes a repeat harmless.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: x-paystack-signature
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: The signature of the raw body. Never logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Received.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received]
+                additionalProperties: false
+                properties:
+                  received:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/PaymentsUnavailable"
         default:
           $ref: "#/components/responses/UnexpectedError"
 components:
@@ -923,6 +979,17 @@ components:
       schema:
         type: string
         minLength: 1
+    PaymentIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Required here: a retried start (a lost reply) must not start a second payment. Any string of
+        1 to 120 characters; the page makes a new one for each new attempt.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 120
     PaymentId:
       name: payment_id
       in: path
@@ -1047,6 +1114,32 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: {code: unavailable, message: "Voice cannot be switched on right now."}
+    PaymentRefused:
+      description: |
+        The payment cannot be started: the number cannot be topped up, or the amount is outside the
+        allowed range. One answer for every reason, so it says nothing about the line.
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: payment_refused, message: "This payment cannot be started."}
+    PaymentsUnavailable:
+      description: |
+        Payments are not configured on this deployment, or the gateway cannot be reached right now.
+        Nothing was charged. Try again later.
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: {code: unavailable, message: "Payments are not available right now."}
     VoucherRefused:
       description: |
         The card cannot be used. One answer for every reason (a wrong number or PIN, an unknown
@@ -1668,40 +1761,44 @@ components:
       type: object
       required: [msisdn, amount_kobo]
       additionalProperties: false
-      description: "DRAFT. TODO(contract): depends on the payment provider."
       properties:
         msisdn:
           type: string
           pattern: "^234[0-9]{10}$"
+          description: The phone number of the line to top up, as stored.
+        amount_kobo:
+          type: integer
+          minimum: 1
+          description: Whole kobo, never a decimal.
+    PaymentStatus:
+      type: object
+      required: [payment_id, status, amount_kobo]
+      additionalProperties: false
+      description: |
+        Holds nothing about the line or its owner, because anyone with the payment_id can read it.
+      properties:
+        payment_id:
+          type: string
+          minLength: 16
+          description: Cannot be guessed.
+        status:
+          type: string
+          enum: [pending, succeeded, failed]
         amount_kobo:
           type: integer
           minimum: 1
           description: Whole kobo, never a decimal.
     Payment:
-      type: object
-      required: [payment_id, status, amount_kobo]
-      additionalProperties: false
-      description: |
-        DRAFT. TODO(contract): depends on the payment provider. Holds nothing about the line or
-        its owner, because anyone with the payment_id can read it.
-        The example is made up for the mock (make mock). It is not a product value, and `pending`
-        is not a decided status value.
-      properties:
-        payment_id:
-          type: string
-          minLength: 1
-        status:
-          type: string
-          x-todo: Values depend on the payment provider.
-        amount_kobo:
-          type: integer
-          minimum: 1
-          description: Whole kobo, never a decimal.
-      # Example only, for the mock. Not a product value.
-      examples:
-        - payment_id: "EXAMPLE-PAYMENT-0001"
-          status: "pending"
-          amount_kobo: 100000
+      allOf:
+        - $ref: "#/components/schemas/PaymentStatus"
+        - type: object
+          properties:
+            checkout_url:
+              type: string
+              format: uri
+              description: |
+                Where to send the customer to pay (the gateway's own page, one use). Present when a
+                payment is started, not when its status is read.
     Line:
       type: object
       required: [line_id, customer_id, iccid, imsi, msisdn, plan_id, state]

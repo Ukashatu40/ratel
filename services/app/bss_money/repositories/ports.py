@@ -176,6 +176,73 @@ RedemptionScope = Callable[[], AbstractContextManager[RedemptionRepositories]]
 """Opens one transaction and yields the repositories on it: commit on exit, rollback on error."""
 
 
+@dataclass(frozen=True)
+class StoredPayment:
+    payment_id: int
+    public_id: str
+    line_id: int
+    provider: str
+    provider_ref: str
+    amount_kobo: int
+    status: str
+    checkout_url: str | None
+    created_at: datetime
+
+
+class DuplicateKey(Exception):
+    """A payment with this Idempotency-Key already exists (a retry that raced the first call)."""
+
+
+class PaymentRepository(Protocol):
+    """Storage for gateway payments. Works in the caller's transaction and never commits."""
+
+    def add(
+        self,
+        *,
+        public_id: str,
+        line_id: int,
+        provider: str,
+        provider_ref: str,
+        idempotency_key: str,
+        amount_kobo: int,
+    ) -> StoredPayment:
+        """Store a new `pending` payment. Raises `DuplicateKey` if the key is already used."""
+        ...
+
+    def by_idempotency_key(self, key: str) -> StoredPayment | None: ...
+
+    def by_public_id(self, public_id: str) -> StoredPayment | None: ...
+
+    def by_reference(self, provider_ref: str, *, lock: bool = False) -> StoredPayment | None:
+        """The payment for this provider reference. `lock` holds it until the transaction ends."""
+        ...
+
+    def set_checkout(self, payment_id: int, url: str) -> None: ...
+
+    def mark_succeeded(
+        self, payment_id: int, provider_txn_id: str | None, at: datetime
+    ) -> None: ...
+
+    def mark_failed(self, payment_id: int, provider_txn_id: str | None) -> None: ...
+
+    def pending_references(self, older_than: datetime, limit: int) -> list[str]:
+        """References of payments still pending that were started before `older_than`."""
+        ...
+
+
+@dataclass(frozen=True)
+class PaymentRepositories:
+    """Everything one payment step touches, all on the same transaction."""
+
+    payments: PaymentRepository
+    ledger: LedgerRepository
+    lines: LineLookup
+
+
+PaymentScope = Callable[[], AbstractContextManager[PaymentRepositories]]
+"""Opens one transaction and yields the repositories on it: commit on exit, rollback on error."""
+
+
 class PurchaseRepository(Protocol):
     """Storage for buying a plan or a bundle. Works in the caller's transaction, never commits."""
 

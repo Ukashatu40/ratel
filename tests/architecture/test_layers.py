@@ -79,10 +79,12 @@ BSS_MONEY = Layering(
         "repositories.sql": frozenset({"domain", "repositories.ports", "models"}),
         "services": frozenset({"domain", "repositories.ports"}),
         "api": frozenset({"services", "domain", "repositories.ports"}),
+        "gateways": frozenset({"domain"}),
     },
     banned_external={
         "domain": frozenset({"fastapi", "starlette", "sqlalchemy", "psycopg", "pymongo"}),
         "api": frozenset({"sqlalchemy", "psycopg", "pymongo"}),
+        "gateways": frozenset({"fastapi", "starlette", "sqlalchemy", "psycopg", "pymongo"}),
         "models": frozenset({"fastapi", "starlette", "pymongo"}),
         "repositories.ports": frozenset({"fastapi", "starlette", "sqlalchemy", "psycopg"}),
         "repositories.sql": frozenset({"fastapi", "starlette", "pymongo"}),
