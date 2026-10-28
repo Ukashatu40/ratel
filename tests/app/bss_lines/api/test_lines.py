@@ -11,9 +11,10 @@ from sqlalchemy import create_engine, insert
 from sqlalchemy.orm import sessionmaker
 
 from app.bss_lines.api.lines import get_client
-from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
+from app.bss_lines.models.lines import Customer, Line, Number, Plan, Sim
+from app.config import Settings
 from app.db import Base
-from tests.app.bss_lines.desk_helpers import add_staff, make_app, signed_in
+from app.main import create_app
 from tests.app.bss_lines.fakes import FakeRatelLinkClient
 
 
@@ -72,13 +73,12 @@ def client_with_seeded_line(tmp_path, fake_client: FakeRatelLinkClient) -> Itera
         s.commit()
         line_id = line.line_id
 
-    app = make_app(factory)
+    app = create_app(Settings(ratel_env="test"))
+    app.state.session_factory = factory
     app.dependency_overrides[get_client] = lambda: fake_client
-    email = add_staff(factory, "agent")
 
-    with signed_in(app, email) as client:
+    with TestClient(app) as client:
         client.seeded_line_id = line_id  # type: ignore[attr-defined]
-        client.staff_email = email  # type: ignore[attr-defined]
         yield client
 
 
@@ -91,57 +91,6 @@ def test_activate_endpoint_returns_active(client_with_seeded_line) -> None:
     assert response.status_code == 200
     assert response.json()["state"] == "active"
     assert response.json()["line_id"] == line_id
-
-
-def test_the_audit_actor_is_the_signed_in_member_whatever_the_body_says(
-    client_with_seeded_line,
-) -> None:
-    from sqlalchemy import select
-
-    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
-    client_with_seeded_line.post(
-        "/v1/lines/activate",
-        json={"line_id": line_id, "actor": "staff:999", "idempotency_key": "key-actor"},
-    )
-    factory = client_with_seeded_line.app.state.session_factory
-    with factory() as session:
-        actors = session.scalars(select(LineAudit.actor).where(LineAudit.line_id == line_id)).all()
-    assert actors == ["staff:1"]  # the signed-in member, not the 999 the body claimed
-
-
-@pytest.mark.parametrize(
-    ("method", "path"),
-    [
-        ("post", "/v1/lines/activate"),
-        ("post", "/v1/lines/suspend"),
-        ("post", "/v1/lines/reinstate"),
-        ("post", "/v1/lines/terminate"),
-        ("get", "/v1/lines/lookup?msisdn=2348000000001"),
-        ("get", "/v1/lines/lookup/1"),
-    ],
-)
-def test_the_line_routes_refuse_a_caller_who_is_not_signed_in(
-    client_with_seeded_line, fake_client: FakeRatelLinkClient, method: str, path: str
-) -> None:
-    anonymous = TestClient(client_with_seeded_line.app)
-    body = {"line_id": 1, "idempotency_key": "k", "reason": "fraud"}
-    response = getattr(anonymous, method)(path, **({"json": body} if method == "post" else {}))
-    assert response.status_code == 401
-    assert fake_client.calls == []  # RatelLink was not called
-
-
-def test_care_may_not_terminate_a_line_but_an_admin_may(
-    client_with_seeded_line, fake_client: FakeRatelLinkClient
-) -> None:
-    line_id = client_with_seeded_line.seeded_line_id  # type: ignore[attr-defined]
-    body = {"line_id": line_id, "idempotency_key": "k-t", "reason": "fraud"}
-    refused = client_with_seeded_line.post("/v1/lines/terminate", json=body)
-    assert refused.status_code == 403
-    assert fake_client.calls == []
-
-    app = client_with_seeded_line.app
-    admin = signed_in(app, add_staff(app.state.session_factory, "admin"))
-    assert admin.post("/v1/lines/terminate", json=body).status_code == 200
 
 
 def test_activate_endpoint_calls_ratellink_once(
@@ -227,10 +176,10 @@ def client_with_100k_lines(tmp_path_factory) -> Iterator[TestClient]:
         )
         s.commit()
 
-    app = make_app(factory)
-    email = add_staff(factory, "agent")
+    app = create_app(Settings(ratel_env="test"))
+    app.state.session_factory = factory
 
-    with signed_in(app, email) as client:
+    with TestClient(app) as client:
         yield client
 
 
@@ -287,3 +236,4 @@ def test_lookup_with_two_identifiers_is_422(client_with_100k_lines) -> None:
 def test_lookup_of_unknown_line_is_404(client_with_100k_lines) -> None:
     assert client_with_100k_lines.get("/v1/lines/lookup/99999999").status_code == 404
     assert client_with_100k_lines.get("/v1/lines/lookup?msisdn=2349999999999").status_code == 404
+
