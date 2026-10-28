@@ -37,7 +37,7 @@ Respect that boundary. See [ARCHITECTURE.md](ARCHITECTURE.md).
   tests and [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md).
 - **Two approvers, not one, for the code that holds keys and money.** When the lead writes a
   RatelLink or RatelBSS: money change, @CaptRaven must approve plus one more person, normally
-  @capitanaserdel. The gate (`critical-review-gate`) enforces two distinct approvals and names
+  @capitanaserdel. The gate (`critical-review-gate`) reports on two distinct approvals (information only since 2026-10-28, [ADR 0011](adr/0011-sole-approver-for-merges.md)) and names
   @Ukashatu40 and @CaptRaven as required. See [ADR 0004](adr/0004-two-reviewer-enforcement.md).
 - **No junior or intern is the only code owner of a path.** `.github/CODEOWNERS` always lists a
   senior as well, and a test keeps every rule at two or more owners.
