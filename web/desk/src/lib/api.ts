@@ -11,6 +11,12 @@ export class ApiError extends Error {
   }
 }
 
+// Called when a call other than sign-in answers 401: the session ended (30 minutes idle, 8 hours, or signed out elsewhere).
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
 async function request<T>(method: string, path: string, body?: unknown, idempotencyKey?: string): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -22,6 +28,7 @@ async function request<T>(method: string, path: string, body?: unknown, idempote
     credentials: "include", // the staff session cookie (POST /v1/auth/login sets it)
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (res.status === 401 && !path.startsWith("/v1/auth/")) onUnauthorized?.();
   if (!res.ok) {
     let code = "unknown";
     let message = res.statusText;

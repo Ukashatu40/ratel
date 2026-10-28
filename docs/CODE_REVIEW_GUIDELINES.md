@@ -2,8 +2,9 @@
 
 ## Who reviews
 
+- **Since 2026-10-28 no approval is required to merge** ([ADR 0011](adr/0011-sole-approver-for-merges.md)); the project lead decides. The rest of this page is the standard to review against when a review is asked for.
 - One reviewer for most changes (including RatelVoice configuration).
-- **Two reviewers** for RatelLink (keys) and RatelBSS: money. The `critical-review-gate` check enforces two distinct approvals on the latest commit. `.github/critical-reviewers.txt` names the project lead (@Ukashatu40) and the independent reviewer (@CaptRaven) as required approvers. When the lead is the author, @CaptRaven plus one more person, normally @capitanaserdel.
+- **Two reviewers** for RatelLink (keys) and RatelBSS: money. The `critical-review-gate` check reports whether two distinct people approved the latest commit; it no longer blocks a merge. `.github/critical-reviewers.txt` names the project lead (@Ukashatu40) and the independent reviewer (@CaptRaven) as required approvers. When the lead is the author, @CaptRaven plus one more person, normally @capitanaserdel.
 - Authors do not approve their own PRs. New pushes dismiss earlier approvals.
 - Reviewer assignments for workstreams are in [OWNERSHIP_MATRIX.md](OWNERSHIP_MATRIX.md) and `.github/CODEOWNERS`. A junior or intern is never the only reviewer of a path.
 
