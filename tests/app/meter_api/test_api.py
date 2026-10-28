@@ -224,6 +224,7 @@ def test_a_deployed_app_with_a_key_starts(env: str) -> None:
             database_url=SecretStr("sqlite:///:memory:"),
             meter_api_key=SecretStr(TEST_KEY),
             pay_api_key=SecretStr(TEST_KEY),
+            bss_api_key=SecretStr(TEST_KEY),
         )
     )
     assert app is not None

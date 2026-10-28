@@ -69,6 +69,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.redemption_scope = redemption_scope
 
+    # Idempotency-Key store (M-26). In local and test a per-process dict is
+    # enough; everywhere else it must be Redis, so a restart does not turn a
+    # repeat into a new operation.
+    from app.bss_lines.repositories.idempotency import (
+        InMemoryIdempotencyStore,
+        RedisIdempotencyStore,
+    )
+
+    if settings.ratel_env in ("local", "test"):
+        app.state.idempotency_store = InMemoryIdempotencyStore()
+    else:
+        import redis
+
+        app.state.idempotency_store = RedisIdempotencyStore(
+            redis.Redis.from_url(settings.redis_url.get_secret_value())
+        )
+
     @contextmanager
     def payment_scope() -> Iterator[PaymentRepositories]:
         # One transaction per step; the step commits on a normal return (refusals included).
