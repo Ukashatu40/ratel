@@ -3,7 +3,10 @@ from contextlib import contextmanager
 from typing import Any, cast
 
 from fastapi import FastAPI, Request, Response
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 
+from app import readiness
 from app.bss_lines.api.desk import router as desk_router
 from app.bss_lines.api.desk_reads import router as desk_reads_router
 from app.bss_lines.api.kyc import router as kyc_router
@@ -93,14 +96,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RedisIdempotencyStore,
     )
 
+    app.state.redis = None  # the client, where Redis is used (for /readyz)
     if settings.ratel_env in ("local", "test"):
         app.state.idempotency_store = InMemoryIdempotencyStore()
     else:
         import redis
 
-        app.state.idempotency_store = RedisIdempotencyStore(
-            redis.Redis.from_url(settings.redis_url.get_secret_value())
-        )
+        app.state.redis = redis.Redis.from_url(settings.redis_url.get_secret_value())
+        app.state.idempotency_store = RedisIdempotencyStore(app.state.redis)
 
     @contextmanager
     def catalog_scope() -> Iterator[BundleCatalog]:
@@ -150,8 +153,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
-        # Liveness only. TODO: readiness check (PostgreSQL, Redis) once models exist.
+        # Liveness only: the process is up. Whether it can do its job is /readyz.
         return {"status": "ok"}
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz() -> JSONResponse:
+        # Readiness (app/readiness.py): database, migrations, Redis, the RatelLink key. It says
+        # only ready or not; the reason is in the log. The proxy does not forward this route.
+        result = await run_in_threadpool(
+            readiness.check, app.state.settings, app.state.engine, app.state.redis
+        )
+        return JSONResponse(
+            status_code=200 if result.ready else 503,
+            content={"status": "ready" if result.ready else "unavailable"},
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.middleware("http")
     async def _handle_options(request: Request, call_next: Any) -> Response:

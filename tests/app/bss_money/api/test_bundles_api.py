@@ -93,3 +93,11 @@ def test_without_the_proxys_key_the_list_is_401(
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthorized"
     assert "Weekly" not in response.text
+
+
+def test_a_retired_bundle_is_not_listed(client: TestClient) -> None:
+    _add(client, _bundle("Gone", 1_000, 1_000, 1), _bundle("Kept", 2_000, 2_000, 2))
+    with client.app.state.session_factory() as session, session.begin():  # type: ignore[attr-defined]
+        session.get(Bundle, 1).state = "retired"  # type: ignore[union-attr]
+    names = [b["name"] for b in client.get(URL, headers=AUTH).json()["bundles"]]
+    assert names == ["Kept"]
