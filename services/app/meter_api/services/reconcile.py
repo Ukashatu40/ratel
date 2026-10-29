@@ -58,6 +58,25 @@ class Report:
         return not self.flagged
 
 
+@dataclass(frozen=True)
+class TotalReport:
+    """All the bytes we stored in a window against one total from the network."""
+
+    ours: int
+    network: int
+    tolerance_bps: int
+
+    @property
+    def percent(self) -> float | None:
+        """How far ours is from the network's, as a percentage of the network's. None if the
+        network counted nothing."""
+        return abs(self.ours - self.network) * 100 / self.network if self.network else None
+
+    @property
+    def ok(self) -> bool:
+        return abs(self.ours - self.network) * 10_000 <= self.tolerance_bps * self.network
+
+
 def parse_network_totals(text: str) -> dict[str, int]:
     """`imsi,bytes` per line. A header line, blank lines and `#` comments are allowed."""
     totals: dict[str, int] = {}
@@ -124,3 +143,32 @@ def reconcile(
     if end <= start:
         raise ValueError("the window must end after it starts")
     return compare(usage.totals_by_imsi(start, end), network, tolerance_bps)
+
+
+def reconcile_total(
+    usage: UsageRepository,
+    network_total: int,
+    start: datetime,
+    end: datetime,
+    tolerance_bps: int = DEFAULT_TOLERANCE_BPS,
+    imsi: str | None = None,
+) -> TotalReport:
+    """Everything we stored for [start, end) (or one SIM's) against a single network total.
+
+    For when the network's own counter is an interface total (the kernel's byte counters on
+    `ogstun`), which says how many bytes passed but not whose they were. Run it with one test phone
+    on the network, or give `imsi` to compare that SIM alone.
+    """
+    if tolerance_bps < 0:
+        raise ValueError("tolerance must not be negative")
+    if network_total < 0:
+        raise ValueError("the network total must not be negative")
+    if imsi is not None and not IMSI_PATTERN.match(imsi):
+        raise ValueError("an IMSI is 15 digits")
+    if start.tzinfo is None or end.tzinfo is None:
+        raise ValueError("times must be timezone-aware (UTC)")
+    if end <= start:
+        raise ValueError("the window must end after it starts")
+    totals = usage.totals_by_imsi(start, end)
+    ours = totals.get(imsi, 0) if imsi is not None else sum(totals.values())
+    return TotalReport(ours=ours, network=network_total, tolerance_bps=tolerance_bps)
