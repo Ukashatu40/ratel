@@ -102,8 +102,10 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    sudo systemd-analyze verify /etc/systemd/system/ratel-app.service     # must print nothing about this file
    sudo systemctl start ratel-app.service
    curl -s http://127.0.0.1:8000/healthz                                 # {"status":"ok"}
+   curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/readyz   # 200 once migrations ran and Redis answers
    ```
-   Enable it at boot (`systemctl enable`) only when you are happy, then reboot once to prove it comes back.
+   A 503 from `/readyz` names its reason only in the journal (`readiness.failed`: `database`, `migrations`,
+   `redis` or `ratel_link_key`). Enable it at boot (`systemctl enable`) only when you are happy, then reboot once to prove it comes back.
 
 8. **The proxy.** Copy `ratel-app.conf.example` to `/etc/nginx/conf.d/ratel-app.conf`, replace every
    `<placeholder>`, install the certificate, then make the redemption key: `openssl rand -base64 32`, put it in
