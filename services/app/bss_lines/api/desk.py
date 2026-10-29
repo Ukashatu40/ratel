@@ -164,6 +164,7 @@ def create_customer(
             Role(staff.role),
             customers.NewCustomer(**body.model_dump()),
             idempotency_key,
+            f"staff:{staff.staff_id}",
         )
     except customers.NotAllowed:
         raise ApiError(

@@ -22,6 +22,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.bss_lines.api.lines import get_client
+from app.bss_lines.models.lines import Customer, Line
 from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_money.repositories.sql import SqlRatingRepository
 from app.bss_money.services.line_control import LifecycleLineControl
@@ -166,6 +167,38 @@ def test_journey_1_buy_and_activate_a_line(counter: Counter) -> None:
     assert wallet["balance_kobo"] == wallet["ledger_sum_kobo"] == FACE - 100_000
     ledger = counter.agent.get("/v1/ledger", params={"line_id": line.line_id}).json()
     assert {e["kind"] for e in ledger["entries"]} == {"top_up", "purchase", "vat"}
+
+
+def test_journey_1_for_a_customer_whose_identity_an_admin_has_not_yet_verified(
+    counter: Counter,
+) -> None:
+    line = counter.new_line()
+    with counter.factory() as session, session.begin():
+        customer_id = session.get(Line, line.line_id).customer_id  # type: ignore[union-attr]
+        session.get(Customer, customer_id).kyc_status = "pending"  # type: ignore[union-attr]
+    counter.redeem(line, counter.voucher())
+    assert counter.buy(line, "plan", line.plan_id, "buy-1").status_code == 200
+
+    # Paid for, but the customer is not verified: customer care cannot go further.
+    refused = counter.activate(line, "a-1")
+    assert refused.status_code == 409
+    assert "KYC" in refused.json()["error"]["message"]
+    assert (
+        counter.agent.post(
+            f"/v1/customers/{customer_id}/kyc", json={"status": "verified", "reason": "seen"}
+        ).status_code
+        == 403
+    )
+
+    # An admin verifies, and the same sale goes through.
+    verified = counter.admin.post(
+        f"/v1/customers/{customer_id}/kyc",
+        json={"status": "verified", "reason": "documents checked"},
+    )
+    assert verified.json()["kyc_status"] == "verified"
+    assert counter.activate(line, "a-2").json()["state"] == "active"
+    history = counter.agent.get(f"/v1/customers/{customer_id}/history").json()
+    assert [e["action"] for e in history["entries"]] == ["kyc_verified"]
 
 
 def test_journey_2_top_up_with_a_voucher(counter: Counter) -> None:

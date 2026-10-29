@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, Response
 
 from app.bss_lines.api.desk import router as desk_router
 from app.bss_lines.api.desk_reads import router as desk_reads_router
+from app.bss_lines.api.kyc import router as kyc_router
 from app.bss_lines.api.lines import router as bss_lines_router
 from app.bss_lines.api.staff import router as staff_router
 from app.bss_lines.repositories.desk_sql import SqlDeskReadRepository
@@ -166,6 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(bss_lines_router)
     app.include_router(desk_router)
     app.include_router(desk_reads_router)
+    app.include_router(kyc_router)
     app.include_router(bss_money_router)
     app.include_router(money_desk_router)
     app.include_router(purchases_router)
