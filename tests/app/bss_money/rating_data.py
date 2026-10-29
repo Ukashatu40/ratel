@@ -71,6 +71,11 @@ def seed_line(
     return SeededLine(line.line_id, imsi, plan.plan_id)
 
 
+def seed_lines(session: Session, count: int) -> list[SeededLine]:
+    """Lines 1 to `count`, so a wallet, allowance or voucher in a test names a line that exists."""
+    return [seed_line(session, n) for n in range(1, count + 1)]
+
+
 def add_bucket(
     session: Session,
     line: SeededLine,

@@ -24,7 +24,15 @@ from app.bss_money.services.vouchers import (
     set_batch_state,
     set_card_state,
 )
+from tests.app.bss_money.rating_data import seed_lines
 from tests.app.bss_money.vouchers_data import FACE, T0, issue, redeem, wrong_pin
+
+
+@pytest.fixture(autouse=True)
+def _lines(session: Session) -> None:
+    """The foreign keys need the lines these tests name to exist."""
+    seed_lines(session, 7)
+
 
 REFUSED = RedeemResult(RedeemStatus.REFUSED)
 

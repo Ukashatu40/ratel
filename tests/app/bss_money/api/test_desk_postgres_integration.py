@@ -256,3 +256,25 @@ def test_the_bundle_state_migration_refuses_to_roll_back_over_a_retired_bundle(d
     desk.db.run("DELETE FROM bundle")
     desk.db.alembic("downgrade", "1e88ea7593b2")
     desk.db.alembic("upgrade", "head")
+
+
+def test_money_cannot_name_a_line_that_does_not_exist(desk: Desk) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    for sql in (
+        "INSERT INTO wallet (line_id, balance_kobo) VALUES (9999, 0)",
+        "INSERT INTO allowance_bucket (line_id, source_kind, source_id, data_bytes_total, "
+        "data_bytes_used, valid_from, valid_to) "
+        "VALUES (9999, 'plan', 1, 10, 0, now(), now() + interval '1 day')",
+    ):
+        with pytest.raises(IntegrityError, match="foreign key"):
+            desk.db.run(sql)
+
+
+def test_the_foreign_key_migration_names_the_orphans_and_rolls_back_cleanly(desk: Desk) -> None:
+    desk.db.alembic("downgrade", "824d292cb01b")  # the keys are gone
+    desk.db.run("INSERT INTO wallet (line_id, balance_kobo) VALUES (9999, 0)")  # an orphan
+    with pytest.raises(RuntimeError, match=r"1 row\(s\) in wallet\.line_id"):
+        desk.db.alembic("upgrade", "head")
+    desk.db.run("DELETE FROM wallet WHERE line_id = 9999")
+    desk.db.alembic("upgrade", "head")

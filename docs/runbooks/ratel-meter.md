@@ -85,6 +85,26 @@ Logs must never contain tokens, keys, IMSIs or UE IP addresses.
 | `meter.counters.nft_failed` on every interval | The counting table is not loaded, or the agent may not read it | `systemctl status ratel-meter-nft.service`; `sudo nft list table inet ratel_meter`; check `CAP_NET_ADMIN` in the unit |
 | `meter.agent.tick_error` with `MalformedSnapshotError` | `nft` answered but the output is not what the reader expects (a set is missing, or an element has no counter) | Compare `sudo nft -j list table inet ratel_meter` with `deploy/core-up/ratel-meter.nft`. Do not edit the table by hand |
 
+## Reconciling with the network's counters (M-28, demo act 6)
+
+Our stored bytes against what the network itself counted, per SIM, for a window. It changes nothing.
+
+1. The network team writes what the network counted per IMSI in the window, as `imsi,bytes` lines (a header
+   line and `#` comments are fine). Where they read it from is theirs (N7); this takes the file.
+2. Pick a window on 300-second boundaries, in Unix epoch seconds: `[from, to)`. Records are whole intervals, so
+   a window that cuts one in half will not match.
+3. On bss-app, as the service user with the app's settings loaded (see `docs/runbooks/demo-setup.md` for the
+   `bss` helper):
+
+   ```bash
+   bss app.meter_api.reconcile_cli --from 1793620800 --to 1793624400 --network-totals /tmp/network.csv
+   ```
+
+   Exit 0: every SIM is within 1% (`--tolerance-bps 100`). Exit 1: at least one differs, or is on one side
+   only; each is listed with the IMSI masked to its last four digits. Exit 2: it could not run (bad file, bad
+   window, database). Delete the file afterwards: it holds IMSIs.
+4. A difference is for a person to look at. Nothing is corrected or billed from here.
+
 ## Recovery
 
 1. Check configuration and permissions:

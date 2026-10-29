@@ -2,15 +2,23 @@
 
 Structure only here. The rating job (M-17) deducts from buckets soonest-expiry-first.
 
-`line_id` and `source_id` are plain integers for now. TODO(M-25): foreign keys to `line`, `plan`
-and `bundle` once the bss_lines schema is merged.
+`line_id` is a foreign key to `line` (RESTRICT). `source_id` stays a plain integer: it names a plan
+or a bundle depending on `source_kind`, which one foreign key cannot say.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.bss_money.models.ledger import BIGINT_PK
@@ -32,7 +40,7 @@ class AllowanceBucket(Base, TimestampMixin):
     )
 
     bucket_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
-    line_id: Mapped[int] = mapped_column(Integer)
+    line_id: Mapped[int] = mapped_column(Integer, ForeignKey("line.line_id", ondelete="RESTRICT"))
     source_kind: Mapped[str] = mapped_column(String(10))
     source_id: Mapped[int] = mapped_column(Integer)
     data_bytes_total: Mapped[int] = mapped_column(BigInteger)

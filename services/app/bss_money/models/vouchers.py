@@ -2,15 +2,22 @@
 
 `voucher` holds the card number (printed on the card, needed to find it) and only a hash of the PIN.
 `voucher_attempt` holds the failures that count against the limit of five per card number per hour.
-Neither table is ever logged. `used_by_line_id` is a plain integer for now, like the other money
-tables. TODO(M-25): a foreign key to `line.line_id` once bss_lines is merged.
+Neither table is ever logged. `used_by_line_id` is a foreign key to `line` (RESTRICT).
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.bss_money.models.ledger import BIGINT_PK
@@ -45,7 +52,9 @@ class Voucher(Base, TimestampMixin):
     batch: Mapped[str] = mapped_column(String(40))
     # TODO(PRD): whether cards expire and when. Null means they do not.
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    used_by_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    used_by_line_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("line.line_id", ondelete="RESTRICT"), nullable=True
+    )
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
