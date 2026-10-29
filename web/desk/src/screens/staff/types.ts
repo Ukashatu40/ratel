@@ -1,7 +1,9 @@
 import type { AuthUser } from "../../lib/authContext";
 
-export type Role = AuthUser["role"]; // "agent" | "admin" (PRD decision 11, demo only)
-export const ROLES: Role[] = ["agent", "admin"];
+// The screens use the friendly role names ("Customer Care" / "Super Admin").
+// The API stores "agent" / "admin" — see ROLE_LABEL in src/lib/auth.tsx for the mapping.
+export type Role = AuthUser["role"];
+export const ROLES: Role[] = ["Customer Care", "Super Admin"];
 
 export interface StaffMember {
   id: string;
