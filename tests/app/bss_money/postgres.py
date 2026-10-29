@@ -54,6 +54,15 @@ class Database:
                 SqlLedgerRepository(session), new_posting(line, amount, kind, reference)
             )
 
+    def run(self, sql: str, **params: object) -> None:
+        """Run one statement in its own committed transaction (values go in `params`)."""
+        with self.engine.begin() as conn:
+            conn.execute(text(sql), params)
+
+    def rows(self, sql: str) -> list[tuple[object, ...]]:
+        with self.engine.connect() as conn:
+            return [tuple(r) for r in conn.execute(text(sql))]
+
     def scalar(self, sql: str) -> object:
         with self.engine.connect() as conn:
             return conn.execute(text(sql)).scalar()

@@ -165,3 +165,65 @@ def test_terminating_retires_the_sim_on_postgres(desk: Desk) -> None:
     assert response.status_code == 200
     assert response.json()["state"] == "terminated"
     assert desk.db.scalar("SELECT state FROM sim") == "retired"
+
+
+def test_two_admins_deciding_one_customer_at_once_take_turns(desk: Desk) -> None:
+    [line] = desk.lines()
+    customer_id = desk.db.scalar("SELECT customer_id FROM customer")
+    desk.db.run("UPDATE customer SET kyc_status = 'pending'")
+
+    def decide(status: str):  # type: ignore[no-untyped-def]
+        return desk.admin.post(
+            f"/v1/customers/{customer_id}/kyc", json={"status": status, "reason": f"to {status}"}
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        replies = list(pool.map(decide, ["verified", "rejected"]))
+
+    codes = sorted(r.status_code for r in replies)
+    final = desk.db.scalar("SELECT kyc_status FROM customer")
+    actions = [
+        a
+        for (a,) in desk.db.rows(
+            "SELECT action FROM customer_audit WHERE action <> 'registered' ORDER BY id"
+        )
+    ]
+    # Either verify won and reject was refused, or reject won and verify then went through.
+    assert codes in ([200, 409], [200, 200])
+    assert len(actions) == codes.count(200)
+    assert final == {"kyc_verified": "verified", "kyc_rejected": "rejected"}[actions[-1]]
+    if codes == [200, 409]:
+        assert final == "verified"
+    _ = line
+
+
+def test_the_customer_history_reads_on_postgres(desk: Desk) -> None:
+    desk.lines()
+    customer_id = desk.db.scalar("SELECT customer_id FROM customer")
+    desk.db.run("UPDATE customer SET kyc_status = 'pending'")
+    assert (
+        desk.admin.post(
+            f"/v1/customers/{customer_id}/kyc", json={"status": "verified", "reason": "seen"}
+        ).status_code
+        == 200
+    )
+    history = desk.agent.get(f"/v1/customers/{customer_id}/history").json()
+    assert history["total"] == 1
+    assert history["entries"][0]["action"] == "kyc_verified"
+
+
+def test_the_customer_audit_migration_rolls_back_only_while_empty(desk: Desk) -> None:
+    desk.lines()
+    customer_id = desk.db.scalar("SELECT customer_id FROM customer")
+    desk.db.run(
+        "INSERT INTO customer_audit (customer_id, action, actor, reason) "
+        "VALUES (:customer_id, 'registered', 'staff:1', 'test')",
+        customer_id=customer_id,
+    )
+    with pytest.raises(RuntimeError, match="refusing to drop customer_audit"):
+        desk.db.alembic("downgrade", "27c13d2d79bc")
+    desk.db.run("DELETE FROM customer_audit")
+    desk.db.alembic("downgrade", "27c13d2d79bc")
+    assert desk.db.scalar("SELECT to_regclass('customer_audit')") is None
+    desk.db.alembic("upgrade", "head")
+    assert desk.db.scalar("SELECT to_regclass('customer_audit')") is not None

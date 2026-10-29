@@ -107,6 +107,16 @@ class CustomerRepository(Protocol):
 
     def get_customer(self, customer_id: int) -> CustomerRecord | None: ...
 
+    def get_customer_for_update(self, customer_id: int) -> CustomerRecord | None:
+        """The customer, locked until the transaction ends, so two decisions take turns."""
+        ...
+
+    def set_kyc_status(self, customer_id: int, status: str) -> CustomerRecord: ...
+
+    def add_audit(self, customer_id: int, *, action: str, actor: str, reason: str) -> None:
+        """Append to the customer's history. Never edited afterwards."""
+        ...
+
 
 class ReplayRepository(Protocol):
     """Which Idempotency-Key created which record."""
@@ -224,6 +234,14 @@ class HistoryRow:
 
 
 @dataclass(frozen=True)
+class CustomerHistoryRow:
+    at: datetime
+    action: str
+    actor: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class AttentionRow:
     issue: str  # "out_of_data" | "pending_kyc"
     customer_id: int
@@ -252,6 +270,12 @@ class DeskReadRepository(Protocol):
         self, line_id: int, *, offset: int, limit: int
     ) -> tuple[list[HistoryRow], int] | None:
         """Newest first, with the total. None if there is no such line."""
+        ...
+
+    def customer_history(
+        self, customer_id: int, *, offset: int, limit: int
+    ) -> tuple[list[CustomerHistoryRow], int] | None:
+        """Newest first, with the total. None if there is no such customer."""
         ...
 
     def line_state_counts(self) -> dict[str, int]: ...

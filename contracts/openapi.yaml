@@ -510,6 +510,82 @@ paths:
           $ref: "#/components/responses/NotFound"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/customers/{customer_id}/kyc:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_decide_kyc
+      security:
+        - StaffSession: []
+      summary: Verify or reject a customer's KYC. Admin action.
+      description: |
+        Moves `kyc_status` and writes an entry to the customer's history with who and why. Allowed
+        moves: `pending` to `verified` or `rejected`, and `rejected` to `verified`. Deciding what the
+        customer already is changes nothing and writes nothing. Any other move, such as taking a
+        `verified` customer back to `rejected`, answers `409`: what happens to that customer's lines
+        is compliance's to say (PRODUCT_RULES.md, decision 2). Only an `admin` may decide; an `agent`
+        gets `403`. Returns the customer, as `bss_get_customer` does.
+        `reason` is free text typed by staff. It is personal data in the customer's history: never
+        put a NIN or a document number in it.
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycDecisionRequest"
+      responses:
+        "200":
+          description: The customer, with the decision applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/customers/{customer_id}/history:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_customer_history
+      security:
+        - StaffSession: []
+      summary: What was done to a customer's record, and by whom (ACC-3).
+      description: |
+        Newest first. Read-only. `action` is `registered`, `kyc_verified` or `kyc_rejected`.
+        `actor` is `staff:<staff_id>`. TODO(contract): whether RatelDesk is to see the staff
+        member's name instead of the id (see `bss_get_line_history`).
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: One page of the history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerHistory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/plans:
     get:
       tags: [RatelBSS]
@@ -2678,3 +2754,45 @@ components:
           description: Unix epoch seconds, UTC. When the allowance ends. Null on a repeat.
         replayed:
           type: boolean
+    KycDecisionRequest:
+      type: object
+      required: [status, reason]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [verified, rejected]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CustomerHistoryEntry:
+      type: object
+      required: [at, action, actor, reason]
+      additionalProperties: false
+      properties:
+        at:
+          type: integer
+          minimum: 0
+          description: Unix epoch seconds, UTC.
+        action:
+          type: string
+          enum: [registered, kyc_verified, kyc_rejected]
+        actor:
+          type: string
+          maxLength: 120
+        reason:
+          type: string
+          maxLength: 200
+    CustomerHistory:
+      type: object
+      required: [entries, total]
+      additionalProperties: false
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerHistoryEntry"
+        total:
+          type: integer
+          minimum: 0

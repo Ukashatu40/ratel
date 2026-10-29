@@ -142,7 +142,7 @@ A session lasts 8 hours at most and ends after 30 minutes without use. Five wron
 row lock the account for 15 minutes. A password is at least 12 characters. There is no sign-up: an
 admin makes accounts with `staff_cli` on bss-app. An `agent` sells and looks after lines (register a
 customer, sell a SIM, buy a plan or bundle for a line from its wallet, activate, suspend, reinstate). Only an `admin` registers a customer as already
-`verified` or terminates a line. TODO(PRD): the permission split, the lockout and the session
+`verified`, verifies or rejects a customer afterwards (a pending customer, or a rejected one with new documents; a verified customer is not taken back, until compliance says what happens to their lines), or terminates a line. Every registration and decision is in the customer's history with who and why. TODO(PRD): the permission split, the lockout and the session
 lengths are the project lead's choices for the first release, to be confirmed with the product
 owner and compliance before the pilot.
 

@@ -10,11 +10,20 @@ from sqlalchemy import ColumnElement, delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
+from app.bss_lines.models.lines import (
+    Customer,
+    CustomerAudit,
+    Line,
+    LineAudit,
+    Number,
+    Plan,
+    Sim,
+)
 from app.bss_lines.models.replay import IdempotentCreate
 from app.bss_lines.models.staff import StaffSession, StaffUser
 from app.bss_lines.repositories.desk_ports import (
     AttentionRow,
+    CustomerHistoryRow,
     CustomerRecord,
     CustomerRow,
     DuplicateCreate,
@@ -198,6 +207,23 @@ class SqlCustomerRepository:
     def get_customer(self, customer_id: int) -> CustomerRecord | None:
         row = self._session.get(Customer, customer_id)
         return None if row is None else _customer(row)
+
+    def get_customer_for_update(self, customer_id: int) -> CustomerRecord | None:
+        row = self._session.get(Customer, customer_id, with_for_update=True, populate_existing=True)
+        return None if row is None else _customer(row)
+
+    def set_kyc_status(self, customer_id: int, status: str) -> CustomerRecord:
+        row = self._session.get(Customer, customer_id)
+        assert row is not None  # the caller holds the row (get_customer_for_update)
+        row.kyc_status = status
+        self._session.flush()
+        return _customer(row)
+
+    def add_audit(self, customer_id: int, *, action: str, actor: str, reason: str) -> None:
+        self._session.add(
+            CustomerAudit(customer_id=customer_id, action=action, actor=actor, reason=reason)
+        )
+        self._session.flush()
 
 
 class SqlReplayRepository:
@@ -492,6 +518,33 @@ class SqlDeskReadRepository:
                     to_state=r.to_state,
                     actor=r.actor,
                     reason=r.reason,
+                )
+                for r in rows
+            ],
+            int(total or 0),
+        )
+
+    def customer_history(
+        self, customer_id: int, *, offset: int, limit: int
+    ) -> tuple[list[CustomerHistoryRow], int] | None:
+        if self._session.get(Customer, customer_id) is None:
+            return None
+        total = self._session.scalar(
+            select(func.count())
+            .select_from(CustomerAudit)
+            .where(CustomerAudit.customer_id == customer_id)
+        )
+        rows = self._session.scalars(
+            select(CustomerAudit)
+            .where(CustomerAudit.customer_id == customer_id)
+            .order_by(CustomerAudit.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return (
+            [
+                CustomerHistoryRow(
+                    at=_utc(r.created_at), action=r.action, actor=r.actor, reason=r.reason
                 )
                 for r in rows
             ],

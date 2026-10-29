@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from app.bss_lines.domain.state_machine import LineState
 from app.bss_lines.repositories.desk_ports import (
+    CustomerHistoryRow,
     CustomerRow,
     DeskReadRepository,
     HistoryRow,
@@ -70,3 +71,17 @@ def line_history(
     """The audit trail, newest first. None if there is no such line."""
     found = repo.line_history(line_id, offset=offset_of(page, page_size), limit=page_size)
     return None if found is None else HistoryPage(*found)
+
+
+@dataclass(frozen=True)
+class CustomerHistoryPage:
+    entries: list[CustomerHistoryRow]
+    total: int
+
+
+def customer_history(
+    repo: DeskReadRepository, customer_id: int, *, page: int, page_size: int
+) -> CustomerHistoryPage | None:
+    """What was done to this customer's record, newest first. None if there is no such customer."""
+    found = repo.customer_history(customer_id, offset=offset_of(page, page_size), limit=page_size)
+    return None if found is None else CustomerHistoryPage(*found)

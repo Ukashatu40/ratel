@@ -5,13 +5,23 @@ this package registers every table with `app.db.Base`, which is how `app/models.
 them. No ki or opc here: those live only in RatelLink.
 """
 
-from app.bss_lines.models.lines import Bundle, Customer, Line, LineAudit, Number, Plan, Sim
+from app.bss_lines.models.lines import (
+    Bundle,
+    Customer,
+    CustomerAudit,
+    Line,
+    LineAudit,
+    Number,
+    Plan,
+    Sim,
+)
 from app.bss_lines.models.replay import IdempotentCreate
 from app.bss_lines.models.staff import StaffSession, StaffUser
 
 __all__ = [
     "Bundle",
     "Customer",
+    "CustomerAudit",
     "IdempotentCreate",
     "Line",
     "LineAudit",

@@ -38,7 +38,8 @@ Structured JSON. Never contains Ki, OPc, PINs, or full IMSIs/ICCIDs.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Activation refused: KYC not verified | `customer.kyc_status != 'verified'` | Desk re-verifies KYC. |
+| Activation refused: KYC not verified | `customer.kyc_status != 'verified'` | An admin verifies the customer: `POST /v1/customers/{customer_id}/kyc` (RatelDesk's customers screen). Customer care cannot. |
+| KYC decision refused (409) | A verified customer cannot be taken back to rejected | Ask compliance what happens to their lines first (decision 2). |
 | Activation refused: no plan has been paid for (409) | The line has no allowance with data left that has not expired | Top up the line's wallet (voucher or payment), then buy the plan: `POST /v1/lines/{line_id}/purchases`, or `python -m app.bss_money.ops_cli buy` on bss-app. Then activate again. A lab test line needs this too. |
 | Purchase refused: `insufficient_funds` (409) | The line's wallet is short of the price; the message says by how much | Top up (voucher or payment), then buy again with a new `Idempotency-Key`. |
 | Purchase refused: key used for a different purchase (409) | The same `Idempotency-Key` was sent for another plan or bundle | Use a new key for each purchase. |
