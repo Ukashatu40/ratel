@@ -20,6 +20,7 @@ from app.meter_api.services.reconcile import (
     compare,
     parse_network_totals,
     reconcile,
+    reconcile_total,
 )
 
 A = "621000000000001"
@@ -215,3 +216,78 @@ def test_exit_2_when_the_file_or_the_window_is_bad(
 def test_a_tolerance_can_be_given(database: None, tmp_path: Path) -> None:
     assert main(_argv(tmp_path, f"{A},1005\n")) == 0  # 0.5% out: within the default 1%
     assert main(_argv(tmp_path, f"{A},1005\n", **{"--tolerance-bps": "10"})) == 1  # not within 0.1%
+
+
+# --- one total from the network (an interface counter) ----------------------------------------
+
+
+def test_everything_we_stored_against_one_interface_total(session: Session) -> None:
+    _store(session, A, START, 500, 500)
+    _store(session, B, START, 250, 250)
+    repo = SqlUsageRepository(session)
+    assert reconcile_total(repo, 1_500, START, END).ok
+    assert reconcile_total(repo, 1_510, START, END).ok  # 0.66% out
+    wrong = reconcile_total(repo, 1_700, START, END)  # 11.8% out: it can fail
+    assert not wrong.ok
+    assert wrong.percent == pytest.approx(11.76, abs=0.01)
+
+
+def test_one_sim_can_be_compared_alone(session: Session) -> None:
+    _store(session, A, START, 500, 500)
+    _store(session, B, START, 250, 250)
+    repo = SqlUsageRepository(session)
+    assert reconcile_total(repo, 1_000, START, END, imsi=A).ok
+    assert not reconcile_total(repo, 1_500, START, END, imsi=A).ok
+    assert reconcile_total(repo, 0, START, END, imsi="621000000000009").ok  # nothing on both sides
+
+
+def test_the_network_counting_nothing_while_we_stored_bytes_is_outside(session: Session) -> None:
+    _store(session, A, START, 1, 0)
+    report = reconcile_total(SqlUsageRepository(session), 0, START, END)
+    assert not report.ok
+    assert report.percent is None
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "complaint"),
+    [
+        ({"network_total": -1}, "negative"),
+        ({"tolerance_bps": -1}, "negative"),
+        ({"imsi": "123"}, "15 digits"),
+    ],
+)
+def test_a_bad_total_request_is_refused(
+    session: Session, kwargs: dict[str, object], complaint: str
+) -> None:
+    args = {"network_total": 1, "tolerance_bps": 100, "imsi": None} | kwargs
+    with pytest.raises(ValueError, match=complaint):
+        reconcile_total(SqlUsageRepository(session), start=START, end=END, **args)  # type: ignore[arg-type]
+
+
+def _total_argv(total: int, **changes: str) -> list[str]:
+    values = {
+        "--from": str(int(START.timestamp())),
+        "--to": str(int(END.timestamp())),
+        "--network-total": str(total),
+    } | changes
+    return [item for pair in values.items() for item in pair]
+
+
+def test_the_command_takes_one_total(database: None, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(_total_argv(1_000)) == 0
+    assert "ours 1000, network 1000: 0.00% off, within 1%" in capsys.readouterr().out
+    assert main(_total_argv(2_000)) == 1
+    assert "50.00% off, OUTSIDE 1%" in capsys.readouterr().out
+    assert main(_total_argv(1_000, **{"--imsi": A})) == 0
+
+
+def test_the_command_wants_exactly_one_source_of_the_network_totals(
+    database: None, tmp_path: Path
+) -> None:
+    path = tmp_path / "n.csv"
+    path.write_text(f"{A},1000\n")
+    both = _total_argv(1_000, **{"--network-totals": str(path)})
+    for argv in (both, ["--from", "1", "--to", "2"]):
+        with pytest.raises(SystemExit) as stopped:
+            main(argv)
+        assert stopped.value.code == 2

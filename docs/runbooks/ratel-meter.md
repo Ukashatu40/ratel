@@ -105,6 +105,19 @@ Our stored bytes against what the network itself counted, per SIM, for a window.
    window, database). Delete the file afterwards: it holds IMSIs.
 4. A difference is for a person to look at. Nothing is corrected or billed from here.
 
+**With the interface counters instead of a per-SIM file.** The kernel's byte counters on `ogstun` are an
+independent source that needs no network-team export: `deploy/core-up/ratel-interface-totals.sh` takes a
+snapshot on core-up, and `delta` prints the bytes that passed between two snapshots (steps in
+[voice-call-record-checks.md](voice-call-record-checks.md), section 6). They count every phone together, so run
+it with **one test phone**, or add `--imsi` to compare that SIM alone:
+
+```bash
+bss app.meter_api.reconcile_cli --from 1793620800 --to 1793624400 --network-total 123456789 [--imsi 621000000000001]
+```
+
+Exit 0 within 1%, exit 1 outside it, exit 2 if it could not run. Take both snapshots just after a 5-minute
+boundary, and wait for the agent's post after the end snapshot before comparing, or the last interval is missing.
+
 ## Recovery
 
 1. Check configuration and permissions:

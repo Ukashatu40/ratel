@@ -2,10 +2,14 @@
 
     python -m app.meter_api.reconcile_cli --from EPOCH --to EPOCH --network-totals FILE
         [--tolerance-bps 100]
+    python -m app.meter_api.reconcile_cli --from EPOCH --to EPOCH --network-total BYTES
+        [--imsi IMSI] [--tolerance-bps 100]
 
-FILE has one `imsi,bytes` line per SIM: what the network counted in the window (the network team
-supplies it). The window is `[from, to)` in Unix epoch seconds; use 300-second boundaries, because
-a record covers a whole interval.
+With `--network-totals`, FILE has one `imsi,bytes` line per SIM: what the network counted in the
+window (the network team supplies it). With `--network-total`, one number: the network's interface
+total for the window (`deploy/core-up/ratel-interface-totals.sh`), compared with everything we
+stored, or with one SIM's (`--imsi`). The window is `[from, to)` in Unix epoch seconds; use
+300-second boundaries, because a record covers a whole interval.
 
 Exit 0: every line is within the tolerance. Exit 1: at least one differs, or is on one side only
 (listed, with the IMSI masked). Exit 2: the check could not run (bad file, bad window, database).
@@ -29,8 +33,10 @@ from app.meter_api.services.reconcile import (
     DEFAULT_TOLERANCE_BPS,
     BadNetworkTotals,
     Report,
+    TotalReport,
     parse_network_totals,
     reconcile,
+    reconcile_total,
 )
 from common.logging import configure_logging, log_event
 from common.timeutil import from_epoch
@@ -42,7 +48,10 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reconcile_cli", description=__doc__)
     parser.add_argument("--from", dest="start", type=int, required=True)
     parser.add_argument("--to", dest="end", type=int, required=True)
-    parser.add_argument("--network-totals", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--network-totals", type=Path)
+    source.add_argument("--network-total", type=int)
+    parser.add_argument("--imsi")
     parser.add_argument("--tolerance-bps", type=int, default=DEFAULT_TOLERANCE_BPS)
     return parser
 
@@ -61,26 +70,47 @@ def _print(report: Report, tolerance_bps: int) -> None:
         out(f"  {item.masked_imsi}: ours {ours}, network {theirs}{gap}\n")
 
 
+def _print_total(report: TotalReport) -> None:
+    gap = "the network counted nothing" if report.percent is None else f"{report.percent:.2f}% off"
+    verdict = "within" if report.ok else "OUTSIDE"
+    sys.stdout.write(
+        f"ours {report.ours}, network {report.network}: {gap}, "
+        f"{verdict} {report.tolerance_bps / 100:g}%\n"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     settings = Settings()
     configure_logging(settings.log_level, stream=sys.stderr)
-    try:
-        network = parse_network_totals(args.network_totals.read_text())
-    except (OSError, BadNetworkTotals) as exc:
-        # The message names a line number, never a value; an OSError text names a path only.
-        sys.stderr.write(f"cannot read the network totals: {exc}\n")
-        return 2
+    network: dict[str, int] = {}
+    if args.network_totals is not None:
+        try:
+            network = parse_network_totals(args.network_totals.read_text())
+        except (OSError, BadNetworkTotals) as exc:
+            # The message names a line number, never a value; an OSError text names a path only.
+            sys.stderr.write(f"cannot read the network totals: {exc}\n")
+            return 2
     engine = make_engine(settings.database_url.get_secret_value())
     try:
         with session_factory(engine)() as session:
-            report = reconcile(
-                SqlUsageRepository(session),
-                network,
-                from_epoch(args.start),
-                from_epoch(args.end),
-                args.tolerance_bps,
-            )
+            usage = SqlUsageRepository(session)
+            start, end = from_epoch(args.start), from_epoch(args.end)
+            if args.network_total is not None:
+                total = reconcile_total(
+                    usage, args.network_total, start, end, args.tolerance_bps, args.imsi
+                )
+                _print_total(total)
+                log_event(
+                    log,
+                    logging.INFO,
+                    "reconcile.done",
+                    our_total=total.ours,
+                    network_total=total.network,
+                    ok=total.ok,
+                )
+                return 0 if total.ok else 1
+            report = reconcile(usage, network, start, end, args.tolerance_bps)
     except ValueError as exc:
         sys.stderr.write(f"cannot compare: {exc}\n")
         return 2
