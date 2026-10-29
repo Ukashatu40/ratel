@@ -189,6 +189,16 @@ def test_a_suspended_or_terminated_line_cannot_buy(
     assert entries(factory) == {"top_up:pay-1": 200_000}
 
 
+def test_a_retired_bundle_cannot_be_bought(
+    care: TestClient, factory: sessionmaker[Session]
+) -> None:
+    with factory() as s, s.begin():
+        s.get(Bundle, 1).state = "retired"  # type: ignore[union-attr]
+    refused = buy(care)
+    assert refused.status_code == 409
+    assert entries(factory) == {"top_up:pay-1": 200_000}
+
+
 def test_an_unknown_offer_is_refused(care: TestClient) -> None:
     assert buy(care, "a", "bundle", 99).status_code == 409
     assert buy(care, "b", "plan", 99).status_code == 409

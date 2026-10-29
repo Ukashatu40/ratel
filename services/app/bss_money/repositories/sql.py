@@ -491,9 +491,10 @@ class SqlPurchaseRepository:
             if plan is None or plan.state != "on_sale":
                 return None
             return _plan_offer(plan)
-        # TODO(M-25): the bundle table has no state column yet, so every bundle is on sale.
         bundle = self._session.get(BundleRow, offer_id)
-        return None if bundle is None else _bundle_offer(bundle)
+        if bundle is None or bundle.state != "on_sale":
+            return None
+        return _bundle_offer(bundle)
 
     def buckets(self, line_id: int) -> list[Bucket]:
         return SqlRatingRepository(self._session).buckets(line_id)
@@ -529,8 +530,9 @@ class SqlBundleCatalog:
         self._session = session
 
     def bundles_on_sale(self) -> list[BundleOffer]:
-        # TODO(M-25): the bundle table has no state column yet, so every bundle is on sale.
-        rows = self._session.scalars(select(BundleRow).order_by(BundleRow.bundle_id))
+        rows = self._session.scalars(
+            select(BundleRow).where(BundleRow.state == "on_sale").order_by(BundleRow.bundle_id)
+        )
         return [_bundle_offer(row) for row in rows]
 
 

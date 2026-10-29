@@ -227,3 +227,32 @@ def test_the_customer_audit_migration_rolls_back_only_while_empty(desk: Desk) ->
     assert desk.db.scalar("SELECT to_regclass('customer_audit')") is None
     desk.db.alembic("upgrade", "head")
     assert desk.db.scalar("SELECT to_regclass('customer_audit')") is not None
+
+
+def test_readiness_follows_the_migrations_on_postgres(desk: Desk) -> None:
+    from fastapi.testclient import TestClient
+
+    client = TestClient(desk.app)
+    assert client.get("/readyz").status_code == 200  # migrated to head by the fixture
+    desk.db.alembic("downgrade", "27c13d2d79bc")  # the code is now one migration ahead
+    assert client.get("/readyz").status_code == 503
+    assert client.get("/healthz").status_code == 200
+    desk.db.alembic("upgrade", "head")
+    assert client.get("/readyz").status_code == 200
+
+
+def test_the_bundle_state_migration_refuses_to_roll_back_over_a_retired_bundle(desk: Desk) -> None:
+    desk.db.run(
+        "INSERT INTO bundle (name, price_kobo, validity_days, data_bytes, channels, state) "
+        "VALUES ('Old', 1000, 1, 100, 'data', 'retired')"
+    )
+    with pytest.raises(RuntimeError, match=r"refusing to drop bundle\.state"):
+        desk.db.alembic("downgrade", "1e88ea7593b2")
+    with pytest.raises(Exception, match="ck_bundle_state_valid"):
+        desk.db.run(
+            "INSERT INTO bundle (name, price_kobo, validity_days, data_bytes, channels, state) "
+            "VALUES ('Bad', 1000, 1, 100, 'data', 'sold_out')"
+        )
+    desk.db.run("DELETE FROM bundle")
+    desk.db.alembic("downgrade", "1e88ea7593b2")
+    desk.db.alembic("upgrade", "head")

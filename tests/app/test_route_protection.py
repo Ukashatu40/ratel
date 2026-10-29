@@ -15,9 +15,10 @@ from app.meter_api.api.dependencies import require_api_key
 from tests.route_walk import effective_routes
 
 PROTECTION = {current_staff, require_pay_key, require_api_key}
-# Public on purpose: liveness; sign-in (it is how a session starts); sign-out (ends one, and is
+# Public on purpose: liveness; readiness (a monitor has no key; it answers only ready or not, and
+# the proxy does not forward it); sign-in (it is how a session starts); sign-out (ends one, and is
 # harmless without one).
-ALLOWLIST = {"/healthz", "/v1/auth/login", "/v1/auth/logout"}
+ALLOWLIST = {"/healthz", "/readyz", "/v1/auth/login", "/v1/auth/logout"}
 
 
 def _protected(dependant: Dependant) -> bool:

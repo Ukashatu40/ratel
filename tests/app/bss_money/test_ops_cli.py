@@ -121,9 +121,21 @@ def test_a_bundle_is_added_and_listed(database: str, capsys: pytest.CaptureFixtu
     ]
     assert main(argv) == 0
     assert main(["bundle", "list"]) == 0
-    assert "Weekly\t30000 kobo\t7 d\t5000 B" in capsys.readouterr().out
+    assert "Weekly\t30000 kobo\t7 d\t5000 B\ton_sale" in capsys.readouterr().out
     argv[argv.index("--validity-days") + 1] = "0"
     assert main(argv) == 1
+
+
+def test_a_bundle_is_retired_and_listed_as_retired(
+    database: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    add = ["bundle", "add", "--name", "Old", "--price-kobo", "1000"]
+    main([*add, "--validity-days", "1", "--data-bytes", "100"])
+    assert main(["bundle", "retire", "--bundle-id", "1"]) == 0
+    capsys.readouterr()
+    assert main(["bundle", "list"]) == 0
+    assert "Old\t1000 kobo\t1 d\t100 B\tretired" in capsys.readouterr().out
+    assert main(["bundle", "retire", "--bundle-id", "99"]) == 1  # no such bundle
 
 
 def test_crediting_a_wallet_buying_a_plan_and_reading_the_balance(

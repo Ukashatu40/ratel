@@ -161,6 +161,7 @@ class Bundle(Base, TimestampMixin):
         CheckConstraint("price_kobo >= 0", name="ck_bundle_price_kobo_non_negative"),
         CheckConstraint("validity_days > 0", name="ck_bundle_validity_days_positive"),
         CheckConstraint("data_bytes >= 0", name="ck_bundle_data_bytes_non_negative"),
+        CheckConstraint("state IN ('on_sale', 'retired')", name="ck_bundle_state_valid"),
     )
 
     bundle_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -169,3 +170,5 @@ class Bundle(Base, TimestampMixin):
     validity_days: Mapped[int] = mapped_column(Integer)
     data_bytes: Mapped[int] = mapped_column(BigInteger)
     channels: Mapped[str] = mapped_column(String(40))
+    # on_sale | retired. A retired bundle is never listed or sold; bought ones stand.
+    state: Mapped[str] = mapped_column(String(20), server_default="on_sale")

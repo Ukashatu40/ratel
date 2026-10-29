@@ -8,6 +8,7 @@
     python -m app.bss_money.ops_cli bundle add --name N --price-kobo P --validity-days D \
         --data-bytes B
     python -m app.bss_money.ops_cli bundle list
+    python -m app.bss_money.ops_cli bundle retire --bundle-id ID
     python -m app.bss_money.ops_cli wallet show --line-id ID
     python -m app.bss_money.ops_cli wallet credit --line-id ID --amount-kobo K \
         --reference TEXT --operator NAME
@@ -87,6 +88,8 @@ def _parser() -> argparse.ArgumentParser:
         add_bundle.add_argument(flag, type=kind, required=True)
     add_bundle.add_argument("--channels", default="data")
     bundle.add_parser("list")
+    retire_bundle = bundle.add_parser("retire")
+    retire_bundle.add_argument("--bundle-id", type=int, required=True)
 
     wallet = top.add_parser("wallet").add_subparsers(dest="action", required=True)
     show = wallet.add_parser("show")
@@ -211,8 +214,14 @@ def _bundle(args: argparse.Namespace, session: Session) -> int:
         for row in session.scalars(select(BundleRow).order_by(BundleRow.bundle_id)):
             sys.stdout.write(
                 f"{row.bundle_id}\t{row.name}\t{row.price_kobo} kobo\t"
-                f"{row.validity_days} d\t{row.data_bytes} B\n"
+                f"{row.validity_days} d\t{row.data_bytes} B\t{row.state}\n"
             )
+        return 0
+    if args.action == "retire":
+        existing = session.get(BundleRow, args.bundle_id)
+        if existing is None:
+            raise ValueError("no such bundle")
+        existing.state = "retired"
         return 0
     Bundle(
         bundle_id=1,

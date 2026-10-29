@@ -20,8 +20,11 @@ One process holds RatelBSS and the RatelMeter API. Staff tools, the meter agents
 ## Health checks
 
 - `sudo systemctl status ratel-app.service` is active.
-- `curl -s http://127.0.0.1:8000/healthz` answers `{"status":"ok"}`. That is liveness only: it does not check
-  PostgreSQL or Redis yet (TODO in `services/app/main.py`).
+- `curl -s http://127.0.0.1:8000/healthz` answers `{"status":"ok"}`. That is liveness only.
+- `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/readyz` answers **200** only when PostgreSQL
+  answers, the schema is at the code's migration head, Redis answers and the RatelLink key is set. **503** says
+  nothing about why; the reason is in `journalctl -u ratel-app.service` as `readiness.failed` with the component
+  (`database`, `migrations`, `redis`, `ratel_link_key`). The proxy does not forward `/readyz`: ask from the host.
 - `sudo -u postgres psql -c '\l'` lists `ratel_bss`; `sudo systemctl status postgresql redis-server nginx`.
 - `chronyc tracking` says the clock is synchronised: interval keys and the UTC rules depend on it.
 
