@@ -6,11 +6,11 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 const ACTOR = "Amina Yusuf";
 
 const staff: StaffMember[] = [
-  { id: "s1", name: "Amina Yusuf", email: "amina.yusuf@ratelplus.example", role: "Customer Care", vpnAccess: true, active: true, lastSignInAt: nowSec() - 2400 },
-  { id: "s2", name: "Bashir Aliyu", email: "bashir.aliyu@ratelplus.example", role: "Customer Care", vpnAccess: true, active: true, lastSignInAt: nowSec() - 3 * 3600 },
-  { id: "s3", name: "Ibrahim Danladi", email: "ibrahim.danladi@ratelplus.example", role: "Super Admin", vpnAccess: false, active: true, lastSignInAt: nowSec() - 86400 },
-  { id: "s4", name: "Ratelplus Admin", email: "admin@ratelplus.example", role: "Super Admin", vpnAccess: true, active: true, lastSignInAt: nowSec() - 2 * 86400 },
-  { id: "s5", name: "Khadija Umar", email: "khadija.umar@ratelplus.example", role: "Customer Care", vpnAccess: false, active: false, lastSignInAt: nowSec() - 40 * 86400 },
+  { id: "s1", name: "Amina Yusuf", email: "amina.yusuf@ratelplus.example", role: "agent", vpnAccess: true, active: true, lastSignInAt: nowSec() - 2400 },
+  { id: "s2", name: "Bashir Aliyu", email: "bashir.aliyu@ratelplus.example", role: "agent", vpnAccess: true, active: true, lastSignInAt: nowSec() - 3 * 3600 },
+  { id: "s3", name: "Ibrahim Danladi", email: "ibrahim.danladi@ratelplus.example", role: "admin", vpnAccess: false, active: true, lastSignInAt: nowSec() - 86400 },
+  { id: "s4", name: "Ratelplus Admin", email: "admin@ratelplus.example", role: "admin", vpnAccess: true, active: true, lastSignInAt: nowSec() - 2 * 86400 },
+  { id: "s5", name: "Khadija Umar", email: "khadija.umar@ratelplus.example", role: "agent", vpnAccess: false, active: false, lastSignInAt: nowSec() - 40 * 86400 },
 ];
 
 // The audit log across all of RatelDesk. Built from templates here; the real one comes from the backend.

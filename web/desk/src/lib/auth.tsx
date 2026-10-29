@@ -8,16 +8,21 @@ const KEY = "ratel.desk.user";
 const nameFromEmail = (email: string) =>
   email.split("@")[0].split(/[._-]/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
 
-// MOCK rule until the backend says who is who: emails starting with "admin" (and ibrahim.danladi) are Super Admins.
+// MOCK rule until the backend says who is who: emails starting with "admin" (and ibrahim.danladi) are admins (PRD decision 11).
 const roleFromEmail = (email: string): AuthUser["role"] => {
   const local = email.split("@")[0].toLowerCase();
-  return local.startsWith("admin") || local === "ibrahim.danladi" ? "Super Admin" : "Customer Care";
+  return local.startsWith("admin") || local === "ibrahim.danladi" ? "admin" : "agent";
 };
 
 function load(): AuthUser | null {
   try {
     const raw = sessionStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AuthUser;
+    // Old sessionStorage entries may have the previous role names; normalise them.
+    if ((parsed.role as string) === "Super Admin") return { ...parsed, role: "admin" };
+    if ((parsed.role as string) === "Customer Care") return { ...parsed, role: "agent" };
+    return parsed;
   } catch {
     return null;
   }

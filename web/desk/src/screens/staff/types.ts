@@ -1,7 +1,7 @@
 import type { AuthUser } from "../../lib/authContext";
 
-export type Role = AuthUser["role"]; // "Customer Care" | "Super Admin"
-export const ROLES: Role[] = ["Customer Care", "Super Admin"];
+export type Role = AuthUser["role"]; // "agent" | "admin" (PRD decision 11, demo only)
+export const ROLES: Role[] = ["agent", "admin"];
 
 export interface StaffMember {
   id: string;

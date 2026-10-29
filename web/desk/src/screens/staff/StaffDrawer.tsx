@@ -4,13 +4,16 @@ import { newIdempotencyKey } from "../../lib/api";
 import { createStaff, updateStaff } from "./api";
 import { ROLES, type Role, type StaffMember } from "./types";
 
+// Friendly labels for the code-level roles.
+const ROLE_LABEL: Record<Role, string> = { agent: "Customer Care", admin: "Super Admin" };
+
 // Create (member === null) or edit a staff account. Email and name are fixed once the account exists.
 export function StaffDrawer({ member, isSelf, onClose }: { member: StaffMember | null; isSelf: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
   const panel = useRef<HTMLElement>(null);
   const [name, setName] = useState(member?.name ?? "");
   const [email, setEmail] = useState(member?.email ?? "");
-  const [role, setRole] = useState<Role>(member?.role ?? "Customer Care");
+  const [role, setRole] = useState<Role>(member?.role ?? "agent");
   const [vpn, setVpn] = useState(member?.vpnAccess ?? true);
   const [active, setActive] = useState(member?.active ?? true);
   const [reason, setReason] = useState("");
@@ -57,7 +60,7 @@ export function StaffDrawer({ member, isSelf, onClose }: { member: StaffMember |
         <div className="field"><label htmlFor="s-email">Email (the sign-in name)</label><input id="s-email" className="input" type="email" value={email} disabled={!!member} onChange={(e) => setEmail(e.target.value)} />{errors.email && <span className="field__error">{errors.email}</span>}</div>
         <div className="field">
           <label htmlFor="s-role">Role</label>
-          <select id="s-role" className="input" value={role} disabled={isSelf} onChange={(e) => setRole(e.target.value as Role)}>{ROLES.map((r) => <option key={r}>{r}</option>)}</select>
+          <select id="s-role" className="input" value={role} disabled={isSelf} onChange={(e) => setRole(e.target.value as Role)}>{ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
         </div>
         <label className="stf-check"><input type="checkbox" checked={vpn} onChange={(e) => setVpn(e.target.checked)} /> VPN access (can use RatelDesk away from the office)</label>
         {member && (

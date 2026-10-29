@@ -38,7 +38,8 @@ export async function mockGetLine(imsi: string): Promise<LineDetail> {
 
 export async function mockGetUsage(imsi: string, page: number, pageSize: number): Promise<UsagePage> {
   await wait(200);
-  need(imsi);
+  const line = need(imsi);
+  if (line.state === "awaiting_activation") return { items: [], total: 0 }; // no usage before activation
   const n = num(imsi), end0 = Math.floor(nowSec() / 300) * 300, total = 288; // the last 24 hours
   const items = [];
   for (let i = (page - 1) * pageSize; i < Math.min(page * pageSize, total); i++) {
@@ -50,7 +51,9 @@ export async function mockGetUsage(imsi: string, page: number, pageSize: number)
 
 export async function mockGetCalls(imsi: string): Promise<CallRecord[]> {
   await wait(200);
-  need(imsi);
+  const line = need(imsi);
+  // PRD VOI-1..4: a deactivated (or terminated) line cannot call or be called.
+  if (line.state === "awaiting_activation" || line.state === "terminated") return [];
   const n = num(imsi), now = nowSec();
   return Array.from({ length: 8 }, (_, i) => {
     const r = rng(n * 100 + i), start = now - 3600 * (5 + i * 7), answered = r() > 0.25, dur = Math.round(20 + r() * 420);

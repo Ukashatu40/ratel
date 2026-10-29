@@ -7,9 +7,12 @@ import { getStaff } from "./api";
 import { StaffDrawer } from "./StaffDrawer";
 import type { StaffMember } from "./types";
 
+// Friendly labels for the code-level roles (PRD decision 11 keeps the code values "agent"/"admin").
+const ROLE_LABEL: Record<StaffMember["role"], string> = { agent: "Customer Care", admin: "Super Admin" };
+
 export function StaffTab() {
   const me = useCurrentUser();
-  const canManage = me.role === "Super Admin"; // the backend must enforce this too
+  const canManage = me.role === "admin"; // the backend must enforce this too
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ["staff"], queryFn: getStaff });
   const [open, setOpen] = useState<{ member: StaffMember | null } | null>(null);
   return (
@@ -27,7 +30,7 @@ export function StaffTab() {
                 <tr key={s.id}>
                   <td><div className="stf-name"><span className="avatar">{initials(s.name)}</span>{s.name}{s.email === me.email && <Badge tone="blue">You</Badge>}</div></td>
                   <td>{s.email}</td>
-                  <td>{s.role === "Super Admin" ? <Badge tone="amber">Super Admin</Badge> : <Badge tone="blue">Customer Care</Badge>}</td>
+                  <td>{s.role === "admin" ? <Badge tone="amber">{ROLE_LABEL.admin}</Badge> : <Badge tone="blue">{ROLE_LABEL.agent}</Badge>}</td>
                   <td>{s.vpnAccess ? <Badge tone="green">VPN</Badge> : <Badge tone="grey">Office only</Badge>}</td>
                   <td>{s.active ? <Badge tone="green">Active</Badge> : <Badge tone="grey">Disabled</Badge>}</td>
                   <td>{s.lastSignInAt ? formatWAT(s.lastSignInAt) : <span className="muted">Never</span>}</td>
