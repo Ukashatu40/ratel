@@ -4,14 +4,22 @@ One row per provider transaction. `provider_ref` is the reference we gave the pr
 unique, so a notification delivered twice finds the same row. `public_id` is what RatelPay is
 given: it cannot be guessed, because anyone who has it can read the payment's status.
 
-`line_id` is a plain integer, like the other money tables. TODO(M-25): a foreign key to `line`.
+`line_id` is a foreign key to `line` (RESTRICT): a line with a payment is never removed.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.bss_money.models.ledger import BIGINT_PK
@@ -33,7 +41,7 @@ class Payment(Base, TimestampMixin):
 
     payment_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     public_id: Mapped[str] = mapped_column(String(64), unique=True)
-    line_id: Mapped[int] = mapped_column(Integer)
+    line_id: Mapped[int] = mapped_column(Integer, ForeignKey("line.line_id", ondelete="RESTRICT"))
     provider: Mapped[str] = mapped_column(String(20))
     provider_ref: Mapped[str] = mapped_column(String(64), unique=True)
     # The caller's Idempotency-Key: starting twice with the same key is one payment.

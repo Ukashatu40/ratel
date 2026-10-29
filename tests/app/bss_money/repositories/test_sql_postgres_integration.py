@@ -30,6 +30,13 @@ from tests.app.bss_money.postgres import Database
 
 pytestmark = pytest.mark.integration
 
+
+@pytest.fixture(autouse=True)
+def _lines(db: Database) -> None:
+    """The money tables name lines by a foreign key, so the lines these tests use exist."""
+    db.lines(12)
+
+
 LEDGER_TABLES = {"wallet", "ledger_entry", "allowance_bucket"}
 
 
@@ -37,6 +44,10 @@ LEDGER_TABLES = {"wallet", "ledger_entry", "allowance_bucket"}
 
 
 def test_the_migration_applies_rolls_back_and_applies_again(db: Database) -> None:
+    db.run("DELETE FROM wallet")  # nothing is posted; only the lines the fixture made remain
+    for table in ("line", "sim", "number", "plan", "customer"):
+        db.run(f"DELETE FROM {table}")  # noqa: S608
+
     def tables() -> set[str]:
         with db.engine.connect() as conn:
             rows = conn.execute(
@@ -56,7 +67,9 @@ def test_the_migration_applies_rolls_back_and_applies_again(db: Database) -> Non
 
 def test_a_rollback_is_refused_while_the_ledger_holds_entries(db: Database) -> None:
     db.post(1, 5_000, "top_up", "pay-1")
-    with pytest.raises(RuntimeError, match="refusing to drop a ledger"):
+    # With money in the books a rollback stops at the first guard it meets. Since the money tables
+    # name lines, that is the lines migration's ("it holds rows"), which comes before the ledger's.
+    with pytest.raises(RuntimeError, match="refusing to drop"):
         db.alembic("downgrade", "base")
     assert db.scalar("SELECT count(*) FROM ledger_entry") == 1  # the money is still there
 

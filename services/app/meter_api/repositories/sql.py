@@ -109,6 +109,20 @@ class SqlUsageRepository:
 
         return len(values)
 
+    def totals_by_imsi(self, from_time: datetime, to_time: datetime) -> dict[str, int]:
+        rows = self._session.execute(
+            select(
+                UsageRecordModel.imsi,
+                func.sum(UsageRecordModel.bytes_up + UsageRecordModel.bytes_down),
+            )
+            .where(
+                UsageRecordModel.period_start >= from_time,
+                UsageRecordModel.period_start < to_time,
+            )
+            .group_by(UsageRecordModel.imsi)
+        )
+        return {imsi: int(total) for imsi, total in rows}
+
     def query_usage(
         self,
         from_time: datetime,

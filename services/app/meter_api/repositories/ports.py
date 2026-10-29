@@ -37,3 +37,11 @@ class UsageRepository(Protocol):
         If no more records exist, `next_cursor` is None.
         """
         ...
+
+    def totals_by_imsi(self, from_time: datetime, to_time: datetime) -> dict[str, int]:
+        """Bytes (up plus down) per IMSI for the records with `from_time <= period_start < to_time`.
+
+        An IMSI with no record in the window is absent. Used to compare with the network's own
+        counters (reconciliation, M-28).
+        """
+        ...

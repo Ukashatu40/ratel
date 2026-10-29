@@ -15,6 +15,12 @@ from tests.app.bss_money.postgres import Database
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def _lines(db: Database) -> None:
+    """The money tables name lines by a foreign key, so the lines these tests use exist."""
+    db.lines(12)
+
+
 def test_the_nightly_check_finds_a_corrupted_balance(
     db: Database, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

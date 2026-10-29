@@ -21,6 +21,12 @@ from tests.app.bss_money.vouchers_data import FACE, T0, issue, wrong_pin
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def _lines(db: Database) -> None:
+    """The money tables name lines by a foreign key, so the lines these tests use exist."""
+    db.lines(12)
+
+
 def _issue(db: Database, count: int = 1):  # type: ignore[no-untyped-def]
     with Session(db.engine) as session, session.begin():
         return issue(session, count=count)
