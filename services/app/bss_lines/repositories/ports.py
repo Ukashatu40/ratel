@@ -6,6 +6,7 @@ matches this shape. The real implementation is in sql.py.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from app.bss_lines.models.lines import Line
@@ -13,7 +14,10 @@ from app.bss_lines.models.lines import Line
 
 class LinesRepository(Protocol):
     def get(self, line_id: int) -> Line | None:
-        """Load a line by its id. None if not found."""
+        """Load a line by its id to change it. None if not found.
+
+        The line is locked until the transaction ends, so two changes to one line take turns.
+        """
         ...
 
     def find_by_identifier(
@@ -49,4 +53,15 @@ class LinesRepository(Protocol):
 
     def commit(self) -> None:
         """Commit the current transaction."""
+        ...
+
+
+class PaidPlanCheck(Protocol):
+    """Whether a line has data it has paid for. Answered by BSS: money, which owns allowances."""
+
+    def has_paid_allowance(self, line_id: int, now: datetime) -> bool:
+        """True if the line has an allowance with data left that has not yet expired.
+
+        An allowance that starts later counts: the customer has paid and it is on its way.
+        """
         ...

@@ -1,11 +1,13 @@
 """The suspend, reinstate and terminate flows. Only this module drives these state changes.
 
 Every move goes through domain.state_machine.validate_transition(). No other code path
-sets a line's state directly. Storage is through LinesRepository, not a session.
+sets a line's state directly. Storage is through LinesRepository and (when the caller
+provides one) the Idempotency store, not a session.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -18,6 +20,11 @@ from app.bss_lines.domain.state_machine import (
     validate_transition,
 )
 from app.bss_lines.models.lines import Line
+from app.bss_lines.repositories.idempotency import (
+    IdempotencyConflictError,
+    IdempotencyStore,
+    StoredResult,
+)
 from app.bss_lines.repositories.ports import LinesRepository
 
 
@@ -56,6 +63,14 @@ class LifecycleError(Exception):
     """A legitimate refusal: wrong state, RatelLink said no, or corrupt stored data."""
 
 
+class LineNotFoundError(LifecycleError):
+    """There is no line with this id."""
+
+
+class StoredDataError(LifecycleError):
+    """The stored data is wrong, so retrying cannot help (reinstate answers 500)."""
+
+
 @dataclass(frozen=True)
 class LifecycleResult:
     line_id: int
@@ -63,11 +78,52 @@ class LifecycleResult:
     to_state: LineState
 
 
+def _replay(
+    idempotency: IdempotencyStore | None,
+    endpoint: str,
+    idempotency_key: str,
+    line_id: int,
+) -> LifecycleResult | None:
+    if idempotency is None:
+        return None
+    saved = idempotency.get(endpoint, idempotency_key)
+    if saved is None:
+        return None
+    if saved.line_id != line_id:
+        raise IdempotencyConflictError("this Idempotency-Key was used for another line")
+    return LifecycleResult(
+        line_id=saved.line_id,
+        from_state=LineState(saved.from_state),
+        to_state=LineState(saved.to_state),
+    )
+
+
+def _save(
+    idempotency: IdempotencyStore | None,
+    endpoint: str,
+    idempotency_key: str,
+    result: LifecycleResult,
+) -> None:
+    if idempotency is None:
+        return
+    idempotency.put(
+        endpoint,
+        idempotency_key,
+        StoredResult(
+            line_id=result.line_id,
+            from_state=result.from_state.value,
+            to_state=result.to_state.value,
+        ),
+    )
+
+
 def _run(
     lines: LinesRepository,
     client: RatelLinkClientProto,
+    idempotency: IdempotencyStore | None,
     line_id: int,
     *,
+    endpoint: str,
     target: LineState,
     actor: str,
     reason: str,
@@ -75,11 +131,21 @@ def _run(
     idempotency_key: str,
     on_exhaustion: OnExhaustion | None = None,
     state_before_suspension: LineState | None = None,
+    also: Callable[[Line], None] | None = None,
 ) -> LifecycleResult:
-    """Shared body: load, validate, call RatelLink, save, audit, commit."""
+    """Replay if the key was seen for this line; otherwise do the move.
+
+    On the first call: load, validate, call RatelLink, save, audit, commit. `also` runs after the
+    audit entry and before the commit, so what it writes is committed with the state change and
+    before the result is remembered: a repeat can never find the result without the side effect.
+    """
+    replayed = _replay(idempotency, endpoint, idempotency_key, line_id)
+    if replayed is not None:
+        return replayed
+
     line = lines.get(line_id)
     if line is None:
-        raise LifecycleError(f"line {line_id} not found")
+        raise LineNotFoundError(f"line {line_id} not found")
 
     try:
         transition = validate_transition(
@@ -133,7 +199,7 @@ def _run(
                     else line.plan.speed_dl_mbps
                 )
                 if speeds_ul is None or speeds_dl is None:
-                    raise LifecycleError(
+                    raise StoredDataError(
                         f"plan {line.plan_id} has on_exhaustion=slow but no slow speeds"
                     )
                 client.data(
@@ -146,9 +212,6 @@ def _run(
         else:
             raise LifecycleError(f"unexpected RatelLink call: {call.endpoint}")
 
-    # Bookkeeping differs by transition:
-    #   -> suspended: remember the state we came from, so reinstate knows where to go back to
-    #   anything else:  clear any stale state_before_suspension
     if target is LineState.SUSPENDED:
         line.state_before_suspension = transition.from_state.value
     elif transition.from_state is LineState.SUSPENDED:
@@ -163,9 +226,13 @@ def _run(
         actor=actor,
         reason=reason_for_audit,
     )
+    if also is not None:
+        also(line)
     lines.commit()
 
-    return LifecycleResult(line.line_id, transition.from_state, transition.to_state)
+    result = LifecycleResult(line.line_id, transition.from_state, transition.to_state)
+    _save(idempotency, endpoint, idempotency_key, result)
+    return result
 
 
 def _on_exhaustion_of(line: Line) -> OnExhaustion:
@@ -173,7 +240,7 @@ def _on_exhaustion_of(line: Line) -> OnExhaustion:
     try:
         return OnExhaustion(line.plan.on_exhaustion)
     except ValueError:
-        raise LifecycleError(
+        raise StoredDataError(
             f"plan {line.plan_id} has unknown on_exhaustion {line.plan.on_exhaustion!r}"
         ) from None
 
@@ -181,6 +248,7 @@ def _on_exhaustion_of(line: Line) -> OnExhaustion:
 def suspend_line(
     lines: LinesRepository,
     client: RatelLinkClientProto,
+    idempotency: IdempotencyStore,
     line_id: int,
     *,
     actor: str,
@@ -188,11 +256,17 @@ def suspend_line(
     reason_text: str | None = None,
     idempotency_key: str,
 ) -> LifecycleResult:
-    """active or out_of_data -> suspended. Calls RatelLink /deactivate."""
+    """active or out_of_data -> suspended. Calls RatelLink /deactivate.
+
+    A repeat with the same Idempotency-Key for the same line returns the first
+    result. A repeat for a different line raises IdempotencyConflictError.
+    """
     return _run(
         lines,
         client,
+        idempotency,
         line_id,
+        endpoint="/suspend",
         target=LineState.SUSPENDED,
         actor=actor,
         reason=reason,
@@ -204,6 +278,7 @@ def suspend_line(
 def reinstate_line(
     lines: LinesRepository,
     client: RatelLinkClientProto,
+    idempotency: IdempotencyStore,
     line_id: int,
     *,
     actor: str,
@@ -212,9 +287,13 @@ def reinstate_line(
     idempotency_key: str,
 ) -> LifecycleResult:
     """suspended -> the state it had before. Calls /activate, then /data if it was out_of_data."""
+    replayed = _replay(idempotency, "/reinstate", idempotency_key, line_id)
+    if replayed is not None:
+        return replayed
+
     line = lines.get(line_id)
     if line is None:
-        raise LifecycleError(f"line {line_id} not found")
+        raise LineNotFoundError(f"line {line_id} not found")
 
     if line.state != LineState.SUSPENDED.value:
         raise LifecycleError(
@@ -223,13 +302,13 @@ def reinstate_line(
 
     previous_raw = line.state_before_suspension
     if previous_raw is None:
-        raise LifecycleError(
+        raise StoredDataError(
             "line is suspended but state_before_suspension is not set; the stored data is wrong"
         )
     try:
         previous = LineState(previous_raw)
     except ValueError as exc:
-        raise LifecycleError(
+        raise StoredDataError(
             f"state_before_suspension {previous_raw!r} is not a known state"
         ) from exc
 
@@ -238,7 +317,9 @@ def reinstate_line(
     return _run(
         lines,
         client,
+        idempotency,
         line_id,
+        endpoint="/reinstate",
         target=previous,
         actor=actor,
         reason=reason,
@@ -252,6 +333,7 @@ def reinstate_line(
 def terminate_line(
     lines: LinesRepository,
     client: RatelLinkClientProto,
+    idempotency: IdempotencyStore,
     line_id: int,
     *,
     actor: str,
@@ -265,24 +347,19 @@ def terminate_line(
     after termination is compliance's call (PRODUCT_RULES.md, decision 4); the
     period is undecided, so this function does not touch the number's state.
     """
-    result = _run(
+    return _run(
         lines,
         client,
+        idempotency,
         line_id,
+        endpoint="/terminate",
         target=LineState.TERMINATED,
         actor=actor,
         reason=reason,
         reason_text=reason_text,
         idempotency_key=idempotency_key,
+        also=lambda line: lines.retire_sim(line.iccid),
     )
-
-    # Retire the SIM now that the line is terminated.
-    line = lines.get(line_id)
-    if line is not None:
-        lines.retire_sim(line.iccid)
-        lines.commit()
-
-    return result
 
 
 def mark_out_of_data(
@@ -291,19 +368,22 @@ def mark_out_of_data(
     line_id: int,
     *,
     idempotency_key: str,
+    idempotency: IdempotencyStore | None = None,
 ) -> LifecycleResult:
     """active -> out_of_data, the allowance is used up. Calls /data with the plan's mode.
 
-    Slows the line to the plan's slow speeds or cuts its data, as the plan says. Voice is not
-    touched: the only RatelLink call is /data. Done by the rating job (M-17), not by a person.
+    The `idempotency` store is optional: the rating job does not pass one (a
+    fresh key per run means replay never applies), and any other caller may.
     """
     line = lines.get(line_id)
     if line is None:
-        raise LifecycleError(f"line {line_id} not found")
+        raise LineNotFoundError(f"line {line_id} not found")
     return _run(
         lines,
         client,
+        idempotency,
         line_id,
+        endpoint="/data",
         target=LineState.OUT_OF_DATA,
         actor=RATING_JOB,
         reason="allowance_used_up",
@@ -319,15 +399,48 @@ def expire_line(
     line_id: int,
     *,
     idempotency_key: str,
+    idempotency: IdempotencyStore | None = None,
 ) -> LifecycleResult:
     """active or out_of_data -> expired, the validity ended without a renewal. Calls /deactivate."""
     return _run(
         lines,
         client,
+        idempotency,
         line_id,
+        endpoint="/expire",
         target=LineState.EXPIRED,
         actor=RATING_JOB,
         reason="validity_ended",
+        reason_text=None,
+        idempotency_key=idempotency_key,
+    )
+
+
+def restore_line(
+    lines: LinesRepository,
+    client: RatelLinkClientProto,
+    line_id: int,
+    *,
+    idempotency_key: str,
+    idempotency: IdempotencyStore | None = None,
+) -> LifecycleResult:
+    """expired -> active, a plan or bundle bought from the wallet. Calls /activate.
+
+    `bss_money`'s rating job asks for this when the wallet covers a renewal, so
+    a top-up brings data back by itself. The state machine and the RatelLink call
+    stay here, in `bss_lines` (docs/DEPENDENCIES.md).
+
+    The `idempotency` store is optional, same reason as mark_out_of_data.
+    """
+    return _run(
+        lines,
+        client,
+        idempotency,
+        line_id,
+        endpoint="/restore",
+        target=LineState.ACTIVE,
+        actor=RATING_JOB,
+        reason="allowance_restored",
         reason_text=None,
         idempotency_key=idempotency_key,
     )

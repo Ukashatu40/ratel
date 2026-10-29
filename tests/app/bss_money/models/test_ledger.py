@@ -8,6 +8,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.bss_money.models.ledger import LedgerEntry, Wallet
+from tests.app.bss_money.rating_data import seed_lines
+
+
+@pytest.fixture(autouse=True)
+def _lines(session: Session) -> None:
+    """The foreign keys need the lines these tests name to exist."""
+    seed_lines(session, 7)
 
 
 def _wallet(session: Session, line_id: int = 1) -> None:

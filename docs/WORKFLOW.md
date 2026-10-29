@@ -20,7 +20,7 @@ Build Plan  ->  Weekly gate  ->  Epic  ->  Issue  ->  Branch  ->  Pull request  
 | Branch and code | The assignee | `make check` is green on your machine |
 | Pull request | The assignee | Template filled in, "Closes #123" in it, reviewers requested |
 | Review | Reviewers, chosen by CODEOWNERS | Approved, every comment answered |
-| CI | GitHub, automatically | `ci-success`, `critical-review-gate` and `secret-scan` are green |
+| CI | GitHub, automatically | `ci-success` and `secret-scan` are green |
 | Merge | The author or the project lead | Squash merge into `main`, branch deleted |
 | Done | The assignee | The [Definition of Done](DEFINITION_OF_DONE.md) holds, including docs and a runbook note |
 
@@ -175,7 +175,7 @@ GitHub shows a link to open the pull request. Then:
 | Config, workflows, links | YAML, Markdown links, shell scripts |
 | PR title and branch name | Naming rules |
 | `secret-scan` | A key or token was committed (history is scanned too) |
-| `critical-review-gate` | RatelLink or money was touched: two approvals are required |
+| `critical-review-gate` | RatelLink or money was touched and fewer than two approved. Information only, it does not block a merge (ADR 0011) |
 | `ci-success` | One check that is green only when all the others are |
 
 Red means fix it. Open the failed job, read the first error, reproduce it locally with the same

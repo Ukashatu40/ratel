@@ -14,29 +14,39 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import case, exists, func, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.bss_lines.domain.state_machine import LineState
+from app.bss_lines.models.lines import Bundle as BundleRow
 from app.bss_lines.models.lines import Line
+from app.bss_lines.models.lines import Plan as PlanRow
 from app.bss_money.domain.allowance import Bucket
-from app.bss_money.domain.entries import Posting
+from app.bss_money.domain.entries import EntryKind, Posting
+from app.bss_money.domain.plans import Bundle as BundleOffer
 from app.bss_money.domain.plans import OnExhaustion, Plan
+from app.bss_money.domain.purchase import OfferKind
 from app.bss_money.domain.rating import RatingResult, UsageRecord
 from app.bss_money.domain.vouchers import VoucherState
 from app.bss_money.domain.wallets import WalletMismatch
 from app.bss_money.models.allowance import AllowanceBucket
 from app.bss_money.models.ledger import LedgerEntry, Wallet
+from app.bss_money.models.payments import Payment
 from app.bss_money.models.rating import UsageRating
 from app.bss_money.models.vouchers import Voucher, VoucherAttempt
 from app.bss_money.repositories.ports import (
     BalanceOutOfRange,
     DuplicateEntry,
+    DuplicateKey,
+    LedgerRow,
+    LineUsageRow,
+    MoneyMoved,
     NewVoucher,
     RatedLine,
     StoredEntry,
+    StoredPayment,
     StoredVoucher,
     VoucherNotRedeemable,
 )
@@ -225,7 +235,7 @@ class SqlVoucherRepository:
         )
 
 
-_IN_SERVICE = (LineState.ACTIVE.value, LineState.OUT_OF_DATA.value)
+_IN_SERVICE = (LineState.ACTIVE.value, LineState.OUT_OF_DATA.value, LineState.EXPIRED.value)
 
 
 def _utc(moment: datetime) -> datetime:
@@ -268,24 +278,11 @@ class SqlRatingRepository:
         ).scalar_one_or_none()
         if line is None:
             return None
-        plan = line.plan
         return RatedLine(
             line_id=line.line_id,
             imsi=line.imsi,
             state=LineState(line.state),
-            plan=Plan(
-                plan_id=plan.plan_id,
-                name=plan.name,
-                price_kobo=plan.price_kobo,
-                validity_days=plan.validity_days,
-                data_bytes=plan.data_bytes,
-                speed_ul_mbps=plan.speed_ul_mbps,
-                speed_dl_mbps=plan.speed_dl_mbps,
-                channels=tuple(c for c in plan.channels.split(",") if c),
-                on_exhaustion=OnExhaustion(plan.on_exhaustion),
-                slow_ul_mbps=plan.slow_ul_mbps,
-                slow_dl_mbps=plan.slow_dl_mbps,
-            ),
+            plan=_plan_offer(line.plan),
         )
 
     def unrated_records(self, line: RatedLine, limit: int) -> list[UsageRecord]:
@@ -353,5 +350,337 @@ class SqlLineLookup:
         return self._session.scalar(
             select(Line.line_id).where(
                 Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value
+            )
+        )
+
+
+def _stored_payment(row: Payment) -> StoredPayment:
+    return StoredPayment(
+        payment_id=row.payment_id,
+        public_id=row.public_id,
+        line_id=row.line_id,
+        provider=row.provider,
+        provider_ref=row.provider_ref,
+        amount_kobo=row.amount_kobo,
+        status=row.status,
+        checkout_url=row.checkout_url,
+        created_at=_utc(row.created_at),
+    )
+
+
+class SqlPaymentRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(
+        self,
+        *,
+        public_id: str,
+        line_id: int,
+        provider: str,
+        provider_ref: str,
+        idempotency_key: str,
+        amount_kobo: int,
+    ) -> StoredPayment:
+        row = Payment(
+            public_id=public_id,
+            line_id=line_id,
+            provider=provider,
+            provider_ref=provider_ref,
+            idempotency_key=idempotency_key,
+            amount_kobo=amount_kobo,
+            status="pending",
+        )
+        try:
+            # A savepoint: if the key is already used, only this insert is undone.
+            with self._session.begin_nested():
+                self._session.add(row)
+                self._session.flush()
+        except IntegrityError as exc:
+            if self.by_idempotency_key(idempotency_key) is None:
+                raise  # some other rule failed: do not call it a retry
+            raise DuplicateKey from exc
+        self._session.refresh(row)  # the database's created_at
+        return _stored_payment(row)
+
+    def _one(self, *conditions: object, lock: bool = False) -> StoredPayment | None:
+        statement = select(Payment).where(*conditions)  # type: ignore[arg-type]
+        if lock:
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        row = self._session.execute(statement).scalar_one_or_none()
+        return None if row is None else _stored_payment(row)
+
+    def by_idempotency_key(self, key: str) -> StoredPayment | None:
+        return self._one(Payment.idempotency_key == key)
+
+    def by_public_id(self, public_id: str) -> StoredPayment | None:
+        return self._one(Payment.public_id == public_id)
+
+    def by_reference(self, provider_ref: str, *, lock: bool = False) -> StoredPayment | None:
+        return self._one(Payment.provider_ref == provider_ref, lock=lock)
+
+    def set_checkout(self, payment_id: int, url: str) -> None:
+        self._session.execute(
+            update(Payment).where(Payment.payment_id == payment_id).values(checkout_url=url)
+        )
+
+    def mark_succeeded(self, payment_id: int, provider_txn_id: str | None, at: datetime) -> None:
+        self._session.execute(
+            update(Payment)
+            .where(Payment.payment_id == payment_id)
+            .values(status="succeeded", provider_txn_id=provider_txn_id, credited_at=at)
+        )
+
+    def mark_failed(self, payment_id: int, provider_txn_id: str | None) -> None:
+        self._session.execute(
+            update(Payment)
+            .where(Payment.payment_id == payment_id, Payment.status == "pending")
+            .values(status="failed", provider_txn_id=provider_txn_id)
+        )
+
+    def pending_references(self, older_than: datetime, limit: int) -> list[str]:
+        rows = self._session.execute(
+            select(Payment.provider_ref)
+            .where(Payment.status == "pending", Payment.created_at < older_than)
+            .order_by(Payment.created_at)
+            .limit(limit)
+        )
+        return list(rows.scalars())
+
+
+def _plan_offer(plan: PlanRow) -> Plan:
+    return Plan(
+        plan_id=plan.plan_id,
+        name=plan.name,
+        price_kobo=plan.price_kobo,
+        validity_days=plan.validity_days,
+        data_bytes=plan.data_bytes,
+        speed_ul_mbps=plan.speed_ul_mbps,
+        speed_dl_mbps=plan.speed_dl_mbps,
+        channels=tuple(c for c in plan.channels.split(",") if c),
+        on_exhaustion=OnExhaustion(plan.on_exhaustion),
+        slow_ul_mbps=plan.slow_ul_mbps,
+        slow_dl_mbps=plan.slow_dl_mbps,
+    )
+
+
+class SqlPurchaseRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def lock_line(self, line_id: int) -> RatedLine | None:
+        # The same lock the rating job takes: a purchase and a rating run for one line take turns.
+        line = self._session.execute(
+            select(Line)
+            .where(Line.line_id == line_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        if line is None:
+            return None
+        return RatedLine(
+            line_id=line.line_id,
+            imsi=line.imsi,
+            state=LineState(line.state),
+            plan=_plan_offer(line.plan),
+        )
+
+    def get_offer(self, kind: OfferKind, offer_id: int) -> Plan | BundleOffer | None:
+        if kind is OfferKind.PLAN:
+            plan = self._session.get(PlanRow, offer_id)
+            if plan is None or plan.state != "on_sale":
+                return None
+            return _plan_offer(plan)
+        bundle = self._session.get(BundleRow, offer_id)
+        if bundle is None or bundle.state != "on_sale":
+            return None
+        return _bundle_offer(bundle)
+
+    def buckets(self, line_id: int) -> list[Bucket]:
+        return SqlRatingRepository(self._session).buckets(line_id)
+
+    def add_bucket(self, line_id: int, bucket: Bucket) -> int:
+        row = AllowanceBucket(
+            line_id=line_id,
+            source_kind=bucket.source_kind.value,
+            source_id=bucket.source_id,
+            data_bytes_total=bucket.data_bytes_total,
+            data_bytes_used=bucket.data_bytes_used,
+            valid_from=bucket.valid_from,
+            valid_to=bucket.valid_to,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row.bucket_id
+
+
+def _bundle_offer(bundle: BundleRow) -> BundleOffer:
+    return BundleOffer(
+        bundle_id=bundle.bundle_id,
+        name=bundle.name,
+        price_kobo=bundle.price_kobo,
+        validity_days=bundle.validity_days,
+        data_bytes=bundle.data_bytes,
+        channels=tuple(c for c in bundle.channels.split(",") if c),
+    )
+
+
+class SqlBundleCatalog:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def bundles_on_sale(self) -> list[BundleOffer]:
+        rows = self._session.scalars(
+            select(BundleRow).where(BundleRow.state == "on_sale").order_by(BundleRow.bundle_id)
+        )
+        return [_bundle_offer(row) for row in rows]
+
+
+class SqlMoneyReadRepository:
+    """Read-only views for RatelDesk: wallets, the ledger and a line's usage."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def line_imsi(self, line_id: int) -> str | None:
+        return self._session.scalar(select(Line.imsi).where(Line.line_id == line_id))
+
+    def wallet_figures(self, line_id: int) -> tuple[int, int]:
+        balance = self._session.scalar(select(Wallet.balance_kobo).where(Wallet.line_id == line_id))
+        total = self._session.scalar(
+            select(func.coalesce(func.sum(LedgerEntry.amount_kobo), 0)).where(
+                LedgerEntry.line_id == line_id
+            )
+        )
+        return int(balance or 0), int(total or 0)
+
+    def ledger_page(
+        self, *, line_id: int | None, kind: str | None, offset: int, limit: int
+    ) -> tuple[list[LedgerRow], int]:
+        conditions = []
+        if line_id is not None:
+            conditions.append(LedgerEntry.line_id == line_id)
+        if kind:
+            conditions.append(LedgerEntry.kind == kind)
+        total = self._session.scalar(
+            select(func.count()).select_from(LedgerEntry).where(*conditions)
+        )
+        rows = self._session.execute(
+            select(LedgerEntry, Line.msisdn)
+            .join(Line, Line.line_id == LedgerEntry.line_id)
+            .where(*conditions)
+            .order_by(LedgerEntry.entry_id.desc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        return (
+            [
+                LedgerRow(
+                    entry_id=e.entry_id,
+                    line_id=e.line_id,
+                    msisdn=msisdn,
+                    amount_kobo=e.amount_kobo,
+                    kind=e.kind,
+                    reference=e.reference,
+                    created_at=_utc(e.created_at),
+                )
+                for e, msisdn in rows
+            ],
+            int(total or 0),
+        )
+
+    def ledger_kind_counts(self, line_id: int | None) -> dict[str, int]:
+        statement = select(LedgerEntry.kind, func.count()).group_by(LedgerEntry.kind)
+        if line_id is not None:
+            statement = statement.where(LedgerEntry.line_id == line_id)
+        return {kind: int(n) for kind, n in self._session.execute(statement)}
+
+    def wallet_totals(self) -> tuple[int, int]:
+        total, holding = self._session.execute(
+            select(
+                func.coalesce(func.sum(Wallet.balance_kobo), 0),
+                func.count(case((Wallet.balance_kobo > 0, 1))),
+            )
+        ).one()
+        return int(total), int(holding)
+
+    def moved_between(self, start: datetime, end: datetime) -> MoneyMoved:
+        money_in, money_out, entries = self._session.execute(
+            select(
+                func.coalesce(
+                    func.sum(case((LedgerEntry.amount_kobo > 0, LedgerEntry.amount_kobo), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((LedgerEntry.amount_kobo < 0, -LedgerEntry.amount_kobo), else_=0)
+                    ),
+                    0,
+                ),
+                func.count(),
+            ).where(LedgerEntry.created_at >= start, LedgerEntry.created_at < end)
+        ).one()
+        return MoneyMoved(int(money_in), int(money_out), int(entries))
+
+    def topped_up_between(self, start: datetime, end: datetime) -> int:
+        return int(
+            self._session.scalar(
+                select(func.coalesce(func.sum(LedgerEntry.amount_kobo), 0)).where(
+                    LedgerEntry.kind == EntryKind.TOP_UP.value,
+                    LedgerEntry.created_at >= start,
+                    LedgerEntry.created_at < end,
+                )
+            )
+            or 0
+        )
+
+    def line_usage(
+        self,
+        imsi: str,
+        *,
+        start: datetime,
+        end: datetime,
+        before: datetime | None,
+        limit: int,
+    ) -> list[LineUsageRow]:
+        rated = exists().where(UsageRating.usage_record_id == UsageRecordModel.id)
+        statement = select(UsageRecordModel, rated).where(
+            UsageRecordModel.imsi == imsi,
+            UsageRecordModel.period_start >= start,
+            UsageRecordModel.period_start <= end,
+        )
+        if before is not None:
+            statement = statement.where(UsageRecordModel.period_start < before)
+        rows = self._session.execute(
+            statement.order_by(UsageRecordModel.period_start.desc()).limit(limit)
+        ).all()
+        return [
+            LineUsageRow(
+                period_start=_utc(r.period_start),
+                period_end=_utc(r.period_end),
+                bytes_up=r.bytes_up,
+                bytes_down=r.bytes_down,
+                rated=bool(is_rated),
+            )
+            for r, is_rated in rows
+        ]
+
+
+class SqlPaidPlanCheck:
+    """Answers BSS: lines' question "has this line paid for data?" from the allowance buckets."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def has_paid_allowance(self, line_id: int, now: datetime) -> bool:
+        return bool(
+            self._session.scalar(
+                select(
+                    exists().where(
+                        AllowanceBucket.line_id == line_id,
+                        AllowanceBucket.data_bytes_used < AllowanceBucket.data_bytes_total,
+                        AllowanceBucket.valid_to > now,
+                    )
+                )
             )
         )

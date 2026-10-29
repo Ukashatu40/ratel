@@ -3,13 +3,37 @@ from contextlib import contextmanager
 from typing import Any, cast
 
 from fastapi import FastAPI, Request, Response
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 
+from app import readiness
+from app.bss_lines.api.desk import router as desk_router
+from app.bss_lines.api.desk_reads import router as desk_reads_router
+from app.bss_lines.api.kyc import router as kyc_router
 from app.bss_lines.api.lines import router as bss_lines_router
+from app.bss_lines.api.staff import router as staff_router
+from app.bss_lines.repositories.desk_sql import SqlDeskReadRepository
+from app.bss_money.api.bundles import router as bundles_router
+from app.bss_money.api.desk import router as money_desk_router
+from app.bss_money.api.payments import router as payments_router
+from app.bss_money.api.purchases import router as purchases_router
 from app.bss_money.api.vouchers import router as bss_money_router
-from app.bss_money.repositories.ports import RedemptionRepositories
+from app.bss_money.gateways.paystack import PaystackGateway
+from app.bss_money.repositories.ports import (
+    BundleCatalog,
+    DeskReads,
+    PaymentRepositories,
+    PurchaseRepositories,
+    RedemptionRepositories,
+)
 from app.bss_money.repositories.sql import (
+    SqlBundleCatalog,
     SqlLedgerRepository,
     SqlLineLookup,
+    SqlMoneyReadRepository,
+    SqlPaidPlanCheck,
+    SqlPaymentRepository,
+    SqlPurchaseRepository,
     SqlVoucherRepository,
 )
 from app.config import Settings
@@ -64,10 +88,86 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.redemption_scope = redemption_scope
 
+    # Idempotency-Key store (M-26). In local and test a per-process dict is
+    # enough; everywhere else it must be Redis, so a restart does not turn a
+    # repeat into a new operation.
+    from app.bss_lines.repositories.idempotency import (
+        InMemoryIdempotencyStore,
+        RedisIdempotencyStore,
+    )
+
+    app.state.redis = None  # the client, where Redis is used (for /readyz)
+    if settings.ratel_env in ("local", "test"):
+        app.state.idempotency_store = InMemoryIdempotencyStore()
+    else:
+        import redis
+
+        app.state.redis = redis.Redis.from_url(settings.redis_url.get_secret_value())
+        app.state.idempotency_store = RedisIdempotencyStore(app.state.redis)
+
+    @contextmanager
+    def catalog_scope() -> Iterator[BundleCatalog]:
+        with app.state.session_factory() as session, session.begin():
+            yield SqlBundleCatalog(session)
+
+    app.state.catalog_scope = catalog_scope
+
+    @contextmanager
+    def desk_read_scope() -> Iterator[DeskReads]:
+        with app.state.session_factory() as session, session.begin():
+            yield DeskReads(
+                money=SqlMoneyReadRepository(session), lines=SqlDeskReadRepository(session)
+            )
+
+    app.state.desk_read_scope = desk_read_scope
+
+    # BSS: lines asks BSS: money whether a line has paid for data, and may not import it, so the
+    # answer is wired here. Given a session, it returns the checker (services/activation.py).
+    app.state.paid_plan_check = SqlPaidPlanCheck
+
+    @contextmanager
+    def purchase_scope() -> Iterator[PurchaseRepositories]:
+        # One transaction per purchase: the debit, its VAT entry and the bucket go together or not.
+        with app.state.session_factory() as session, session.begin():
+            yield PurchaseRepositories(
+                purchases=SqlPurchaseRepository(session), ledger=SqlLedgerRepository(session)
+            )
+
+    app.state.purchase_scope = purchase_scope
+
+    @contextmanager
+    def payment_scope() -> Iterator[PaymentRepositories]:
+        # One transaction per step; the step commits on a normal return (refusals included).
+        with app.state.session_factory() as session, session.begin():
+            yield PaymentRepositories(
+                payments=SqlPaymentRepository(session),
+                ledger=SqlLedgerRepository(session),
+                lines=SqlLineLookup(session),
+            )
+
+    app.state.payment_scope = payment_scope
+    secret = settings.paystack_secret_key_value
+    app.state.payment_gateway = (
+        PaystackGateway(secret, base_url=settings.paystack_base_url) if secret else None
+    )
+
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
-        # Liveness only. TODO: readiness check (PostgreSQL, Redis) once models exist.
+        # Liveness only: the process is up. Whether it can do its job is /readyz.
         return {"status": "ok"}
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz() -> JSONResponse:
+        # Readiness (app/readiness.py): database, migrations, Redis, the RatelLink key. It says
+        # only ready or not; the reason is in the log. The proxy does not forward this route.
+        result = await run_in_threadpool(
+            readiness.check, app.state.settings, app.state.engine, app.state.redis
+        )
+        return JSONResponse(
+            status_code=200 if result.ready else 503,
+            content={"status": "ready" if result.ready else "unavailable"},
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.middleware("http")
     async def _handle_options(request: Request, call_next: Any) -> Response:
@@ -78,7 +178,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Network access rules (RatelDesk and API only over the WireGuard VPN; RatelPay and the
     # payment webhook are the only public paths) are enforced at the reverse proxy and
     # documented in deploy/bss-app/README.md.
+    app.include_router(staff_router)
+    # Before the desk router: /v1/lines/lookup must be tried before /v1/lines/{line_id}.
     app.include_router(bss_lines_router)
+    app.include_router(desk_router)
+    app.include_router(desk_reads_router)
+    app.include_router(kyc_router)
     app.include_router(bss_money_router)
+    app.include_router(money_desk_router)
+    app.include_router(purchases_router)
+    app.include_router(payments_router)
+    app.include_router(bundles_router)
     app.include_router(meter_api_router)
     return app

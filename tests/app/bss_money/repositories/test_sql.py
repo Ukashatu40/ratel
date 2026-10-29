@@ -20,7 +20,14 @@ from app.bss_money.repositories.ports import DuplicateEntry
 from app.bss_money.repositories.sql import SqlLedgerRepository
 from app.bss_money.services.ledger import ReferenceConflict, post_entry
 from app.bss_money.services.wallet_check import check_wallets
+from tests.app.bss_money.rating_data import seed_lines
 from tests.app.bss_money.sqlite_database import sqlite_engine
+
+
+@pytest.fixture(autouse=True)
+def _lines(session: Session) -> None:
+    """The foreign keys need the lines these tests name to exist."""
+    seed_lines(session, 7)
 
 
 def _count(session: Session) -> int:
@@ -123,6 +130,7 @@ def test_every_wallet_equals_the_sum_of_its_entries_after_any_sequence(
 ) -> None:
     engine = sqlite_engine()
     with Session(engine) as s:
+        seed_lines(s, 3)
         repo = SqlLedgerRepository(s)
         for index, (line, amount) in enumerate(movements):
             post_entry(repo, new_posting(line, amount, "correction", f"ref-{index}"))

@@ -7,13 +7,5 @@
 # Remove a line in the same PR that implements the operation.
 meter_get_calls
 
-bss_create_customer
-bss_get_customer
-bss_list_plans
-bss_list_stock_sims
-bss_list_stock_numbers
-bss_create_line
-bss_get_line
-bss_activate_line
-bss_suspend_line
-bss_reinstate_line
+# RatelDesk's reads and terminate, drafted 2026-10-28. Each line goes when its route lands.
+bss_get_line_calls

@@ -13,11 +13,21 @@ from app.bss_lines.models.lines import Line, LineAudit, Sim
 
 
 class SqlLinesRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, request_commits: bool = False) -> None:
+        """`request_commits`: the caller commits the transaction itself (an API request does).
+
+        Then `commit()` only writes what is pending, because committing from inside the caller's
+        `with session.begin()` block closes the transaction and the next statement fails. A job
+        that opens a plain session leaves this off and `commit()` commits.
+        """
         self._session = session
+        self._request_commits = request_commits
 
     def get(self, line_id: int) -> Line | None:
-        return self._session.get(Line, line_id)
+        # Held until the transaction ends, so two requests changing the same line take turns and
+        # the second sees the state the first left. `populate_existing` re-reads a line this
+        # session already loaded. (SQLite has no row locks; PostgreSQL does.)
+        return self._session.get(Line, line_id, with_for_update=True, populate_existing=True)
 
     def find_by_identifier(
         self,
@@ -75,4 +85,7 @@ class SqlLinesRepository:
         )
 
     def commit(self) -> None:
-        self._session.commit()
+        if self._request_commits:
+            self._session.flush()
+        else:
+            self._session.commit()

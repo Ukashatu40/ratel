@@ -24,7 +24,15 @@ from app.bss_money.services.vouchers import (
     set_batch_state,
     set_card_state,
 )
+from tests.app.bss_money.rating_data import seed_lines
 from tests.app.bss_money.vouchers_data import FACE, T0, issue, redeem, wrong_pin
+
+
+@pytest.fixture(autouse=True)
+def _lines(session: Session) -> None:
+    """The foreign keys need the lines these tests name to exist."""
+    seed_lines(session, 7)
+
 
 REFUSED = RedeemResult(RedeemStatus.REFUSED)
 
@@ -211,7 +219,13 @@ def test_nothing_secret_reaches_a_log_line(
     for _ in range(5):  # and locked out
         redeem(session, other.card_number, wrong_pin(other.pin))
 
-    text = " ".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records)
+    # Only what the service put on each record. The stdlib's own fields (created,
+    # relativeCreated, thread...) are numbers that can contain any four digits.
+    plain = vars(logging.makeLogRecord({}))
+    text = " ".join(
+        f"{r.getMessage()} { {k: v for k, v in vars(r).items() if k not in plain} }"
+        for r in caplog.records
+    )
     assert "voucher.redeemed" in text
     assert "voucher.refused" in text
     assert "voucher.locked_out" in text

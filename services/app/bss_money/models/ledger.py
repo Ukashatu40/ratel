@@ -1,8 +1,8 @@
 """The wallet and the ledger. `ledger_entry` is append-only: the database refuses UPDATE, DELETE and
 TRUNCATE on it (triggers in the migration, docs/adr/0009-ledger-append-only-in-the-database.md).
 
-`line_id` is a plain integer for now. TODO(M-25): add a foreign key to `line.line_id` once the
-bss_lines schema is merged (bss_money may depend on bss_lines).
+A wallet's `line_id` is a foreign key to `line` (RESTRICT), and the entries follow through the
+wallet: a line with money against it is never removed.
 """
 
 from __future__ import annotations
@@ -33,7 +33,12 @@ class Wallet(Base, TimestampMixin):
 
     __tablename__ = "wallet"
 
-    line_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    line_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("line.line_id", ondelete="RESTRICT"),
+        primary_key=True,
+        autoincrement=False,
+    )
     balance_kobo: Mapped[int] = mapped_column(BigInteger, server_default="0")
     # TODO(PRD): may a wallet go negative? Nothing here forbids it; the purchase flow decides.
 

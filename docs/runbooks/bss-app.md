@@ -20,8 +20,11 @@ One process holds RatelBSS and the RatelMeter API. Staff tools, the meter agents
 ## Health checks
 
 - `sudo systemctl status ratel-app.service` is active.
-- `curl -s http://127.0.0.1:8000/healthz` answers `{"status":"ok"}`. That is liveness only: it does not check
-  PostgreSQL or Redis yet (TODO in `services/app/main.py`).
+- `curl -s http://127.0.0.1:8000/healthz` answers `{"status":"ok"}`. That is liveness only.
+- `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/readyz` answers **200** only when PostgreSQL
+  answers, the schema is at the code's migration head, Redis answers and the RatelLink key is set. **503** says
+  nothing about why; the reason is in `journalctl -u ratel-app.service` as `readiness.failed` with the component
+  (`database`, `migrations`, `redis`, `ratel_link_key`). The proxy does not forward `/readyz`: ask from the host.
 - `sudo -u postgres psql -c '\l'` lists `ratel_bss`; `sudo systemctl status postgresql redis-server nginx`.
 - `chronyc tracking` says the clock is synchronised: interval keys and the UTC rules depend on it.
 
@@ -53,15 +56,16 @@ If you see one, report it as a security issue.
 
 ## The rating job
 
-`python -m app.bss_money.rating_cli` takes each line's new usage records off its allowance and then
-slows, cuts or expires lines that need it (M-17). It is meant to run every five minutes from a timer.
-**There is no timer file yet** (deployment of the job is part of M-27), so until then it runs by hand:
+`python -m app.bss_money.rating_cli` takes each line's new usage records off its allowance and then slows, cuts,
+expires or restores lines (M-17). `ratel-rating.timer` runs it at two minutes past every fifth minute
+(`systemctl list-timers ratel-rating.timer`; `journalctl -u ratel-rating.service -n 50`). To run it once by hand:
 
 ```
-sudo -u ratelbss env PYTHONPATH=/opt/ratel-app/current/services \
-  bash -c 'set -a; . /etc/ratel-app/ratel-app.env; set +a; exec "$@"' _ \
-  /opt/ratel-app/current/venv/bin/python -m app.bss_money.rating_cli; echo "exit $?"
+sudo systemctl start ratel-rating.service; systemctl status ratel-rating.service --no-pager | head -8
 ```
+
+A failed unit means exit 1 or 2 below. The nightly `ratel-ledger-check.timer` is the same idea for the books: a
+failed `ratel-ledger-check.service` means a wallet differs from its ledger (`journalctl -u ratel-ledger-check`).
 
 | Exit | Meaning | What to do |
 | ---- | ------- | ---------- |
@@ -78,10 +82,42 @@ What it does, and does not do:
   renewal goes to `expired` (`/deactivate`). If RatelLink is down, the change is tried again on the next run.
 - A line that has **never had an allowance** is rated but never cut, so a line made by hand in the lab does not
   lose service. A SIM with no line keeps its records unrated until a line exists.
-- It does **not** restore data when a customer tops up: that belongs to the purchase flow (not built yet).
-  A line stays `out_of_data` until then.
+- **A line gets its data back when it has allowance again.** A purchase (a bundle, or a plan) creates the bucket;
+  the next run sees it and puts an out-of-data line back to full speed, or an expired line back on, through the
+  state machine. If RatelLink is down at that moment the next run tries again, and the customer is not charged twice.
+- **Top-up with a voucher restores data only if `RATING_AUTO_RENEW=true`.** Then, on each run, a line that is
+  out of data or expired and whose wallet covers its own plan has that plan bought again (the price comes out of the
+  wallet as a `purchase` and a `vat` entry; `VAT_RATE_BPS`, 750 = 7.5%, finance to confirm). Off, the voucher only
+  credits the wallet and the plan or bundle must be bought on purpose (`ops_cli buy`). It is a product decision
+  (TODO(PRD)), so it is off until it is turned on in `ratel-app.env`.
 - Never roll the `usage_rating` table back by hand. Those rows are the only record of what has been deducted,
   and deleting them makes the next run deduct the same usage again. The migration refuses to downgrade while they exist.
+
+## Staff accounts (RatelDesk)
+
+Staff sign in to RatelDesk with an email and a password (`POST /v1/auth/login`). There is no sign-up and no
+default account: an admin makes them with `python -m app.bss_lines.staff_cli`, run by a person on bss-app
+with the same `sudo -u ratelbss ... bash -c 'set -a; . /etc/ratel-app/ratel-app.env; ...'` wrapper as the
+rating job. **The password is never an argument.** It is typed twice at a prompt (or one line on standard
+input with `--password-stdin`).
+
+| Task | Command (after `staff_cli`) |
+| ---- | --------------------------- |
+| First admin | `create --email E --name NAME --role admin` |
+| An agent | `create --email E --name NAME --role agent` |
+| Forgotten password | `reset-password --email E` (ends every session of that account) |
+| Someone leaves | `disable --email E` (ends their sessions at once); `enable --email E` brings them back |
+| Who exists | `list` (id, role, state, email; never a password) |
+
+- Passwords are at least 12 characters and are stored only as a salted scrypt hash.
+- Five wrong passwords lock an account for 15 minutes. The log shows `staff.locked_out` with the account's
+  number, never the email. A locked person waits, or an admin runs `reset-password`.
+- A session lasts 8 hours at most and ends after 30 minutes without use. Sessions are rows in `staff_session`
+  (only a hash of the cookie is stored); deleting the rows signs everyone out.
+- Every line change is audited as `staff:<number>`, taken from the session and never from the request.
+- The cookie needs HTTPS (`STAFF_COOKIE_SECURE=true`, the default). Over plain HTTP the browser drops it and
+  nobody can stay signed in.
+- Sign-in is rate limited per address at the proxy (`ratel_login` in `nginx/ratel-app.conf.example`).
 
 ## Vouchers
 
@@ -122,6 +158,77 @@ What a customer sees, and why it is so plain:
 | A customer says "card not accepted" and the card looks right | It was already used (by this or another line), is not `on_sale` yet, is locked, or the phone number is not the line's stored form | Look at the card's state and `used_by_line_id` in PostgreSQL (`voucher` table, by `voucher_id`; never print `pin_hash`). Check the logs for `voucher.refused` with its `reason` (the reason is for you, never shown to the customer) |
 | A customer is told to wait | 5 failed attempts on the number in the last hour | Nothing to fix. A real customer mistyping 5 times waits an hour; if it is an attack you will see the same card number failing repeatedly in `voucher.locked_out` events |
 | `voucher.refused` with `no_such_line` in the log | The phone number the customer typed is not on a line, or the line is terminated | Ask the customer for the number on the SIM, in the international form without a plus sign |
+
+## Payments (Paystack)
+
+A customer tops up on RatelPay by paying through Paystack (decision of 2026-10-27; OPay comes after the demo).
+The page starts a payment (`POST /v1/pay/payments`) and sends the customer to the `checkout_url` it gets back;
+the page then follows the payment with `GET /v1/pay/payments/{payment_id}`.
+
+**How the money is believed.** A payment is credited to the line's wallet only after Paystack has been **asked**
+about it and has said `success` for exactly the amount we asked, in naira. Paystack's notification (the webhook) only
+tells us to go and look; its `x-paystack-signature` is checked first, on the raw bytes, and an unsigned one is refused
+before anything is read. The same payment delivered twice, or at the same moment twice, is credited once. **The
+webhook is not needed**: every five minutes the rating job asks about payments that are still pending, and the page's
+own status check does too after 15 seconds, so this works in the lab where Paystack cannot reach us.
+
+### Try the adapter against Paystack's real test mode first (no server needed)
+
+From a developer's machine in the repository, with a Paystack **test** secret key (the script refuses anything
+that does not start with `sk_test_`, and never prints the key):
+
+```bash
+read -rs -p "Paystack TEST secret key: " PAYSTACK_SECRET_KEY; echo; export PAYSTACK_SECRET_KEY
+PYTHONPATH=services .venv/bin/python scripts/paystack_sandbox_check.py
+```
+
+It starts a 200 naira test payment, prints the checkout page for you to open and pay with a test card Paystack shows
+there, then asks Paystack the way the app does and reports PASS or FAIL for the amount, the currency, the status and
+the transaction id. A FAIL means the adapter and Paystack disagree: fix `gateways/paystack.py` before anything else.
+Do not paste the checkout address into a ticket or chat.
+
+### Switching it on (test mode first)
+
+1. In the Paystack dashboard stay in **test mode** and copy the **test** secret key (`sk_test_...`).
+2. In `/etc/ratel-app/ratel-app.env` set `PAYSTACK_SECRET_KEY`, `PAYMENT_CALLBACK_URL` (the RatelPay page) and
+   `PAYMENT_EMAIL_DOMAIN` (a domain we control: each payment uses `pay@<domain>`, never the customer's email),
+   then `sudo systemctl restart ratel-app.service`. Until all three are set the payment routes answer `503`.
+3. Try one payment from bss-app itself (the key is read from the env file inside the shell, not typed):
+   ```bash
+   sudo -u ratelbss bash -c 'set -a; . /etc/ratel-app/ratel-app.env; set +a
+     curl -s -X POST http://127.0.0.1:8000/v1/pay/payments \
+       -H "Authorization: Bearer $PAY_API_KEY" -H "Idempotency-Key: try-$(date +%s)" \
+       -H "Content-Type: application/json" -d "{\"msisdn\":\"<a lab number>\",\"amount_kobo\":20000}"'
+   ```
+   It answers a `payment_id` and a `checkout_url`. Open the URL in a browser and pay with one of the **test cards in
+   Paystack's test-mode documentation**.
+4. Within about 15 seconds of asking for the status (or within five minutes, by the rating job) the payment is
+   `succeeded` and the wallet is credited: `journalctl -u ratel-app -u ratel-rating | grep payment.` shows
+   `payment.started` and `payment.credited` (no key, no signature and no address is ever logged).
+
+**The adapter has only been proven against a mock of Paystack's API** (Paystack's documentation could not be fetched
+when it was written). This test-mode payment is the first time it meets the real one. If a step fails, the journal
+says which call (`payment.start_failed` or `payment.verify_failed`, with the HTTP status or error kind) and nothing
+was charged; fix the adapter in `gateways/paystack.py`, not the rules.
+
+### The webhook (optional)
+
+In Paystack's dashboard (Settings, API Keys and Webhooks) the webhook URL is
+`https://<bss-app-host>/v1/pay/webhooks/paystack`. Paystack only calls a publicly trusted HTTPS address, so the lab's
+self-signed certificate will not do; use the five-minute settling meanwhile. In the proxy
+(`deploy/bss-app/nginx/ratel-app.conf.example`) fill in the addresses Paystack publishes for its webhooks.
+
+### Going live
+A live key (`sk_live_...`) goes in only when the project lead says, with Paystack's live-mode checks done and finance's
+fees confirmed. Nothing else changes. Refunds and chargebacks are not built.
+
+| Symptom | Likely cause | What to do |
+| ------- | ------------ | ---------- |
+| Starting a payment answers `503` | One of the three settings is missing, or Paystack could not be reached | Check the env file; `journalctl -u ratel-app | grep payment.start_failed` |
+| The customer paid and the wallet is not credited | The webhook did not arrive and the run has not happened yet, or Paystack says it is not complete | Wait for the next rating run, or `sudo systemctl start ratel-rating.service`; read `payment.` lines. A payment still pending after 24 hours is given up as `failed` |
+| `payment.amount_mismatch` in the log | Paystack says paid, but not the amount or the currency we asked | **Nothing was credited.** Treat it as a bug or tampering: compare the payment in Paystack's dashboard with ours before anyone is credited by hand |
+| `payment.unknown_reference` | A notification for a reference we never made | Usually a test or another product on the same Paystack account; ignore unless it repeats |
+| Webhook answers `401` | The signature does not match: the wrong key in the env file, or the body was altered on the way | Compare the key with the dashboard's; the proxy must not rewrite the body |
 
 ## Recovery
 

@@ -138,7 +138,7 @@ RatelLink (calling settings) and RatelMeter (call records).
 
 ## Major data flows
 
-1. **Sell and activate.** RatelDesk -> RatelBSS (customer, SIM, number, plan, KYC verified) -> line state machine -> `POST /v1/lines/{imsi}/activate` -> RatelLink writes the Open5GS subscriber document (keys, MSISDN, internet APN at plan speeds, ims APN when voice) -> takes effect at the phone's next attach.
+1. **Sell and activate.** RatelDesk -> RatelBSS (customer, SIM, number, plan, KYC verified, plan paid for: a wallet purchase creates the allowance that activation checks) -> line state machine -> `POST /v1/lines/{imsi}/activate` -> RatelLink writes the Open5GS subscriber document (keys, MSISDN, internet APN at plan speeds, ims APN when voice) -> takes effect at the phone's next attach.
 2. **Attach.** Phone -> eNB -> MME -> HSS reads the record from MongoDB (the only moments RatelCore reads a line's record) -> session with the line's fixed IP and AMBR -> UPF counts bytes.
 3. **Usage.** UPF counters -> RatelMeter agent (core-up) -> RatelMeter API -> `usage_record` -> RatelBSS rating job -> buckets -> `out_of_data` -> `POST /v1/lines/{imsi}/data` (slow or off).
 4. **Calls.** S-CSCF writes call records to RatelVoice MySQL -> RatelMeter agent (voice) -> RatelMeter API -> `call_record` -> shown on the line page (not rated for the demo).

@@ -1,8 +1,14 @@
 import { createContext, useContext } from "react";
 
-// Roles: "agent" and "admin" (PRD decision 11, demo only). Reviewed before pilot.
-export interface AuthUser { name: string; email: string; role: "agent" | "admin" }
-export interface AuthValue { user: AuthUser | null; signIn: (email: string) => void; signOut: () => void }
+// The role names shown in the UI. The API uses "agent" / "admin" (PRODUCT_RULES.md, decision 11);
+// this file only concerns the labels the screens use, so keep the friendly pairs here.
+export interface AuthUser { name: string; email: string; role: "Customer Care" | "Super Admin" }
+export interface AuthValue {
+  user: AuthUser | null;
+  ready: boolean; // false until we know whether a session exists (the page just loaded)
+  signIn: (email: string, password: string) => Promise<void>; // throws ApiError when refused
+  signOut: () => Promise<void>;
+}
 
 export const AuthContext = createContext<AuthValue | null>(null);
 

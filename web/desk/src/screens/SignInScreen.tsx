@@ -1,38 +1,48 @@
 // SignInScreen.tsx
 
 import React, { useState } from 'react';
+import { ApiError } from '../lib/api';
 import './SignInScreen.css';
 
 interface SignInScreenProps {
-  onLoginSuccess: (email: string) => void;
+  onSignIn: (email: string, password: string) => Promise<void>;
 }
 
-export const SignInScreen: React.FC<SignInScreenProps> = ({ onLoginSuccess }) => {
-  const [email, setEmail] = useState('amina.yusuf@ratelplus.example');
-  const [password, setPassword] = useState('••••••••••••');
+export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignIn }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) {
       setError('Please enter your staff email address');
       return;
     }
-    if (!password.trim()) {
+    if (!password) {
       setError('Please enter your password');
       return;
     }
 
     setIsLoading(true);
     setError(null);
-
-    // Simulate authentication
-    setTimeout(() => {
+    try {
+      await onSignIn(email.trim(), password);
+    } catch (err) {
+      // The API gives one answer for every refusal (wrong email, wrong password, disabled or locked account), so we do too.
+      setError(
+        err instanceof ApiError && err.status === 401
+          ? 'Email or password is not right.'
+          : err instanceof ApiError && err.status === 429
+            ? 'Too many attempts. Wait a few minutes and try again.'
+            : 'Could not sign in. Check your connection and try again.',
+      );
+      setPassword('');
+    } finally {
       setIsLoading(false);
-      onLoginSuccess(email.trim());
-    }, 500);
+    }
   };
 
   return (
@@ -225,9 +235,11 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onLoginSuccess }) =>
           </p>
         </div>
 
-        <div className="signin-watermark">
-          Mockup with sample data.
-        </div>
+        {import.meta.env.VITE_USE_MOCK === 'true' && (
+          <div className="signin-watermark">
+            Mockup with sample data.
+          </div>
+        )}
       </div>
     </div>
   );

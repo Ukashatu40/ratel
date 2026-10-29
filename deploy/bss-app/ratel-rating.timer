@@ -1,0 +1,17 @@
+# Runs ratel-rating.service every five minutes, two minutes after each agent interval ends (the
+# agents post at :00, :05, :10 ...). Install as /etc/systemd/system/ratel-rating.timer, then:
+#   sudo systemctl enable --now ratel-rating.timer
+# Check it: systemctl list-timers ratel-rating.timer
+[Unit]
+Description=RatelBSS: run the rating job every five minutes
+
+[Timer]
+# In the host's time (UTC), on the clock. Persistent: a run missed while the host was off (the nightly
+# power cut) happens as soon as it is back, and then the clock takes over.
+OnCalendar=*:02/5
+Persistent=true
+AccuracySec=10s
+Unit=ratel-rating.service
+
+[Install]
+WantedBy=timers.target

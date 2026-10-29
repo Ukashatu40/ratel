@@ -135,12 +135,33 @@ class LineAudit(Base, TimestampMixin):
     reason: Mapped[str] = mapped_column(String(200))
 
 
+class CustomerAudit(Base, TimestampMixin):
+    """Every change to who a customer is on record as: registered, verified, rejected.
+
+    Who did it and why. Appended to, never edited. `reason` is free text typed by staff, so it is
+    personal data: it is never logged.
+    """
+
+    __tablename__ = "customer_audit"
+    __table_args__ = (Index("ix_customer_audit_customer_id", "customer_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customer.customer_id", ondelete="RESTRICT")
+    )
+    # registered | kyc_verified | kyc_rejected
+    action: Mapped[str] = mapped_column(String(30))
+    actor: Mapped[str] = mapped_column(String(120))
+    reason: Mapped[str] = mapped_column(String(200))
+
+
 class Bundle(Base, TimestampMixin):
     __tablename__ = "bundle"
     __table_args__ = (
         CheckConstraint("price_kobo >= 0", name="ck_bundle_price_kobo_non_negative"),
         CheckConstraint("validity_days > 0", name="ck_bundle_validity_days_positive"),
         CheckConstraint("data_bytes >= 0", name="ck_bundle_data_bytes_non_negative"),
+        CheckConstraint("state IN ('on_sale', 'retired')", name="ck_bundle_state_valid"),
     )
 
     bundle_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -149,3 +170,5 @@ class Bundle(Base, TimestampMixin):
     validity_days: Mapped[int] = mapped_column(Integer)
     data_bytes: Mapped[int] = mapped_column(BigInteger)
     channels: Mapped[str] = mapped_column(String(40))
+    # on_sale | retired. A retired bundle is never listed or sold; bought ones stand.
+    state: Mapped[str] = mapped_column(String(20), server_default="on_sale")

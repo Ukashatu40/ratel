@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.bss_money.domain.entries import new_posting
 from app.bss_money.repositories.sql import SqlLedgerRepository
 from app.bss_money.services.ledger import PostingResult, post_entry
+from tests.app.bss_money.rating_data import seed_lines
 
 ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = ROOT / "services/app/alembic.ini"
@@ -53,6 +54,20 @@ class Database:
             return post_entry(
                 SqlLedgerRepository(session), new_posting(line, amount, kind, reference)
             )
+
+    def lines(self, count: int) -> None:
+        """Lines 1 to `count`, so a wallet, a payment or a voucher in a test names a line."""
+        with Session(self.engine) as session, session.begin():
+            seed_lines(session, count)
+
+    def run(self, sql: str, **params: object) -> None:
+        """Run one statement in its own committed transaction (values go in `params`)."""
+        with self.engine.begin() as conn:
+            conn.execute(text(sql), params)
+
+    def rows(self, sql: str) -> list[tuple[object, ...]]:
+        with self.engine.connect() as conn:
+            return [tuple(r) for r in conn.execute(text(sql))]
 
     def scalar(self, sql: str) -> object:
         with self.engine.connect() as conn:

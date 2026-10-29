@@ -1,0 +1,52 @@
+# Firewall for the voice VM (RatelVoice: Kamailio, rtpengine, DNS, MySQL and PyHSS in Docker). Install
+# as /etc/ratel-fw/ratel-fw.nft; ratel-fw.service loads it at boot (deploy/firewall/README.md). The
+# addresses are not in this file: it reads them from /etc/ratel-fw/addresses.nft on the host.
+#
+# Two chains, because the VM does two different things:
+#
+# input: what is addressed to the VM itself. Policy is drop. Let in: replies, loopback, ping and SSH
+# (key-only, rate limited). The voice containers have their own networks, and the phones' calls
+# reach them through the VM as a router, so none of that is input and none of it is touched here.
+#
+# forward: what Docker publishes. A port Docker publishes (PyHSS's API on 8080) is rewritten to the
+# container and forwarded, so the input chain never sees it and cannot protect it. This chain runs
+# before Docker's own rules and drops a published port's traffic from anyone not listed. The policy
+# is accept: everything else the VM routes (calls, DNS for the phones) is left exactly as it is.
+#
+# Check the syntax without applying it:   sudo nft -c -f /etc/ratel-fw/ratel-fw.nft
+include "/etc/ratel-fw/addresses.nft"
+
+table inet ratel_fw
+delete table inet ratel_fw
+
+table inet ratel_fw {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        ct state established,related accept
+        ct state invalid drop
+        iifname "lo" accept
+        meta l4proto { icmp, ipv6-icmp } accept
+
+        # SSH is key-only (PasswordAuthentication no), so it stays open to any address, but one
+        # address cannot open more than 10 new connections a minute.
+        tcp dport 22 ct state new meter ssh_new4 { ip saddr timeout 1m limit rate over 10/minute burst 10 packets } drop
+        tcp dport 22 ct state new meter ssh_new6 { ip6 saddr timeout 1m limit rate over 10/minute burst 10 packets } drop
+        tcp dport 22 accept
+
+        # Not a verdict: it counts what the policy then drops (sudo nft list chain inet ratel_fw input).
+        counter
+    }
+
+    chain published {
+        type filter hook forward priority filter - 10; policy accept;
+
+        # PyHSS's API, published by Docker on 8080 (8080 to the container's 8080). It manages the voice
+        # subscribers, so only the hosts named in pyhss_clients may reach it. "ct status dnat" limits
+        # this to published traffic: the containers talking to each other are not touched. By the
+        # time a packet is forwarded, Docker has rewritten its destination to the container, so the
+        # port matched here is the container's. If the compose file ever publishes a different host
+        # port or maps it to another container port, this rule must change with it.
+        ct status dnat tcp dport 8080 ip saddr != $pyhss_clients drop
+    }
+}

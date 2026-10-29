@@ -21,7 +21,8 @@ Read-only checks on the voice VM by @Ukashatu40 (names and counts only, no rows,
   is set. The IMS dialog tables (`dialog_in`, `dialog_out`, `dialog_vars`) and `ro_session` exist.
 - A count of those tables read outside a call returned 0. **That does not show what they hold
   during or after a call**: it was not read while a call was up. TODO(network team): read them
-  during a call and after it ends.
+  during a call and after it ends. The read-only steps are in
+  [runbooks/voice-call-record-checks.md](runbooks/voice-call-record-checks.md).
 - The configurations were edited by hand (backup copies sit beside them) and are not in Git.
 
 What this means: sections 3 and 10 assume `acc` and `dialog` write one record per call. On the lab

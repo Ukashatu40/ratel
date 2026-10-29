@@ -1,47 +1,52 @@
-"""FastAPI endpoints for the sell-to-activate flow.
+"""FastAPI endpoints for the line lifecycle: activate, suspend, reinstate and terminate.
 
-These endpoints are internal to RatelBSS. They are NOT part of
-contracts/openapi.yaml, which describes RatelLink and RatelMeter only.
+`/lines/{line_id}/activate|suspend|reinstate|terminate` are the contract's `bss_activate_line`,
+`bss_suspend_line`, `bss_reinstate_line` and `bss_terminate_line`. The lookups are internal to
+RatelBSS and not in contracts/openapi.yaml.
+
+Every route needs a signed-in staff member whose role allows the action (`api/deps.py`), and the
+audit `actor` is taken from that session, never from the request.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from functools import lru_cache
-from typing import Annotated
+import uuid
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from app.bss_lines.api.deps import get_db, get_settings, now_utc, require
+from app.bss_lines.api.desk import LineOut, line_out
+from app.bss_lines.domain.staff import Permission
 from app.bss_lines.models.lines import Line
+from app.bss_lines.repositories.desk_ports import StaffRecord
+from app.bss_lines.repositories.desk_sql import SqlLineSalesRepository
+from app.bss_lines.repositories.idempotency import (
+    IdempotencyConflictError,
+    IdempotencyStore,
+)
+from app.bss_lines.repositories.ports import PaidPlanCheck
 from app.bss_lines.repositories.sql import SqlLinesRepository
+from app.bss_lines.services import line_sales
 from app.bss_lines.services.activation import ActivationError, activate_line
+from app.bss_lines.services.activation import LineNotFoundError as ActivationLineNotFound
 from app.bss_lines.services.lifecycle import (
     LifecycleError,
-    LifecycleResult,
+    LineNotFoundError,
+    StoredDataError,
     reinstate_line,
     suspend_line,
     terminate_line,
 )
 from app.bss_lines.services.ratel_link_client import RatelLinkClient, RatelLinkError
 from app.config import Settings
+from common.errors import ApiError
+
+__all__ = ["get_client", "get_db", "get_lines_repo", "get_settings", "router"]
 
 router = APIRouter(prefix="/v1")
-
-
-def get_db(request: Request) -> Iterator[Session]:
-    """Provide a database session for the duration of the request."""
-    factory = request.app.state.session_factory
-
-    with factory() as session, session.begin():
-        yield session
-
-
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """Application settings, read once per process."""
-    return Settings()
 
 
 def get_client(
@@ -66,160 +71,234 @@ def get_lines_repo(
     session: Annotated[Session, Depends(get_db)],
 ) -> SqlLinesRepository:
     """Wrap the session in the repository the service expects."""
-    return SqlLinesRepository(session)
+    return SqlLinesRepository(session, request_commits=True)
 
 
-class ActivateBody(BaseModel):
-    """Request payload for activating a line."""
-
-    line_id: int
-    actor: str = Field(min_length=1, max_length=120)
-    idempotency_key: str = Field(min_length=1, max_length=120)
-
-
-class ActivateResponse(BaseModel):
-    """Response returned after a successful activation."""
-
-    line_id: int
-    state: str
+def get_idempotency_store(request: Request) -> IdempotencyStore:
+    """The Idempotency-Key store, set on app.state by create_app."""
+    store = getattr(request.app.state, "idempotency_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Idempotency store not configured")
+    return store  # type: ignore[no-any-return]
 
 
-@router.post("/lines/activate", response_model=ActivateResponse)
-def post_activate(
-    payload: ActivateBody,
-    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
-    client: Annotated[RatelLinkClient, Depends(get_client)],
-) -> ActivateResponse:
-    """Activate a line through the RatelLink client.
-
-    TODO(auth, M-26): this route has no authentication and takes the audit
-    ``actor`` from the request body. That must not be deployed before M-26 adds
-    staff authentication.
-
-    TODO(contract, M-02): this route and body will be replaced by whatever M-02
-    specifies in contracts/openapi.yaml.
-    """
-    try:
-        result = activate_line(
-            lines,
-            client,
-            payload.line_id,
-            actor=payload.actor,
-            idempotency_key=payload.idempotency_key,
-        )
-    except ActivationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RatelLinkError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"RatelLink error: {exc}",
-        ) from exc
-
-    return ActivateResponse(
-        line_id=result.line_id,
-        state=result.to_state.value,
-    )
+def get_paid_plan_check(
+    request: Request, session: Annotated[Session, Depends(get_db)]
+) -> PaidPlanCheck:
+    """Whether a line has paid for data, answered by BSS: money (wired in create_app)."""
+    factory = getattr(request.app.state, "paid_plan_check", None)
+    if factory is None:
+        # Fail closed: without the answer a line must not be activated.
+        raise HTTPException(status_code=503, detail="Payment check not configured")
+    return factory(session)  # type: ignore[no-any-return]
 
 
-class LifecycleBody(BaseModel):
-    """Request payload for suspend, reinstate and terminate."""
+Reason = Literal["fraud", "non_payment", "customer_request", "lost_sim", "other"]
+IdempotencyKeyHeader = Annotated[
+    str | None, Header(alias="Idempotency-Key", min_length=1, max_length=120)
+]
+LineId = Annotated[int, Path(ge=1)]
+Db = Annotated[Session, Depends(get_db)]
 
-    line_id: int
-    actor: str = Field(min_length=1, max_length=120)
-    idempotency_key: str = Field(min_length=1, max_length=120)
-    reason: str = Field(min_length=1, max_length=40)
+
+class ActivateLineRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    speed_ul_mbps: float | None = Field(default=None, gt=0)
+    speed_dl_mbps: float | None = Field(default=None, gt=0)
+
+
+class CareActionRequest(BaseModel):
+    """The body of suspend and reinstate: why, from the fixed list, plus free text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Reason
     reason_text: str | None = Field(default=None, max_length=200)
 
 
-class LifecycleResponse(BaseModel):
-    """Response returned after a lifecycle change."""
-
-    line_id: int
-    from_state: str
-    to_state: str
+def _key(header: str | None) -> str:
+    """The caller's Idempotency-Key, or a fresh one: without a key a repeat is a new operation."""
+    return header if header is not None else uuid.uuid4().hex
 
 
-def _lifecycle_response(result: LifecycleResult) -> LifecycleResponse:
-    return LifecycleResponse(
-        line_id=result.line_id,
-        from_state=result.from_state.value,
-        to_state=result.to_state.value,
+def _not_found() -> ApiError:
+    return ApiError(404, "not_found", "No such line.")
+
+
+def _refused(exc: Exception) -> ApiError:
+    return ApiError(409, "conflict", str(exc))
+
+
+def _same_key_other_line() -> ApiError:
+    return ApiError(409, "conflict", "This Idempotency-Key was used for another line.")
+
+
+def _network_said_no() -> ApiError:
+    # Nothing was changed. The caller repeats the call with the same Idempotency-Key.
+    return ApiError(
+        502, "bad_gateway", "The network service did not accept the change. Nothing was changed."
     )
 
 
-@router.post("/lines/suspend", response_model=LifecycleResponse)
-def post_suspend(
-    payload: LifecycleBody,
+def _the_line(session: Session, line_id: int) -> LineOut:
+    line = line_sales.get_line(SqlLineSalesRepository(session), line_id)
+    if line is None:
+        raise _not_found()
+    return line_out(line)
+
+
+@router.post("/lines/{line_id}/activate", response_model=LineOut)
+def activate(
+    request: Request,
+    line_id: LineId,
+    body: ActivateLineRequest,
+    staff: Annotated[StaffRecord, Depends(require(Permission.ACTIVATE_LINE))],
+    session: Db,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
-) -> LifecycleResponse:
-    """Suspend a line with a reason."""
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
+    paid_plan: Annotated[PaidPlanCheck, Depends(get_paid_plan_check)],
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> LineOut:
+    """Activate a line (contract `bss_activate_line`).
+
+    A repeat with the same Idempotency-Key for the same line returns the first result and changes
+    nothing. The same key for another line is 409. The audit actor is the signed-in staff member.
+    """
+    if body.speed_ul_mbps is not None or body.speed_dl_mbps is not None:
+        # TODO(contract): whether a caller may override the plan's speeds is not decided.
+        raise ApiError(422, "validation_error", "Overriding the plan's speeds is not supported.")
     try:
-        result = suspend_line(
+        activate_line(
             lines,
             client,
-            payload.line_id,
-            actor=payload.actor,
-            reason=payload.reason,
-            reason_text=payload.reason_text,
-            idempotency_key=payload.idempotency_key,
+            idempotency,
+            line_id,
+            actor=f"staff:{staff.staff_id}",
+            idempotency_key=_key(idempotency_key),
+            paid_plan=paid_plan,
+            now=now_utc(request),
         )
-    except LifecycleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RatelLinkError as exc:
-        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+    except ActivationLineNotFound:
+        raise _not_found() from None
+    except ActivationError as exc:
+        raise _refused(exc) from None
+    except IdempotencyConflictError:
+        raise _same_key_other_line() from None
+    except RatelLinkError:
+        raise _network_said_no() from None
+    return _the_line(session, line_id)
 
-    return _lifecycle_response(result)
 
-
-@router.post("/lines/reinstate", response_model=LifecycleResponse)
-def post_reinstate(
-    payload: LifecycleBody,
+@router.post("/lines/{line_id}/suspend", response_model=LineOut)
+def suspend(
+    line_id: LineId,
+    body: CareActionRequest,
+    staff: Annotated[StaffRecord, Depends(require(Permission.SUSPEND_LINE))],
+    session: Db,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
-) -> LifecycleResponse:
-    """Reinstate a suspended line."""
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> LineOut:
+    """Suspend a line with a reason (contract `bss_suspend_line`)."""
     try:
-        result = reinstate_line(
+        suspend_line(
             lines,
             client,
-            payload.line_id,
-            actor=payload.actor,
-            reason=payload.reason,
-            reason_text=payload.reason_text,
-            idempotency_key=payload.idempotency_key,
+            idempotency,
+            line_id,
+            actor=f"staff:{staff.staff_id}",
+            reason=body.reason,
+            reason_text=body.reason_text,
+            idempotency_key=_key(idempotency_key),
         )
+    except LineNotFoundError:
+        raise _not_found() from None
+    except StoredDataError:
+        raise ApiError(500, "internal_error", "The stored data for this line is wrong.") from None
     except LifecycleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RatelLinkError as exc:
-        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+        raise _refused(exc) from None
+    except IdempotencyConflictError:
+        raise _same_key_other_line() from None
+    except RatelLinkError:
+        raise _network_said_no() from None
+    return _the_line(session, line_id)
 
-    return _lifecycle_response(result)
 
-
-@router.post("/lines/terminate", response_model=LifecycleResponse)
-def post_terminate(
-    payload: LifecycleBody,
+@router.post("/lines/{line_id}/reinstate", response_model=LineOut)
+def reinstate(
+    line_id: LineId,
+    body: CareActionRequest,
+    staff: Annotated[StaffRecord, Depends(require(Permission.SUSPEND_LINE))],
+    session: Db,
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     client: Annotated[RatelLinkClient, Depends(get_client)],
-) -> LifecycleResponse:
-    """Terminate a line."""
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> LineOut:
+    """Reinstate a suspended line (contract `bss_reinstate_line`).
+
+    If the stored `state_before_suspension` is wrong the answer is 500 and the caller does not
+    retry: repeating the call cannot fix the data.
+    """
     try:
-        result = terminate_line(
+        reinstate_line(
             lines,
             client,
-            payload.line_id,
-            actor=payload.actor,
-            reason=payload.reason,
-            reason_text=payload.reason_text,
-            idempotency_key=payload.idempotency_key,
+            idempotency,
+            line_id,
+            actor=f"staff:{staff.staff_id}",
+            reason=body.reason,
+            reason_text=body.reason_text,
+            idempotency_key=_key(idempotency_key),
         )
+    except LineNotFoundError:
+        raise _not_found() from None
+    except StoredDataError:
+        raise ApiError(500, "internal_error", "The stored data for this line is wrong.") from None
     except LifecycleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RatelLinkError as exc:
-        raise HTTPException(status_code=502, detail=f"RatelLink error: {exc}") from exc
+        raise _refused(exc) from None
+    except IdempotencyConflictError:
+        raise _same_key_other_line() from None
+    except RatelLinkError:
+        raise _network_said_no() from None
+    return _the_line(session, line_id)
 
-    return _lifecycle_response(result)
+
+@router.post("/lines/{line_id}/terminate", response_model=LineOut)
+def terminate(
+    line_id: LineId,
+    body: CareActionRequest,
+    staff: Annotated[StaffRecord, Depends(require(Permission.TERMINATE_LINE))],
+    session: Db,
+    lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
+    client: Annotated[RatelLinkClient, Depends(get_client)],
+    idempotency: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> LineOut:
+    """Terminate a line, admin only (contract `bss_terminate_line`). The SIM is retired with it."""
+    try:
+        terminate_line(
+            lines,
+            client,
+            idempotency,
+            line_id,
+            actor=f"staff:{staff.staff_id}",
+            reason=body.reason,
+            reason_text=body.reason_text,
+            idempotency_key=_key(idempotency_key),
+        )
+    except LineNotFoundError:
+        raise _not_found() from None
+    except LifecycleError as exc:
+        raise _refused(exc) from None
+    except IdempotencyConflictError:
+        raise _same_key_other_line() from None
+    except RatelLinkError:
+        raise _network_said_no() from None
+    return _the_line(session, line_id)
 
 
 # --- M-26 line lookup ------------------------------------------------------------
@@ -253,14 +332,13 @@ def _line_lookup_response(line: Line) -> LineLookupResponse:
 
 @router.get("/lines/lookup", response_model=LineLookupResponse)
 def get_line_by_identifier(
+    _staff: Annotated[StaffRecord, Depends(require(Permission.READ))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
     msisdn: str | None = None,
     iccid: str | None = None,
     imsi: str | None = None,
 ) -> LineLookupResponse:
     """Look a line up by exactly one of msisdn, iccid or imsi.
-
-    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
 
     Answers 422 if zero or more than one identifier is given, 404 if no line
     matches. The indexes on line.msisdn, line.iccid and line.imsi make each
@@ -282,12 +360,10 @@ def get_line_by_identifier(
 @router.get("/lines/lookup/{line_id}", response_model=LineLookupResponse)
 def get_line_by_id(
     line_id: int,
+    _staff: Annotated[StaffRecord, Depends(require(Permission.READ))],
     lines: Annotated[SqlLinesRepository, Depends(get_lines_repo)],
 ) -> LineLookupResponse:
-    """Look a line up by its id.
-
-    TODO(auth, M-26): no authentication yet; staff auth arrives with M-26.
-    """
+    """Look a line up by its id."""
     line = lines.find_by_identifier(line_id=line_id)
     if line is None:
         raise HTTPException(status_code=404, detail=f"No line with id {line_id}")
