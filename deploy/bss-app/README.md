@@ -47,17 +47,15 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
 
 1. **Host packages, and check the services listen on this host only:**
    ```bash
-   sudo apt-get update          # a fresh image's package list is stale; without it some downloads answer 404
    sudo apt-get install -y python3.12 python3.12-venv postgresql redis-server nginx chrony
    sudo ss -tlnp | grep -E ':(5432|6379)\b'     # both must show 127.0.0.1, never 0.0.0.0
    chronyc tracking | grep -E 'Leap status|System time'
    ```
 
 2. **Create the database and its two roles, then set their passwords at the prompt** (never in a file or on
-   a command line). The file is not on the host yet: copy it from your machine first
-   (`scp deploy/bss-app/postgres-roles.sql <bss-app>:/tmp/`), into `/tmp` so the `postgres` user can read it:
+   a command line):
    ```bash
-   sudo -u postgres psql -v ON_ERROR_STOP=1 -f /tmp/postgres-roles.sql
+   sudo -u postgres psql -v ON_ERROR_STOP=1 -f postgres-roles.sql
    sudo -u postgres psql -c '\password ratel_owner'
    sudo -u postgres psql -c '\password ratel_app'
    ```
@@ -75,10 +73,6 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
      deploy/bss-app/nginx/ratel-pay-key.conf.example <bss-app>:/tmp/
    ```
    On bss-app, compare `sha256sum /tmp/$REL.tar.gz` with the value printed above.
-   `/tmp` is emptied when the host reboots (and this site has nightly power cuts), so a copy that waits overnight is
-   gone. The release does not contain the `deploy/` files. If they are gone, fetch them again from the public
-   repository on bss-app, then compare each file's SHA-256 with `shasum -a 256 deploy/bss-app/<file>` on your machine:
-   `curl -fsSL https://raw.githubusercontent.com/<owner>/ratel/<commit>/deploy/bss-app/<file> -o /tmp/<file>`.
 
 4. **Install the release** (creates the user `ratelbss` and the folders, checks the service user can import it):
    ```bash
@@ -93,8 +87,6 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    sudo install -m 0600 -o root -g root /dev/null /etc/ratel-app/ratel-app-migrate.env
    sudo -e /etc/ratel-app/ratel-app-migrate.env      # one line: DATABASE_URL=postgresql+psycopg://ratel_owner:<password>@127.0.0.1:5432/ratel_bss
    ```
-   The two files hold **different** roles: `ratel_owner` here, `ratel_app` in `ratel-app.env`. The migration file needs
-   nothing else (no API keys). `permission denied for schema public` from the migration means it was given `ratel_app`.
 
 6. **Run the database migrations as the owner role** (a deliberate step, never part of an install). Read the
    migration first: some refuse to roll back while they hold rows.
@@ -146,9 +138,6 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
       bash -c 'set -a; . /etc/ratel-app/ratel-app.env; set +a; exec "$@"' _ \
       /opt/ratel-app/current/venv/bin/python -m app.bss_lines.staff_cli create --email <you> --name "<your name>" --role admin
     ```
-    Errors like `<name>: No such file or directory` or `syntax error near unexpected token` from a line of the env file
-    mean a `<placeholder>` is still in it (bash reads this file here; `<` is a redirect). Replace the value or comment
-    the line out; the account is still made, but the lines after the bad one are not read.
 
 ## Upgrade and rollback
 
