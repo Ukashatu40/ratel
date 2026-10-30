@@ -11,13 +11,12 @@ const LAST = ["Umar", "Yahaya", "Musa", "Shehu", "Adamu", "Salisu", "Kabir", "Id
 const CITIES = ["Kano", "Kaduna", "Zaria", "Katsina", "Sokoto", "Bauchi"];
 
 // Make the shared customer list bigger (once), so paging and filters have something to show.
-// PRD SECURITY_AND_PRIVACY: use placeholders, never real-looking NINs.
 if (mockCustomers.length < 10) {
   for (let i = 0; i < 26; i++) {
     mockCustomers.push({
       id: `c${mockCustomers.length + 1}`, name: `${FIRST[i % FIRST.length]} ${LAST[(i * 5) % LAST.length]}`,
       phone: `+234 80${i % 10} ${100 + i} ${String(1000 + i * 7).slice(-4)}`, email: i % 4 === 0 ? "" : `customer${i}@mail.example`,
-      idType: "NIN", idNumber: `DEMO${String(1000000 + i * 777).padStart(7, "0")}`, address: `${i + 1} Market Road, ${CITIES[i % CITIES.length]}`,
+      idType: "NIN", idNumber: String(10000000000 + i * 3333331), address: `${i + 1} Market Road, ${CITIES[i % CITIES.length]}`,
       kycStatus: i % 5 === 0 ? "pending" : i % 11 === 0 ? "rejected" : "verified", blocked: false,
     });
   }

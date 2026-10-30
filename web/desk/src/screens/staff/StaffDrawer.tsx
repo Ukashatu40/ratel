@@ -57,7 +57,7 @@ export function StaffDrawer({ member, isSelf, onClose }: { member: StaffMember |
         <div className="field"><label htmlFor="s-email">Email (the sign-in name)</label><input id="s-email" className="input" type="email" value={email} disabled={!!member} onChange={(e) => setEmail(e.target.value)} />{errors.email && <span className="field__error">{errors.email}</span>}</div>
         <div className="field">
           <label htmlFor="s-role">Role</label>
-          <select id="s-role" className="input" value={role} disabled={isSelf} onChange={(e) => setRole(e.target.value as Role)}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select>
+          <select id="s-role" className="input" value={role} disabled={isSelf} onChange={(e) => setRole(e.target.value as Role)}>{ROLES.map((r) => <option key={r}>{r}</option>)}</select>
         </div>
         <label className="stf-check"><input type="checkbox" checked={vpn} onChange={(e) => setVpn(e.target.checked)} /> VPN access (can use RatelDesk away from the office)</label>
         {member && (

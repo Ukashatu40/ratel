@@ -1,8 +1,6 @@
 import type { AuthUser } from "../../lib/authContext";
 
-// The screens use the friendly role names ("Customer Care" / "Super Admin").
-// The API stores "agent" / "admin" — see ROLE_LABEL in src/lib/auth.tsx for the mapping.
-export type Role = AuthUser["role"];
+export type Role = AuthUser["role"]; // "Customer Care" | "Super Admin"
 export const ROLES: Role[] = ["Customer Care", "Super Admin"];
 
 export interface StaffMember {

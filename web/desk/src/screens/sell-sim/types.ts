@@ -5,10 +5,8 @@ export interface Customer {
   name: string;
   phone: string;
   email: string;
-  // TODO(PRD): allowed id_type values are open (decision 3). Demo value: "NIN" only.
   idType: "NIN";
   idNumber: string;
-  // TODO(PRD): address format is open (decision 3). Demo value: free text.
   address: string;
   kycStatus: KycStatus;
   blocked: boolean; // separate from KYC status

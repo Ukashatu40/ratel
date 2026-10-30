@@ -11,32 +11,20 @@ const toUser = (me: StaffMe): AuthUser => ({ name: me.name, email: me.email, rol
 
 // With VITE_USE_MOCK=true there is no backend to ask, so sign-in is a stand-in that remembers the user for the tab.
 const isMock = () => import.meta.env.VITE_USE_MOCK === "true";
-const MOCK_KEY = "ratel.desk.mock-user";
-
-// MOCK rule until the backend says who is who: emails starting with "admin" (and ibrahim.danladi) are Super Admins.
-// (PRD decision 11 uses the API names "agent"/"admin"; the UI shows the friendly pair.)
-const roleFromEmail = (email: string): AuthUser["role"] => {
-  const local = email.split("@")[0].toLowerCase();
-  return local.startsWith("admin") || local === "ibrahim.danladi" ? "Super Admin" : "Customer Care";
-};
-
-// "amina.yusuf@ratelplus.example" -> "Amina Yusuf"
-const nameFromEmail = (email: string) =>
-  email.split("@")[0].split(/[._-]/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+const MOCK_KEY = "ratel.desk.user";
 
 function loadMock(): AuthUser | null {
   try {
     const raw = sessionStorage.getItem(MOCK_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AuthUser;
-    // Old sessionStorage entries may carry the API role names; convert them to the labels the UI uses.
-    if ((parsed.role as string) === "admin") return { ...parsed, role: "Super Admin" };
-    if ((parsed.role as string) === "agent") return { ...parsed, role: "Customer Care" };
-    return parsed;
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
   } catch {
     return null;
   }
 }
+
+// "amina.yusuf@ratelplus.example" -> "Amina Yusuf"
+const nameFromEmail = (email: string) =>
+  email.split("@")[0].split(/[._-]/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const mock = isMock();
@@ -66,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (email: string, password: string) => {
       if (mock) {
-        const u: AuthUser = { email, name: nameFromEmail(email) || "Staff", role: roleFromEmail(email) };
+        const u: AuthUser = { email, name: nameFromEmail(email) || "Staff", role: email.toLowerCase().startsWith("admin") ? "Super Admin" : "Customer Care" };
         sessionStorage.setItem(MOCK_KEY, JSON.stringify(u));
         setUser(u);
         return;

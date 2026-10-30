@@ -1,7 +1,5 @@
 import { createContext, useContext } from "react";
 
-// The role names shown in the UI. The API uses "agent" / "admin" (PRODUCT_RULES.md, decision 11);
-// this file only concerns the labels the screens use, so keep the friendly pairs here.
 export interface AuthUser { name: string; email: string; role: "Customer Care" | "Super Admin" }
 export interface AuthValue {
   user: AuthUser | null;

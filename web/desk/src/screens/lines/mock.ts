@@ -1,5 +1,5 @@
 import type { LineState } from "../dashboard/types";
-import type { LineRow, LinesPage, LinesQuery, LineTab, SuspendPayload } from "./types";
+import type { LineRow, LinesPage, LinesQuery, LineTab } from "./types";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const NAMES = ["Fatima Bello", "Musa Ibrahim", "Yusuf Abdullahi", "Aisha Sani", "Zainab Lawal", "Hauwa Garba", "Sani Danjuma", "Bashir Aliyu", "Maryam Tijani", "Ibrahim Danladi", "Khadija Umar", "Abubakar Yahaya", "Halima Musa", "Garba Shehu", "Rabi Adamu", "Nura Salisu", "Amina Kabir", "Usman Idris", "Hadiza Lawan", "Kabiru Sule"];
@@ -30,7 +30,7 @@ export async function mockGetLines({ q, tab, page, pageSize }: LinesQuery): Prom
   };
 }
 
-export async function mockSuspend(imsi: string, _payload: SuspendPayload): Promise<void> {
+export async function mockSuspend(imsi: string): Promise<void> {
   await wait(500);
   const line = lines.find((l) => l.imsi === imsi);
   if (!line || (line.state !== "active" && line.state !== "out_of_data")) throw new Error("Only active or out-of-data lines can be suspended");

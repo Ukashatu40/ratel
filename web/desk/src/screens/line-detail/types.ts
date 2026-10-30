@@ -29,8 +29,7 @@ export interface CallRecord {
   startedAt: number;
   answeredAt: number | null;           // null = never answered
   endedAt: number;
-  qci1Bearer: "established" | "not_set_up"; // needs RatelVoice data (not in Contract 2)
-  // TODO(PRD): allowed end_reason values and the meaning of from/to are open (decision 8).
+  qci1Bearer: "established" | "not_set_up";
   endReason: string;
 }
 
