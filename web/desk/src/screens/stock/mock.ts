@@ -6,6 +6,10 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nowSec = () => Math.floor(Date.now() / 1000);
 const ACTOR = "Amina Yusuf";
 
+// DEMO ONLY: quarantine window for the demo. The real period is set by compliance (PRD decision 4);
+// this file must not be treated as a source of truth for it.
+const DEMO_QUARANTINE_DAYS = 10;
+
 // ---- history (every stock change is recorded)
 const history: StockHistoryEntry[] = [
   { at: nowSec() - 2 * 86400, action: "SIM batch imported", actor: "Ibrahim Danladi", detail: "SIM-2026-007, 2,000 SIMs" },
@@ -39,7 +43,7 @@ export async function mockImportSims(rows: SimImportRow[]): Promise<{ imported: 
 const numbers: NumberRow[] = Array.from({ length: 60 }, (_, i) => {
   const n = 100 + i, msisdn = `+234 700 000 ${String(n).padStart(4, "0")}`;
   if (n >= 150 && n <= 154) return { msisdn, state: "available" as const, availableFromEpoch: null };
-  if (i % 9 === 0) return { msisdn, state: "quarantined" as const, availableFromEpoch: nowSec() + ((i % 10) + 1) * 86400 };
+  if (i % 9 === 0) return { msisdn, state: "quarantined" as const, availableFromEpoch: nowSec() + (((i % DEMO_QUARANTINE_DAYS) + 1) * 86400) };
   return { msisdn, state: i % 4 === 0 ? ("available" as const) : ("in_use" as const), availableFromEpoch: null };
 });
 export async function mockGetNumbers({ q, tab, page, pageSize }: NumbersQuery): Promise<NumbersPage> {

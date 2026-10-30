@@ -1,3 +1,5 @@
+// TODO(PRD): the kinds of ledger entry are not specified by the Build Plan (Product rules §Plans, bundles, wallet and ledger).
+// These values are the demo's working set; they must be confirmed before the pilot.
 export type EntryKind = "top_up" | "plan_purchase" | "vat" | "voucher_redemption" | "correction";
 export type LedgerTab = "all" | EntryKind;
 
