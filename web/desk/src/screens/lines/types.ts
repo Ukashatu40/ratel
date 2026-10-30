@@ -13,7 +13,9 @@ export const CARE_REASON_LABEL: Record<CareReason, string> = {
   other: "Other",
 };
 
-export interface SuspendPayload { reason: CareReason; note: string }
+// The wire shape accepted by POST /v1/lines/{imsi}/suspend (SuspendLineRequest in the contract).
+// Both fields are required so a request cannot slip past additionalProperties: false.
+export interface SuspendPayload { reason: CareReason; reason_text: string }
 
 export interface LineRow {
   imsi: string;
@@ -26,5 +28,4 @@ export interface LineRow {
 }
 
 export interface LinesQuery { q: string; tab: LineTab; page: number; pageSize: number }
-// counts are for the current search, one number per tab
 export interface LinesPage { items: LineRow[]; total: number; counts: Record<LineTab, number> }

@@ -5,15 +5,16 @@ import { NEXT_ATTACH_NOTE } from "../../lib/messages";
 import { suspendLine } from "./api";
 import { CARE_REASONS, CARE_REASON_LABEL, type CareReason, type LineRow } from "./types";
 
-// A suspension always needs a reason (PRD decision 9: fixed list + free text). It goes in the line's history.
+// A suspension always needs a reason (PRD decision 9: fixed list + free text).
+// The wire field for the free text is "reason_text" (SuspendLineRequest in contracts/openapi.yaml).
 export function SuspendDialog({ line, onClose }: { line: LineRow; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState<CareReason>("customer_request");
-  const [note, setNote] = useState("");
-  const [key] = useState(newIdempotencyKey); // one key per confirmation, so a retry cannot suspend twice
+  const [reasonText, setReasonText] = useState("");
+  const [key] = useState(newIdempotencyKey);
   const queryClient = useQueryClient();
   const suspend = useMutation({
-    mutationFn: () => suspendLine(line.imsi, { reason, note: note.trim() }, key),
+    mutationFn: () => suspendLine(line.imsi, { reason, reason_text: reasonText.trim() }, key),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["lines"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -21,7 +22,7 @@ export function SuspendDialog({ line, onClose }: { line: LineRow; onClose: () =>
     },
   });
 
-  useEffect(() => { dialog.current?.showModal(); }, []); // native modal: traps focus, Escape closes it
+  useEffect(() => { dialog.current?.showModal(); }, []);
 
   return (
     <dialog ref={dialog} className="lines-dialog" onClose={onClose} aria-labelledby="suspend-title">
@@ -34,8 +35,8 @@ export function SuspendDialog({ line, onClose }: { line: LineRow; onClose: () =>
         </select>
       </div>
       <div className="field">
-        <label htmlFor="suspend-note">Additional note (optional, saved in the line's history)</label>
-        <textarea id="suspend-note" className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+        <label htmlFor="suspend-reason-text">Additional note (optional, saved in the line's history)</label>
+        <textarea id="suspend-reason-text" className="input" rows={2} value={reasonText} onChange={(e) => setReasonText(e.target.value)} />
       </div>
       <div className="alert alert--warn">{NEXT_ATTACH_NOTE}</div>
       {suspend.isError && <div className="alert alert--danger" style={{ marginTop: 12 }}>{suspend.error.message}</div>}

@@ -4,7 +4,7 @@ import type { LinesPage, LinesQuery, SuspendPayload } from "./types";
 
 // ASSUMED endpoints (confirm with the RatelBSS developers; only this file should change):
 //   GET  /v1/lines?q=&state=&page=&pageSize=   ->  { items, total, counts }
-//   POST /v1/lines/{imsi}/suspend  { reason, note }   (PRD decision 9: fixed reason list + free text)
+//   POST /v1/lines/{imsi}/suspend  { reason, reason_text }   (matches SuspendLineRequest in contracts/openapi.yaml)
 const isMock = () => import.meta.env.VITE_USE_MOCK === "true";
 
 export const getLines = (query: LinesQuery): Promise<LinesPage> =>
