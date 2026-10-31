@@ -3,7 +3,7 @@
 Keep it short. These are checks, not changes. Nothing here edits Kamailio, MySQL or a table, and nothing
 here prints a phone number, a row or a credential. **Names, counts and column definitions only.**
 
-- **Last verified:** 2026-10-30 (project lead, in the lab): sections 1, 2 and 4, and section 3 for four call cases. The rest of section 3's cases are still open
+- **Last verified:** 2026-10-30 (project lead, in the lab): sections 1, 2 and 4, and every call case in section 3. Still open: the number format, a call with no BYE, and the end_reason values
 - **Owner:** the network lead; the project lead may run the read-only checks (agreed for the 2026-10-16 lab
   finding; confirm it still stands)
 - **Runs on:** the RatelVoice VM as a user that may run `docker` (the IMS runs in containers: `pcscf`, `scscf`,
@@ -95,6 +95,23 @@ What it writes: an answered INVITE and a BYE go to `acc` (`time` is when the fin
 INVITE goes to `missed_calls` with the SIP code. **Each event is written twice** for a call between two of our own
 phones, once for the calling leg and once for the receiving leg, so a reader groups by `callid`.
 
+What the lab showed on 2026-10-30, between two of our own phones:
+
+- Both legs of a call **share one Call-ID**, so one call is one `callid` with two rows per event.
+- **The two numbers are written differently.** `from_user` was `234` and ten digits (13 characters); `to_user` was the
+  number as dialled, `0` and ten digits (11 characters). TODO(network lead): confirm the format the contract wants.
+  The agent has to turn `0XXXXXXXXXX` into `234XXXXXXXXXX` before it compares with a line's number.
+- **A hang-up can leave BYE rows in both directions.** One call where the callee hung up gave four BYE rows in the
+  same second: two with the callee's tag, two with the caller's. Earlier calls gave two BYE rows each, all one way.
+  Until this is explained, take the lowest `id` BYE of a `callid` as the one who hung up. TODO: repeat the case where
+  the caller hangs up and see whether its BYE rows are mixed too.
+- **A failed call gives two `missed_calls` rows that can carry different codes** (a phone in airplane mode gave 408 and
+  500 in the same second). Map the pair, not each row.
+- **One answered call (INVITE 200, 2026-10-30 13:25 UTC) has no BYE at all**, not in `acc` and not in `missed_calls`.
+  Unexplained: either it was never hung up or the BYE was not recorded.
+- `acc` holds the time the final reply passed the S-CSCF, never when the call started. How long a call rang cannot be
+  read from the rows.
+
 The rows hold phone numbers (`from_user`, `to_user`), the Call-ID and the tags: personal data. **Never `SELECT *`,
 never paste a row.** These queries show counts, times and codes only:
 
@@ -106,18 +123,20 @@ docker exec mysql mysql -uroot scscf -e "SELECT COUNT(*) AS row_count, COUNT(DIS
 docker exec mysql mysql -uroot scscf -e "SELECT b.id, (b.from_tag = i.from_tag) AS caller_hung_up FROM acc b JOIN acc i ON i.callid = b.callid AND i.method = 'INVITE' WHERE b.method = 'BYE' ORDER BY b.id DESC LIMIT 8;"
 ```
 
-The cases to try, from phone A to phone B (note the time, wait ten seconds between calls). Seen on 2026-10-30 means
-the row type appeared; the others are still to try:
+The cases tried, from phone A to phone B (note the time, wait ten seconds between calls). Every case has now been seen:
 
-| Case | What to do | Expected row | Seen 2026-10-30 |
-| ---- | ---------- | ------------ | --------------- |
-| Answered, caller hangs up | Talk 20 s, A hangs up | `acc` INVITE 200, then BYE 200 | yes (answered, BYE 200) |
-| Answered, callee hangs up | Talk 20 s, B hangs up | same, with `caller_hung_up` = 0 | not yet |
-| Cancelled | A hangs up before B answers | `missed_calls` INVITE 487 | yes |
-| Busy | Call a phone already on a call | `missed_calls` INVITE 486 | yes |
-| Declined | B declines | `missed_calls` INVITE 603 (expected) | not yet |
-| Not answered | Let it ring out | `missed_calls` INVITE 408 or 480 (expected) | not yet |
-| Not registered | B in airplane mode | `missed_calls` INVITE 404 or 480 (expected) | not yet |
+| Case | What to do | Rows seen on 2026-10-30 |
+| ---- | ---------- | ----------------------- |
+| Answered, caller hangs up | Talk 20 s, A hangs up | `acc` INVITE 200, then BYE 200 with `caller_hung_up` = 1 |
+| Answered, callee hangs up | Talk 20 s, B hangs up | `acc` INVITE 200, then BYE 200 with `caller_hung_up` = 0 (and, once, extra rows marked 1 in the same second, see above) |
+| Cancelled | A hangs up before B answers | `missed_calls` INVITE 487 |
+| Busy | Call a phone already on a call | `missed_calls` INVITE 486 Busy Here |
+| Declined | B declines | `missed_calls` INVITE **486 Busy Here**, not 603: indistinguishable from busy |
+| Not answered | Let it ring out | `missed_calls` INVITE **486 Busy Here**, about 78 s after the call was made. Not 408 or 480 |
+| Not registered | B in airplane mode | `missed_calls` INVITE **408** and **500** ("Server error on LIR select next S-CSCF") in the same second |
+
+So **busy, declined and not answered share one code (486)** and cannot be told apart from the rows. TODO(network lead,
+question 4 of the call record agreement, PRD decision 8): decide the `end_reason` values with that in mind.
 
 `scscf.contact` stays at 0 rows even while phones are registered and calling, so it is not a way to tell whether a
 phone is registered.
