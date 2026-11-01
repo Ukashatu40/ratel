@@ -294,5 +294,11 @@ The lines list, the line page and **Suspend / Reinstate / Terminate** call the A
   none); the drawer shows them, masked. Only an admin decides KYC: an agent is told so and sees no buttons. The allowed
   moves are pending to verified or rejected, and rejected to verified. Every decision carries a reason (the API requires
   one), so Approve without a note sends "Identity checked".
-- The wallet, dashboard, stock, reports and staff screens still link by IMSI and call paths the contract does not
-  have; they run on mocks until they are mapped.
+- **Dashboard** calls `GET /v1/dashboard` (`src/screens/dashboard`). The API keeps no daily snapshots of line counts, so the
+  three line KPIs show no trend lines or "this week" changes (only the top-ups chart has a series). An attention row has no
+  plan and may have no line (a customer waiting for KYC); it links to the line or to that customer's KYC.
+- **Plans** are listed from `GET /v1/plans` and the screen is **read-only**: the contract has nothing to create, edit or
+  retire a plan or bundle, no staff list of bundles and no plan history. Those are done with `ops_cli` on bss-app
+  (TODO(contract)). In mock mode the whole screen still works.
+- The wallet, stock, reports and staff screens still link by IMSI and call paths the contract does not have; they run on
+  mocks until they are mapped (or hidden for the demo).

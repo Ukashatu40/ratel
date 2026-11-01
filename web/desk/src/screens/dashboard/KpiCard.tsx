@@ -5,7 +5,7 @@ import { Sparkline } from "../../components/charts/charts";
 type Tone = "green" | "red" | "amber" | "navy";
 const SPARK: Record<Tone, string> = { green: "#008751", red: "#e4002b", amber: "#c99700", navy: "#ffd23f" };
 
-interface Props { label: string; value: string; badge: ReactNode; delta: string; spark: number[]; icon: IconName; tone: Tone }
+interface Props { label: string; value: string; badge: ReactNode; delta?: string; spark?: number[]; icon: IconName; tone: Tone }
 export function KpiCard({ label, value, badge, delta, spark, icon, tone }: Props) {
   return (
     <div className={`card kpi kpi--${tone}`}>
@@ -17,9 +17,9 @@ export function KpiCard({ label, value, badge, delta, spark, icon, tone }: Props
       <div className="kpi__bottom">
         <div>
           <div className="kpi__value">{value}</div>
-          <div className="kpi__delta">{delta}</div>
+          {delta && <div className="kpi__delta">{delta}</div>}
         </div>
-        <Sparkline values={spark} color={SPARK[tone]} />
+        {spark && <Sparkline values={spark} color={SPARK[tone]} />}
       </div>
     </div>
   );

@@ -1,0 +1,46 @@
+{
+  "line_counts": {
+    "all": 14,
+    "awaiting_activation": 2,
+    "active": 8,
+    "out_of_data": 2,
+    "expired": 1,
+    "suspended": 1,
+    "terminated": 0
+  },
+  "kyc_pending": 3,
+  "topups_today_kobo": 412500,
+  "topups_yesterday_kobo": 0,
+  "topups_last_7_days": [
+    {
+      "date": "2026-10-30",
+      "amount_kobo": 0
+    },
+    {
+      "date": "2026-10-31",
+      "amount_kobo": 0
+    },
+    {
+      "date": "2026-11-01",
+      "amount_kobo": 412500
+    }
+  ],
+  "attention": [
+    {
+      "issue": "out_of_data",
+      "customer_id": 1,
+      "line_id": 7,
+      "customer_name": "Demo Customer One",
+      "msisdn": "2347000000150",
+      "since": 1794690000
+    },
+    {
+      "issue": "pending_kyc",
+      "customer_id": 2,
+      "line_id": null,
+      "customer_name": "Demo Customer Two",
+      "msisdn": null,
+      "since": 1794600000
+    }
+  ]
+}

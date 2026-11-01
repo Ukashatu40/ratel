@@ -13,16 +13,12 @@ export const mockDashboard: DashboardData = {
     ["2026-10-02", 310_000], ["2026-10-03", 360_000], ["2026-10-04", 290_000], ["2026-10-05", 420_000],
     ["2026-10-06", 380_000], ["2026-10-07", 380_500], ["2026-10-08", 412_500],
   ].map(([date, n]) => ({ date: date as string, amountKobo: k(n as number) })),
-  trends: {
-    active: [1190, 1204, 1210, 1222, 1230, 1241, 1248],
-    outOfData: [60, 64, 70, 66, 74, 80, 86],
-    kycPending: [22, 20, 19, 18, 17, 15, 14],
-  },
+  trends: null, // like the API: no daily snapshots of line counts
   attention: [
-    { imsi: "621000000000112", customerName: "Musa Ibrahim", msisdn: "+234 700 000 0112", issue: "out_of_data", planName: "Starter 5GB", sinceEpoch: wat(2026, 10, 8, 7, 15) },
-    { imsi: "621000000000127", customerName: "Fatima Bello", msisdn: "+234 700 000 0127", issue: "out_of_data", planName: "Weekly 2GB", sinceEpoch: wat(2026, 10, 8, 6, 50) },
-    { imsi: "621000000000150", customerName: "Aisha Sani", msisdn: "+234 700 000 0150", issue: "pending_kyc", planName: "Starter 5GB", sinceEpoch: wat(2026, 10, 7, 16, 20) },
-    { imsi: "621000000000131", customerName: "Sani Danjuma", msisdn: "+234 700 000 0131", issue: "out_of_data", planName: "Starter 5GB", sinceEpoch: wat(2026, 10, 7, 22, 40) },
-    { imsi: "621000000000163", customerName: "Hauwa Garba", msisdn: "+234 700 000 0163", issue: "pending_kyc", planName: "Family 20GB", sinceEpoch: wat(2026, 10, 7, 14, 5) },
+    { customerId: 12, lineId: 112, customerName: "Musa Ibrahim", msisdn: "2347000000112", issue: "out_of_data", sinceEpoch: wat(2026, 10, 8, 7, 15) },
+    { customerId: 27, lineId: 127, customerName: "Fatima Bello", msisdn: "2347000000127", issue: "out_of_data", sinceEpoch: wat(2026, 10, 8, 6, 50) },
+    { customerId: 1, lineId: null, customerName: "Aisha Sani", msisdn: null, issue: "pending_kyc", sinceEpoch: wat(2026, 10, 7, 16, 20) },
+    { customerId: 31, lineId: 131, customerName: "Sani Danjuma", msisdn: "2347000000131", issue: "out_of_data", sinceEpoch: wat(2026, 10, 7, 22, 40) },
+    { customerId: 63, lineId: 163, customerName: "Hauwa Garba", msisdn: "2347000000163", issue: "pending_kyc", sinceEpoch: wat(2026, 10, 7, 14, 5) },
   ],
 };
