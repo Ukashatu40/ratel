@@ -1,12 +1,13 @@
-// What the dashboard screen needs from RatelBSS. If the real API differs, adapt it in api.ts, not in the components.
+// What the dashboard screen needs from RatelBSS (contracts/openapi.yaml, bss_dashboard). The mapping from the API's
+// shape is in contract.ts.
 export type LineState = "awaiting_activation" | "active" | "out_of_data" | "expired" | "suspended" | "terminated";
 
 export interface AttentionItem {
-  imsi: string;
+  customerId: number;
+  lineId: number | null;      // null for a customer who has no line yet
   customerName: string;
-  msisdn: string;
+  msisdn: string | null;
   issue: "out_of_data" | "pending_kyc";
-  planName: string;
   sinceEpoch: number; // Unix seconds, UTC
 }
 
@@ -16,6 +17,8 @@ export interface DashboardData {
   topupsTodayKobo: number;                  // whole kobo, never decimals
   topupsYesterdayKobo: number;
   topupsLast7Days: { date: string; amountKobo: number }[]; // oldest first, date as YYYY-MM-DD
-  trends: { active: number[]; outOfData: number[]; kycPending: number[] }; // last 7 daily values, oldest first
+  // Last 7 daily values, oldest first. null when the API has none: RatelBSS keeps no daily snapshots of line counts
+  // (TODO(PRD)), so the real dashboard shows no trend lines.
+  trends: { active: number[]; outOfData: number[]; kycPending: number[] } | null;
   attention: AttentionItem[];
 }

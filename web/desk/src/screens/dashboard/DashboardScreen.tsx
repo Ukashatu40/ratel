@@ -25,16 +25,21 @@ const last = (a: number[]) => a[a.length - 1];
 const prev = (a: number[]) => a[a.length - 2];
 
 function Kpis({ d }: { d: DashboardData }) {
-  const weekChange = last(d.trends.active) - d.trends.active[0];
-  const outChange = last(d.trends.outOfData) - prev(d.trends.outOfData);
-  const kycChange = last(d.trends.kycPending) - prev(d.trends.kycPending);
-  const topupChange = ((d.topupsTodayKobo - d.topupsYesterdayKobo) / d.topupsYesterdayKobo) * 100;
+  // The line KPIs show a trend only when the API gives one; the real API does not (no daily snapshots of line counts).
+  const t = d.trends;
+  const weekChange = t ? last(t.active) - t.active[0] : 0;
+  const outChange = t ? last(t.outOfData) - prev(t.outOfData) : 0;
+  const kycChange = t ? last(t.kycPending) - prev(t.kycPending) : 0;
+  const topupDelta =
+    d.topupsYesterdayKobo === 0
+      ? (d.topupsTodayKobo === 0 ? "No top-ups yet" : "No top-ups yesterday")
+      : (() => { const c = ((d.topupsTodayKobo - d.topupsYesterdayKobo) / d.topupsYesterdayKobo) * 100; return `${arrow(c)} ${Math.abs(c).toFixed(1)}% on yesterday`; })();
   return (
     <div className="dash__kpis">
-      <KpiCard label="Active Lines" value={formatCount(d.counts.active)} badge={<Badge tone="green">Active</Badge>} delta={`${arrow(weekChange)} ${Math.abs(weekChange)} this week`} spark={d.trends.active} icon="lines" tone="green" />
-      <KpiCard label="Out of Data Lines" value={formatCount(d.counts.out_of_data)} badge={<Badge tone="red">Out of data</Badge>} delta={`${arrow(outChange)} ${Math.abs(outChange)} since yesterday`} spark={d.trends.outOfData} icon="stock" tone="red" />
-      <KpiCard label="Waiting for KYC" value={formatCount(d.kycPending)} badge={<Badge tone="amber">Pending KYC</Badge>} delta={`${arrow(kycChange)} ${Math.abs(kycChange)} since yesterday`} spark={d.trends.kycPending} icon="customers" tone="amber" />
-      <KpiCard label="Top-ups Today" value={formatNaira(d.topupsTodayKobo)} badge={<Badge tone="amber">Since 00:00 WAT</Badge>} delta={`${arrow(topupChange)} ${Math.abs(topupChange).toFixed(1)}% on yesterday`} spark={d.topupsLast7Days.map((p) => p.amountKobo)} icon="wallet" tone="navy" />
+      <KpiCard label="Active Lines" value={formatCount(d.counts.active)} badge={<Badge tone="green">Active</Badge>} delta={t ? `${arrow(weekChange)} ${Math.abs(weekChange)} this week` : undefined} spark={t?.active} icon="lines" tone="green" />
+      <KpiCard label="Out of Data Lines" value={formatCount(d.counts.out_of_data)} badge={<Badge tone="red">Out of data</Badge>} delta={t ? `${arrow(outChange)} ${Math.abs(outChange)} since yesterday` : undefined} spark={t?.outOfData} icon="stock" tone="red" />
+      <KpiCard label="Waiting for KYC" value={formatCount(d.kycPending)} badge={<Badge tone="amber">Pending KYC</Badge>} delta={t ? `${arrow(kycChange)} ${Math.abs(kycChange)} since yesterday` : undefined} spark={t?.kycPending} icon="customers" tone="amber" />
+      <KpiCard label="Top-ups Today" value={formatNaira(d.topupsTodayKobo)} badge={<Badge tone="amber">Since 00:00 WAT</Badge>} delta={topupDelta} spark={d.topupsLast7Days.map((p) => p.amountKobo)} icon="wallet" tone="navy" />
     </div>
   );
 }

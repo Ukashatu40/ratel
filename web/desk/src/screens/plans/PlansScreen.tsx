@@ -2,7 +2,7 @@ import { useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "../../components/ui";
 import { formatGB, formatNaira } from "../../lib/format";
-import { getBundles, getPlans } from "./api";
+import { bundlesListed, getBundles, getPlans, offersEditable } from "./api";
 import { bundleToForm, emptyForm, planToForm } from "./form";
 import { OfferDrawer } from "./OfferDrawer";
 import type { Kind, OfferStatus } from "./types";
@@ -20,7 +20,8 @@ function parseOpen(v: string | null): { kind: Kind; id: string | null } | null {
 
 export default function PlansScreen() {
   const [params, setParams] = useSearchParams();
-  const open = parseOpen(params.get("open"));
+  const editable = offersEditable(); // read-only until the API can create, edit and retire (see api.ts)
+  const open = editable ? parseOpen(params.get("open")) : null;
   const plans = useQuery({ queryKey: ["plans"], queryFn: getPlans });
   const bundles = useQuery({ queryKey: ["bundles"], queryFn: getBundles });
   const setOpen = (v: string | null) => setParams(v ? { open: v } : {}, { replace: true });
@@ -43,11 +44,18 @@ export default function PlansScreen() {
           <h1>Plans &amp; Bundles</h1>
           <p className="muted">What Ratelplus sells today.</p>
         </div>
-        <div className="plans__buttons">
-          <button type="button" className="btn btn--outline" onClick={() => setOpen("new:bundle")}>Create bundle</button>
-          <button type="button" className="btn" onClick={() => setOpen("new:plan")}>Create plan</button>
-        </div>
+        {editable && (
+          <div className="plans__buttons">
+            <button type="button" className="btn btn--outline" onClick={() => setOpen("new:bundle")}>Create bundle</button>
+            <button type="button" className="btn" onClick={() => setOpen("new:plan")}>Create plan</button>
+          </div>
+        )}
       </div>
+      {!editable && (
+        <div className="alert alert--warn" style={{ marginBottom: 16 }}>
+          Plans are listed here for reading. Creating, changing and retiring plans and bundles is done with the <b>ops_cli</b> command on bss-app for now.
+        </div>
+      )}
 
       <section className="card plans__card">
         <h3>Plans</h3>
@@ -57,14 +65,14 @@ export default function PlansScreen() {
             <tbody>
               {plans.isPending && <tr><td colSpan={7} className="muted">Loading...</td></tr>}
               {plans.data?.map((p) => (
-                <tr key={p.planId} className={open?.id === p.planId ? "plans-row--on" : ""} onClick={() => setOpen(`plan:${p.planId}`)}>
-                  <td><button type="button" className="plans-name" onClick={(e) => { e.stopPropagation(); setOpen(`plan:${p.planId}`); }}>{p.name}</button></td>
+                <tr key={p.planId} className={open?.id === p.planId ? "plans-row--on" : ""} onClick={editable ? () => setOpen(`plan:${p.planId}`) : undefined}>
+                  <td>{editable ? <button type="button" className="plans-name" onClick={(e) => { e.stopPropagation(); setOpen(`plan:${p.planId}`); }}>{p.name}</button> : p.name}</td>
                   <td>{formatNaira(p.priceKobo)}</td><td>{p.validityDays} days</td><td>{formatGB(p.dataBytes)}</td>
                   <td>{p.speedUlMbps}/{p.speedDlMbps} Mbps</td><td>{p.onExhaustion === "slow" ? "Slow down" : "Stop internet"}</td>
                   <td><StatusBadge status={p.status} /></td>
                 </tr>
               ))}
-              {plans.data?.length === 0 && <tr><td colSpan={7} className="muted">No plans yet. Use "Create plan".</td></tr>}
+              {plans.data?.length === 0 && <tr><td colSpan={7} className="muted">{editable ? 'No plans yet. Use "Create plan".' : "No plans on sale."}</td></tr>}
             </tbody>
           </table>
         )}
@@ -72,6 +80,8 @@ export default function PlansScreen() {
 
       <section className="card plans__card">
         <h3>Bundles <span className="muted plans__hint">extra data on top of a plan</span></h3>
+        {!bundlesListed() ? <p className="muted">The Desk cannot list bundles yet: the API has no staff operation for them. TODO(contract).</p> : null}
+        {bundlesListed() && (<>
         {bundles.isError ? <div className="plans__message">Could not load bundles. <button type="button" className="btn btn--sm" onClick={() => bundles.refetch()}>Try again</button></div> : (
           <table className="data-table">
             <thead><tr><th>Bundle</th><th>Price</th><th>Validity</th><th>Data</th><th>Status</th></tr></thead>
@@ -87,6 +97,7 @@ export default function PlansScreen() {
             </tbody>
           </table>
         )}
+        </>)}
       </section>
 
       {drawer && <OfferDrawer key={params.get("open")} kind={drawer.kind} id={drawer.id} status={drawer.status} initial={drawer.initial} onClose={() => setOpen(null)} />}
