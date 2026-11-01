@@ -1,0 +1,32 @@
+{
+  "plans": [
+    {
+      "plan_id": 1,
+      "name": "Demo Weekly",
+      "price_kobo": 120000,
+      "validity_days": 7,
+      "data_bytes": 2000000000,
+      "speed_ul_mbps": 10,
+      "speed_dl_mbps": 20,
+      "slow_ul_mbps": 0.5,
+      "slow_dl_mbps": 1,
+      "channels": "data",
+      "on_exhaustion": "slow",
+      "state": "on_sale"
+    },
+    {
+      "plan_id": 2,
+      "name": "Demo Retired",
+      "price_kobo": 90000,
+      "validity_days": 7,
+      "data_bytes": 1000000000,
+      "speed_ul_mbps": 10,
+      "speed_dl_mbps": 20,
+      "slow_ul_mbps": 0.5,
+      "slow_dl_mbps": 1,
+      "channels": "data",
+      "on_exhaustion": "stop",
+      "state": "retired"
+    }
+  ]
+}

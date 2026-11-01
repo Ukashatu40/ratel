@@ -1,4 +1,4 @@
-const STEPS = ["Customer & KYC", "SIM & Number", "Choose Plan", "Review & Activate"];
+const STEPS = ["Customer & KYC", "SIM & Number", "Choose Plan", "Review & Create"];
 
 // Finished steps can be clicked to go back. Later steps are unlocked only by Continue.
 export function Stepper({ current, onGo }: { current: number; onGo: (i: number) => void }) {

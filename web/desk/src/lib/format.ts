@@ -47,3 +47,6 @@ export const formatBytesAuto = (bytes: number) =>
   bytes >= 1e12 ? `${(bytes / 1e12).toFixed(1)} TB` : bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${(bytes / 1e6).toFixed(1)} MB`;
 export const formatDateShort = (isoDate: string) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: TZ, day: "numeric", month: "short" }).format(new Date(`${isoDate}T12:00:00+01:00`));
+
+// 2347000000150 -> +234 700 000 0150. Anything that is not 13 digits is shown as it is.
+export const formatMsisdn = (msisdn: string) => (/^234\d{10}$/.test(msisdn) ? `+234 ${msisdn.slice(3, 6)} ${msisdn.slice(6, 9)} ${msisdn.slice(9)}` : msisdn);

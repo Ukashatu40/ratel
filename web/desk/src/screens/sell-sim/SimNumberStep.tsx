@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { formatMsisdn } from "../../lib/format";
 import { getAvailableNumbers, getFreeSims } from "./api";
 import type { FreeSim } from "./types";
 
@@ -23,7 +24,7 @@ export function SimNumberStep({ sim, msisdn, onSim, onMsisdn }: Props) {
           <label htmlFor="number-select">Available number</label>
           <select id="number-select" className="input" value={msisdn} onChange={(e) => onMsisdn(e.target.value)} disabled={numbers.isPending}>
             <option value="">{numbers.isPending ? "Loading..." : "Choose a number"}</option>
-            {numbers.data?.map((n) => <option key={n} value={n}>{n}</option>)}
+            {numbers.data?.map((n) => <option key={n} value={n}>{formatMsisdn(n)}</option>)}
           </select>
         </div>
       </div>

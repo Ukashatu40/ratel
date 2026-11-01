@@ -1,0 +1,11 @@
+{
+  "line_id": 7,
+  "customer_id": 1,
+  "iccid": "8923400000000012345",
+  "imsi": "621000000000150",
+  "msisdn": "2347000000150",
+  "plan_id": 1,
+  "state": "active",
+  "state_before_suspension": null,
+  "expires_at": 1795000000
+}

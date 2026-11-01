@@ -1,3 +1,5 @@
+import type { LineState } from "../dashboard/types";
+
 export type KycStatus = "pending" | "verified" | "rejected";
 
 export interface Customer {
@@ -7,7 +9,7 @@ export interface Customer {
   email: string;
   // TODO(PRD): allowed id_type values are open (decision 3). Demo value: "NIN" only.
   idType: "NIN";
-  idNumber: string;
+  idNumber: string; // empty when the customer came from a list: the list carries neither the NIN nor the address
   // TODO(PRD): address format is open (decision 3). Demo value: free text.
   address: string;
   kycStatus: KycStatus;
@@ -31,5 +33,10 @@ export interface Plan {
   slowDlMbps: number;
 }
 
-export interface ActivateRequest { customerId: string; iccid: string; msisdn: string; planId: string }
-export interface ActivateResult { imsi: string; msisdn: string; planName: string; expiresAt: number } // expiresAt: Unix seconds, UTC
+export interface CreateLineRequest { customerId: string; iccid: string; msisdn: string; planId: string }
+
+// A line as the sale sees it. `lineId` is the API's integer id; the line page is still reached by IMSI.
+export interface CreatedLine { lineId: number; imsi: string; msisdn: string; planId: string; state: LineState; expiresAt: number | null } // expiresAt: Unix seconds, UTC
+export interface Wallet { balanceKobo: number; ledgerSumKobo: number }
+// Whole kobo. priceKobo is what the wallet is debited and already includes the VAT.
+export interface Purchase { priceKobo: number; netKobo: number; vatKobo: number; balanceKobo: number; validTo: number | null; replayed: boolean }
