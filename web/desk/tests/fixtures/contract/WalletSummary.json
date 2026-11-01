@@ -1,0 +1,17 @@
+{
+  "total_balance_kobo": 30000,
+  "wallets_with_balance": 1,
+  "entries_today": 3,
+  "daily": [
+    {
+      "date": "2026-10-31",
+      "in_kobo": 0,
+      "out_kobo": 0
+    },
+    {
+      "date": "2026-11-01",
+      "in_kobo": 150000,
+      "out_kobo": 120000
+    }
+  ]
+}

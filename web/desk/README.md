@@ -300,5 +300,9 @@ The lines list, the line page and **Suspend / Reinstate / Terminate** call the A
 - **Plans** are listed from `GET /v1/plans` and the screen is **read-only**: the contract has nothing to create, edit or
   retire a plan or bundle, no staff list of bundles and no plan history. Those are done with `ops_cli` on bss-app
   (TODO(contract)). In mock mode the whole screen still works.
-- The wallet, stock, reports and staff screens still link by IMSI and call paths the contract does not have; they run on
-  mocks until they are mapped (or hidden for the demo).
+- **Wallet and ledger** call the API (`src/screens/wallet`). The ledger's `kind` is a free string whose values are not fixed
+  by the PRD yet (TODO(PRD)); the tabs are the kinds the code writes (top-ups, plan purchases, VAT, corrections) plus any
+  other kind the API reports. A line is picked by its id, and its wallet shows whether the balance equals the sum of its
+  ledger. RatelBSS keeps no daily balance history, so the summary cards draw no trend lines.
+- The stock, reports and staff screens, and the plans' editing, call paths the contract does not have; they run on mocks
+  until they are mapped or hidden for the demo.

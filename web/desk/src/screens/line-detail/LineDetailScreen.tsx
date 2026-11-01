@@ -63,7 +63,7 @@ export default function LineDetailScreen() {
           <p className="muted">{line.customerName} &nbsp;|&nbsp; {line.planName} &nbsp;|&nbsp; IMSI {line.imsi}</p>
         </div>
         <div className="ld-actions">
-          <Link to={`/finance/wallet?line=${line.imsi}`} className="btn btn--outline">Top-Up</Link>
+          <Link to={`/finance/wallet?line=${line.lineId}`} className="btn btn--outline">Top-Up</Link>
           {canReinstate
             ? <button type="button" className="btn" onClick={() => setActing("reinstate")}>Reinstate line</button>
             : <button type="button" className="btn btn--danger" disabled={!canSuspend} onClick={() => setActing("suspend")}>Suspend line</button>}
