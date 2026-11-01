@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Badge, KycBadge } from "../../components/ui";
-import { formatCount, initials, maskNin } from "../../lib/format";
+import { formatCount, initials } from "../../lib/format";
 import { getCustomers } from "./api";
 import { CustomerDrawer } from "./CustomerDrawer";
 import type { KycTab } from "./types";
@@ -53,7 +53,7 @@ export default function CustomersScreen() {
       </div>
 
       <div className="card cust-search">
-        <input className="cust-search__input" value={q} onChange={(e) => go({ q: e.target.value })} placeholder="Search by name, phone number or NIN" aria-label="Search customers" />
+        <input className="cust-search__input" value={q} onChange={(e) => go({ q: e.target.value })} placeholder="Search by name, phone number or email" aria-label="Search customers" />
         {q && data && <span className="muted">{formatCount(data.counts.all)} matches</span>}
       </div>
 
@@ -70,9 +70,9 @@ export default function CustomersScreen() {
           <div className="cust-message">Could not load customers. <button type="button" className="btn btn--sm" onClick={() => refetch()}>Try again</button></div>
         ) : (
           <table className="data-table">
-            <thead><tr><th>Customer</th><th>NIN</th><th>Phone</th><th>Email</th><th>Lines</th><th>KYC</th></tr></thead>
+            <thead><tr><th>Customer</th><th>Phone</th><th>Email</th><th>Lines</th><th>KYC</th></tr></thead>
             <tbody>
-              {isPending && <tr><td colSpan={6} className="muted">Loading...</td></tr>}
+              {isPending && <tr><td colSpan={5} className="muted">Loading...</td></tr>}
               {data?.items.map((c) => (
                 <tr key={c.id} className={selected === c.id ? "cust-row--on" : ""} onClick={() => open(c.id)}>
                   <td>
@@ -80,14 +80,13 @@ export default function CustomersScreen() {
                       <span className="avatar">{initials(c.name)}</span>{c.name}
                     </button>
                   </td>
-                  <td>{maskNin(c.idNumber)}</td>
                   <td>{c.phone}</td>
                   <td>{c.email || <span className="muted">None</span>}</td>
                   <td>{c.linesCount > 0 ? <Link className="cust-link" to={`/lines?q=${encodeURIComponent(c.name)}`} onClick={(e) => e.stopPropagation()}>{c.linesCount}</Link> : 0}</td>
                   <td><div className="cust-tags"><KycBadge status={c.kycStatus} />{c.blocked && <Badge tone="red">Blocked</Badge>}</div></td>
                 </tr>
               ))}
-              {data && data.items.length === 0 && <tr><td colSpan={6} className="muted">No customers match your search.</td></tr>}
+              {data && data.items.length === 0 && <tr><td colSpan={5} className="muted">No customers match your search.</td></tr>}
             </tbody>
           </table>
         )}

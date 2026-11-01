@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "at": 1794690000,
+      "action": "kyc_verified",
+      "actor": "staff:2",
+      "reason": "Identity checked"
+    },
+    {
+      "at": 1794600000,
+      "action": "registered",
+      "actor": "staff:1",
+      "reason": "Registered at the counter"
+    }
+  ],
+  "total": 2
+}

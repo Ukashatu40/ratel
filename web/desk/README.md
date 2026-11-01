@@ -290,5 +290,9 @@ The lines list, the line page and **Suspend / Reinstate / Terminate** call the A
 - **Calls** show a notice until `bss_get_line_calls` exists (it waits for the call record agreement, #26).
 - A line awaiting activation shows the same **Collect payment and activate** panel as the sale, so a sale can be finished
   from the line. Only an admin sees **Terminate**, and it is final.
-- The wallet, dashboard, customers, stock, reports and staff screens still link by IMSI and call paths the contract does not
+- **Customers and KYC** call the API too (`src/screens/customers`). The list has no NIN or address (the API's rows have
+  none); the drawer shows them, masked. Only an admin decides KYC: an agent is told so and sees no buttons. The allowed
+  moves are pending to verified or rejected, and rejected to verified. Every decision carries a reason (the API requires
+  one), so Approve without a note sends "Identity checked".
+- The wallet, dashboard, stock, reports and staff screens still link by IMSI and call paths the contract does not
   have; they run on mocks until they are mapped.

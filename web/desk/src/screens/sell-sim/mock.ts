@@ -16,8 +16,8 @@ export const mockCustomers: Customer[] = [
 export async function mockSearchCustomers(q: string): Promise<Customer[]> {
   await wait(250);
   const s = q.trim().toLowerCase();
-  const digits = s.replace(/\s/g, "");
-  return mockCustomers.filter((c) => c.name.toLowerCase().includes(s) || c.phone.replace(/\s/g, "").includes(digits) || c.idNumber.includes(digits));
+  const digits = s.replace(/\D/g, "");
+  return mockCustomers.filter((c) => c.name.toLowerCase().includes(s) || c.email.toLowerCase().includes(s) || (digits !== "" && c.phone.replace(/\D/g, "").includes(digits)));
 }
 
 export async function mockCreateCustomer(input: NewCustomer): Promise<Customer> {
