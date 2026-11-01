@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router";
 import { formatClock } from "../../lib/format";
+import { screenOffered } from "../../lib/features";
 import { useCurrentUser } from "../../lib/useCurrentUser";
 import { useAuth } from "../../lib/authContext";
 import { Icon, type IconName } from "../ui";
@@ -55,7 +56,7 @@ export function AppShell() {
       <Header />
       <div className="shell__body">
         <nav className="sidebar" aria-label="Main">
-          {NAV.map((n) => (
+          {NAV.filter((n) => screenOffered(n.to)).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.to === "/"} className={({ isActive }) => `nav-link${isActive ? " nav-link--active" : ""}`}>
               <Icon name={n.icon} />{n.label}
             </NavLink>

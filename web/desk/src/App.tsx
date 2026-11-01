@@ -12,7 +12,12 @@ import SellSimScreen from "./screens/sell-sim/SellSimScreen";
 import StaffScreen from "./screens/staff/StaffScreen";
 import StockScreen from "./screens/stock/StockScreen";
 import WalletScreen from "./screens/wallet/WalletScreen";
+import { NOT_YET_IN_API, screenOffered } from "./lib/features";
 import PlaceholderScreen from "./screens/PlaceholderScreen";
+
+// A screen that is not offered against the real API answers with a plain note, also when its address is typed in.
+const offered = (path: string, title: string, screen: React.ReactElement) =>
+  screenOffered(path) ? screen : <PlaceholderScreen title={title} reason={NOT_YET_IN_API[path]} />;
 
 // URL -> screen map. Everything except /login sits behind RequireAuth.
 const router = createBrowserRouter([
@@ -29,10 +34,10 @@ const router = createBrowserRouter([
           { path: "lines/:lineId", element: <LineDetailScreen /> },
           { path: "customers", element: <CustomersScreen /> },
           { path: "plans", element: <PlansScreen /> },
-          { path: "inventory", element: <StockScreen /> },
+          { path: "inventory", element: offered("/inventory", "Stock & Vouchers", <StockScreen />) },
           { path: "finance/wallet", element: <WalletScreen /> },
-          { path: "finance/reports", element: <ReportsScreen /> },
-          { path: "admin/audit", element: <StaffScreen /> },
+          { path: "finance/reports", element: offered("/finance/reports", "Reports", <ReportsScreen />) },
+          { path: "admin/audit", element: offered("/admin/audit", "Staff & Audit", <StaffScreen />) },
           { path: "*", element: <PlaceholderScreen title="Page not found" /> },
         ],
       },
