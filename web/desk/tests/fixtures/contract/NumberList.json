@@ -1,0 +1,20 @@
+{
+  "numbers": [
+    {
+      "msisdn": "2347000000150",
+      "state": "available"
+    },
+    {
+      "msisdn": "2347000000151",
+      "state": "in_use"
+    },
+    {
+      "msisdn": "2347000000152",
+      "state": "quarantined"
+    },
+    {
+      "msisdn": "2347000000153",
+      "state": "available"
+    }
+  ]
+}

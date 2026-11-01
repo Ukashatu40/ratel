@@ -1,19 +1,17 @@
-import { useState } from "react";
-import { Link } from "react-router";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { newIdempotencyKey } from "../../lib/api";
-import { formatNaira, formatWAT } from "../../lib/format";
-import { activateLine } from "./api";
+import { keyFor, type KeySlot } from "../../lib/api";
+import { createLine } from "./api";
+import { CollectPayment } from "./CollectPayment";
 import { CustomerCard, CustomerStep } from "./CustomerStep";
 import { OrderSummary } from "./OrderSummary";
-import { totalKobo } from "./pricing";
 import { PlanStep } from "./PlanStep";
 import { SimNumberStep } from "./SimNumberStep";
 import { Stepper } from "./Stepper";
 import type { Customer, FreeSim, Plan } from "./types";
 import "./SellSimScreen.css";
 
-const CONTINUE = ["Continue", "Continue", "Continue to review", "Activate line"];
+const CONTINUE = ["Continue", "Continue", "Continue to review", "Create line"];
 const KYC_MESSAGE = "A line cannot be activated until KYC is verified.";
 
 export default function SellSimScreen() {
@@ -23,13 +21,17 @@ export default function SellSimScreen() {
   const [sim, setSim] = useState<FreeSim | null>(null);
   const [msisdn, setMsisdn] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [orderKey, setOrderKey] = useState(newIdempotencyKey); // one key per sale; a retry reuses it
+  const slot = useRef<KeySlot>({ signature: null, key: null }); // one key per distinct sale; a retry of the same sale reuses it
 
-  const activate = useMutation({
-    mutationFn: () => activateLine({ customerId: customer!.id, iccid: sim!.iccid, msisdn, planId: plan!.planId }, orderKey),
+  const create = useMutation({
+    mutationFn: () => {
+      const req = { customerId: customer!.id, iccid: sim!.iccid, msisdn, planId: plan!.planId };
+      return createLine(req, keyFor(slot.current, JSON.stringify(req)));
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       void queryClient.invalidateQueries({ queryKey: ["lines"] });
+      void queryClient.invalidateQueries({ queryKey: ["stock"] });
     },
   });
 
@@ -40,31 +42,11 @@ export default function SellSimScreen() {
 
   const reset = () => {
     setStep(0); setCustomer(null); setSim(null); setMsisdn(""); setPlan(null);
-    activate.reset();
-    setOrderKey(newIdempotencyKey());
+    create.reset();
   };
-  const next = () => (step < 3 ? setStep(step + 1) : activate.mutate());
+  const next = () => (step < 3 ? setStep(step + 1) : create.mutate());
 
-  if (activate.isSuccess) {
-    const r = activate.data;
-    return (
-      <div className="sell">
-        <h1>Line activated</h1>
-        <div className="card sell-done">
-          <h3>{r.msisdn} is ready</h3>
-          <div className="sell-kv"><span>Customer</span><span>{customer?.name}</span></div>
-          <div className="sell-kv"><span>Plan</span><span>{r.planName}</span></div>
-          <div className="sell-kv"><span>Plan ends</span><span>{formatWAT(r.expiresAt)}</span></div>
-          <div className="sell-kv"><span>Total</span><span>{plan ? formatNaira(totalKobo(plan.priceKobo)) : "-"}</span></div>
-          <p className="muted" style={{ margin: "14px 0" }}>The customer goes online once the phone attaches to the network. This sale appears in the line's History tab.</p>
-          <div className="sell-actions">
-            <Link className="btn btn--outline" to={`/lines/${r.imsi}`}>View line</Link>
-            <button type="button" className="btn" onClick={reset}>Sell another SIM</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (create.isSuccess) return <CollectPayment line={create.data} customer={customer!} plan={plan!} onAnother={reset} />;
 
   return (
     <div className="sell">
@@ -80,8 +62,8 @@ export default function SellSimScreen() {
           {step === 3 && (
             <div className="card">
               <h3>Review</h3>
-              <p className="muted">Check the details on the right, then activate the line. One activation request is sent for this sale.</p>
-              {plan && <p style={{ marginTop: 8 }}>{plan.name} for {customer?.name}, number {msisdn}.</p>}
+              <p className="muted">Check the details on the right, then create the line. Next you collect the payment and activate it.</p>
+              {plan && <p style={{ marginTop: 8 }}>{plan.name} for {customer?.name}.</p>}
             </div>
           )}
         </div>
@@ -92,20 +74,20 @@ export default function SellSimScreen() {
               <b>{blocked ? "This customer is blocked and cannot be sold a SIM." : KYC_MESSAGE}</b>
             </div>
           )}
-          {activate.isError && <div className="alert alert--danger" role="alert" style={{ margin: "14px 0" }}>Activation failed: {activate.error.message}. You can try again; the sale will not be repeated.</div>}
+          {create.isError && <div className="alert alert--danger" role="alert" style={{ margin: "14px 0" }}>The line was not created: {create.error.message}. You can try again; the sale will not be repeated.</div>}
           <div className="sell-actions" style={{ marginTop: 16 }}>
-            {step > 0 && <button type="button" className="btn btn--outline" onClick={() => setStep(step - 1)} disabled={activate.isPending}>Back</button>}
-            <button type="button" className="btn sell-actions__main" onClick={next} disabled={!canContinue || activate.isPending}>
-              {activate.isPending ? "Activating..." : CONTINUE[step]}
+            {step > 0 && <button type="button" className="btn btn--outline" onClick={() => setStep(step - 1)} disabled={create.isPending}>Back</button>}
+            <button type="button" className="btn sell-actions__main" onClick={next} disabled={!canContinue || create.isPending}>
+              {create.isPending ? "Creating..." : CONTINUE[step]}
             </button>
           </div>
         </OrderSummary>
       </div>
 
       <section className="card sell-next">
-        <h3>After you activate</h3>
+        <h3>After you create the line</h3>
         <div className="sell-next__row">
-          {[["Payment recorded", "Plan price and VAT are added to the ledger"], ["Line created on the network", "RatelBSS asks RatelLink to activate the SIM"], ["Customer goes online", "Data and calls work once the phone attaches"]].map(([t, s], i) => (
+          {[["Customer pays", "They top up the line's wallet on RatelPay with a prepaid card"], ["You buy the plan", "The plan's price is taken from the wallet, VAT included"], ["You activate", "RatelBSS asks RatelLink to switch the SIM on; data and calls work once the phone attaches"]].map(([t, s], i) => (
             <div key={t} className="sell-next__item"><span className="sell-next__n">{i + 1}</span><div><b>{t}</b><div className="muted">{s}</div></div></div>
           ))}
         </div>

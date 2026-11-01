@@ -1,6 +1,7 @@
-import { useDeferredValue, useState, type FormEvent } from "react";
+import { useDeferredValue, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Badge, type Tone } from "../../components/ui";
+import { keyFor, type KeySlot } from "../../lib/api";
 import { maskNin } from "../../lib/format";
 import { createCustomer, searchCustomers } from "./api";
 import type { Customer, KycStatus, NewCustomer } from "./types";
@@ -15,8 +16,8 @@ export function CustomerCard({ customer, onChange }: { customer: Customer; onCha
       <div>
         <h3>Customer</h3>
         <div className="sell-customer__name">{customer.name}</div>
-        <div className="muted">{customer.idType} {maskNin(customer.idNumber)} &nbsp;|&nbsp; {customer.phone} &nbsp;|&nbsp; {customer.email || "no email"}</div>
-        <div className="muted">{customer.address}</div>
+        <div className="muted">{customer.idNumber && <>{customer.idType} {maskNin(customer.idNumber)} &nbsp;|&nbsp; </>}{customer.phone} &nbsp;|&nbsp; {customer.email || "no email"}</div>
+        {customer.address && <div className="muted">{customer.address}</div>}
         {onChange && <button type="button" className="btn btn--outline btn--sm" style={{ marginTop: 10 }} onClick={onChange}>Change customer</button>}
       </div>
       <div className="sell-customer__kyc">
@@ -33,7 +34,8 @@ const EMPTY = { name: "", phone: "", email: "", idNumber: "", address: "" };
 function NewCustomerForm({ onCreated, onCancel }: { onCreated: (c: Customer) => void; onCancel: () => void }) {
   const [form, setForm] = useState(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof typeof EMPTY, string>>>({});
-  const create = useMutation({ mutationFn: (input: NewCustomer) => createCustomer(input), onSuccess: onCreated });
+  const slot = useRef<KeySlot>({ signature: null, key: null }); // a retry of the same customer reuses its key
+  const create = useMutation({ mutationFn: (input: NewCustomer) => createCustomer(input, keyFor(slot.current, JSON.stringify(input))), onSuccess: onCreated });
   const set = (k: keyof typeof EMPTY) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
 
   const submit = (e: FormEvent) => {
@@ -42,9 +44,10 @@ function NewCustomerForm({ onCreated, onCancel }: { onCreated: (c: Customer) => 
     if (!form.name.trim()) next.name = "Enter the customer's full name";
     if (form.phone.replace(/\D/g, "").length < 10) next.phone = "Enter a valid phone number";
     if (!/^\d{11}$/.test(form.idNumber)) next.idNumber = "A NIN has 11 digits"; // NIN is captured at registration
+    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) next.email = "Enter an email address"; // the API requires one
     if (!form.address.trim()) next.address = "Enter the customer's address";
     setErrors(next);
-    if (Object.keys(next).length === 0) create.mutate({ ...form, name: form.name.trim(), idType: "NIN" });
+    if (Object.keys(next).length === 0) create.mutate({ ...form, name: form.name.trim(), email: form.email.trim(), idType: "NIN" });
   };
 
   const field = (k: keyof typeof EMPTY, label: string, props: { placeholder?: string; inputMode?: "numeric" | "tel" } = {}) => (
@@ -62,7 +65,7 @@ function NewCustomerForm({ onCreated, onCancel }: { onCreated: (c: Customer) => 
         {field("name", "Full name")}
         {field("phone", "Phone number", { inputMode: "tel", placeholder: "+234 ..." })}
         {field("idNumber", "NIN (11 digits)", { inputMode: "numeric" })}
-        {field("email", "Email (optional)")}
+        {field("email", "Email")}
       </div>
       {field("address", "Address")}
       {create.isError && <div className="alert alert--danger" style={{ marginBottom: 12 }}>Could not save the customer. Try again.</div>}
@@ -88,14 +91,14 @@ export function CustomerStep({ onSelect }: { onSelect: (c: Customer) => void }) 
         <h3>Find the customer</h3>
         <button type="button" className="btn btn--outline btn--sm" onClick={() => setCreating(true)}>Register a new customer</button>
       </div>
-      <input className="input" autoFocus placeholder="Search by name, phone number or NIN" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search customers" />
+      <input className="input" autoFocus placeholder="Search by name or phone number" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search customers" />
       <div className="sell-results" aria-live="polite">
         {term.length < 2 && <p className="muted">Type at least 2 characters.</p>}
         {term.length >= 2 && isFetching && !data && <p className="muted">Searching...</p>}
         {term.length >= 2 && data?.length === 0 && <p className="muted">No customer found. Use "Register a new customer".</p>}
         {data?.map((c) => (
           <button type="button" key={c.id} className="sell-result" onClick={() => onSelect(c)}>
-            <span><b>{c.name}</b><br /><span className="muted">{c.phone} &nbsp;|&nbsp; {c.idType} {maskNin(c.idNumber)}</span></span>
+            <span><b>{c.name}</b><br /><span className="muted">{c.phone}{c.idNumber && <> &nbsp;|&nbsp; {c.idType} {maskNin(c.idNumber)}</>}</span></span>
             <span className="sell-result__tags"><KycBadge status={c.kycStatus} />{c.blocked && <Badge tone="red">Blocked</Badge>}</span>
           </button>
         ))}

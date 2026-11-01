@@ -261,3 +261,18 @@ Adds src/screens/wallet/. UPDATES two files from earlier zips: src/App.tsx (rout
 - Ledger entries carry the IMSI and phone number so the screen can link to the line (the Build Plan's ledger only has line_id).
 - Staff top-ups are not built: the plan only describes vouchers and the payment gateway, which customers use on RatelPay.
 - VAT is its own ledger entry (7.5% in whole kobo), as the plan says.
+
+## Selling a SIM against the real API
+
+With `VITE_USE_MOCK` unset, Sell SIM calls the API with the paths and shapes of `contracts/openapi.yaml`
+(`src/screens/sell-sim/contract.ts` maps them to the Desk's own types; `realApi.ts` makes the calls). The sale is:
+
+1. Pick the customer (KYC must be verified; an admin decides it), the SIM, the number and the plan, then **Create line**.
+2. The customer tops up the line's wallet on the RatelPay page (`/pay`) with a prepaid card. The Desk shows the balance
+   and refreshes it every five seconds. If RatelPay is not at `<this host>/pay`, set `VITE_PAY_PAGE_URL`.
+3. **Buy plan** debits the wallet once (VAT is inside the price). **Activate line** asks RatelLink to switch the SIM on.
+
+Each step is one call with its own `Idempotency-Key`, so a retry never repeats it. The line, its wallet and its
+purchase live on the server: if the page is closed after step 1, the sale can be finished from the line.
+TODO: the line page does not read the real API yet, so that is not possible until the Lines screens are mapped too.
+In mock mode a "Simulate a card top-up" button stands in for step 2.

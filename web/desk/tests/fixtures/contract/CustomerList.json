@@ -1,0 +1,29 @@
+{
+  "customers": [
+    {
+      "customer_id": 1,
+      "name": "Demo Customer One",
+      "phone": "+234 800 000 0001",
+      "email": "one@mail.example",
+      "kyc_status": "verified",
+      "blocked": false,
+      "lines_count": 0
+    },
+    {
+      "customer_id": 2,
+      "name": "Demo Customer Two",
+      "phone": "+234 800 000 0002",
+      "email": "two@mail.example",
+      "kyc_status": "pending",
+      "blocked": true,
+      "lines_count": 1
+    }
+  ],
+  "total": 2,
+  "counts": {
+    "all": 2,
+    "pending": 1,
+    "verified": 1,
+    "rejected": 0
+  }
+}

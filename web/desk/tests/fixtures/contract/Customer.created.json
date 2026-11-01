@@ -1,0 +1,11 @@
+{
+  "customer_id": 3,
+  "name": "Demo Customer Three",
+  "phone": "+234 800 000 0003",
+  "email": "three@mail.example",
+  "id_type": "NIN",
+  "id_number": "00000000003",
+  "address": "1 Demo Road",
+  "kyc_status": "pending",
+  "blocked": false
+}

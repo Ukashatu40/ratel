@@ -56,3 +56,14 @@ export function newIdempotencyKey(): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 }
 export const apiPut = <T,>(path: string, body: unknown, idempotencyKey?: string) => request<T>("PUT", path, body, idempotencyKey);
+
+// One key per distinct request. While the request is the same (a retry after a lost reply) the key is reused, so the
+// backend sees the same request; when anything in it changed, a new key starts a new request.
+export interface KeySlot { signature: string | null; key: string | null }
+export function keyFor(slot: KeySlot, signature: string): string {
+  if (slot.signature !== signature || !slot.key) {
+    slot.signature = signature;
+    slot.key = newIdempotencyKey();
+  }
+  return slot.key;
+}
