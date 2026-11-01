@@ -5,7 +5,7 @@
 #   scripts/release/build-release.sh <meter|app|link> [commit] [output-folder]
 #
 # meter  the RatelMeter agent for core-up  (ratel-meter-<commit>.tar.gz)
-# app    RatelBSS and the RatelMeter API for bss-app  (ratel-app-<commit>.tar.gz)
+# app    RatelBSS, the RatelMeter API and the RatelPay page for bss-app  (ratel-app-<commit>.tar.gz)
 # link   RatelLink for core-cp  (ratel-link-<commit>.tar.gz)
 #
 # The code comes from `git archive` of a commit that is already on the reviewed branch, never from a
@@ -33,7 +33,7 @@ case "$component" in
   app)
     prefix="ratel-app"
     requirements="app.txt"
-    paths=(services/app services/common requirements)
+    paths=(services/app services/common requirements web/pay)
     ;;
   link)
     prefix="ratel-link"

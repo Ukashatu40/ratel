@@ -126,6 +126,7 @@ def test_the_proxy_template_denies_by_default_and_never_logs_a_path() -> None:
         name.strip() for name, _ in locations if "deny  all;" not in _ and "return 404" not in _
     ]
     assert sorted(public) == [  # the public paths, each an exact match or one anchored pattern
+        "= /pay",  # the RatelPay page: one static file, nothing else is served from disk
         "= /v1/pay/payments",
         "= /v1/pay/vouchers/redeem",
         "~ ^/v1/pay/payments/[A-Za-z0-9_-]+$",
@@ -133,6 +134,8 @@ def test_the_proxy_template_denies_by_default_and_never_logs_a_path() -> None:
     for _name, block in locations:
         if "return 404" in block or ("/v1/pay/" in _name and "deny  all;" not in block):
             continue
+        if _name.strip() == "= /pay":
+            continue  # public by design; its own test below checks what it may serve
         assert "deny  all;" in block, block
     assert "log_format ratel_app_privacy" in text
     log_line = re.search(r"log_format ratel_app_privacy (.*);", text)
@@ -231,3 +234,18 @@ def test_the_readme_installs_and_enables_the_timers() -> None:
     for name in ("ratel-rating", "ratel-ledger-check"):
         assert f"{name}.service" in readme and f"{name}.timer" in readme
     assert "systemctl enable --now ratel-rating.timer ratel-ledger-check.timer" in readme
+
+
+def test_the_public_page_serves_one_file_read_only_with_a_policy_that_loads_nothing_else() -> None:
+    text = NGINX.read_text()
+    block = re.search(r"location = /pay \{(.*?)\n    \}", text, re.S)
+    assert block is not None
+    body = block.group(1)
+    assert "alias /opt/ratel-app/current/web/pay/index.html;" in body  # a file, never a folder
+    assert "limit_except GET HEAD { deny all; }" in body
+    assert "proxy_pass" not in body and "include /etc/nginx/ratel-pay-key.conf" not in body
+    policy = re.search(r'Content-Security-Policy "([^"]+)"', body)
+    assert policy is not None
+    assert "default-src 'none'" in policy.group(1) and "connect-src 'self'" in policy.group(1)
+    assert not re.search(r"https?:", policy.group(1)), "the page may talk to this host only"
+    assert 'Cache-Control "no-cache"' in body and "nosniff" in body

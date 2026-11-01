@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Ratelplus top-up</title>
+<link rel="icon" href="data:,">
+<style>
+/* One file, one request: see web/pay/README.md for the page-weight budget. */
+:root{--bg:#fff;--fg:#14202b;--mut:#4a5966;--line:#b8c3cc;--acc:#0b5cab;--accfg:#fff;--ok:#146c2e;--bad:#b3261e;--box:#f3f6f9}
+@media (prefers-color-scheme:dark){:root{--bg:#10171d;--fg:#e8eef3;--mut:#a9b6c1;--line:#3b4954;--acc:#7dbaff;--accfg:#08131c;--ok:#7bdc95;--bad:#ff9d94;--box:#18222a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:30rem;margin:0 auto;padding:16px 16px 40px}
+h1{font-size:1.4rem;margin:8px 0 4px}
+h2{font-size:1.05rem;margin:24px 0 4px}
+p{margin:4px 0 12px}
+.mut{color:var(--mut)}
+label{display:block;margin:14px 0 4px;font-weight:600}
+input{width:100%;min-height:48px;padding:8px 12px;font:inherit;color:inherit;background:var(--box);border:1px solid var(--line);border-radius:8px}
+input:focus-visible,button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.chk{display:flex;align-items:center;gap:8px;font-weight:400}
+.chk input{width:auto;min-height:0}
+button{width:100%;min-height:48px;margin-top:20px;padding:8px 16px;font:inherit;font-weight:600;color:var(--accfg);background:var(--acc);border:0;border-radius:8px;cursor:pointer}
+button:disabled{opacity:.6;cursor:wait}
+#pay{margin-top:8px;padding-top:4px;border-top:1px solid var(--line)}
+#status{min-height:1.5em;margin-top:20px;padding:0;font-weight:600}
+#status.ok{color:var(--ok)}
+#status.bad{color:var(--bad)}
+[hidden]{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>Top up your line</h1>
+<p class="mut">Add credit with a prepaid card.</p>
+<!-- TODO(PRD): the exact words on this page, and what it says after a top-up. -->
+<form id="f" novalidate>
+<label for="phone">Phone number of the line</label>
+<input id="phone" type="tel" inputmode="numeric" autocomplete="off" placeholder="0800 000 0000">
+<h2>Prepaid card</h2>
+<label for="card">Card number (20 digits)</label>
+<input id="card" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false">
+<label for="pin">PIN (14 digits)</label>
+<input id="pin" type="password" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false">
+<label class="chk"><input id="show" type="checkbox"> Show the PIN</label>
+<button id="go" type="submit">Add credit</button>
+<div id="pay" hidden>
+<h2>Pay by card</h2>
+<label for="amount">Amount in naira</label>
+<input id="amount" inputmode="decimal" autocomplete="off" placeholder="1000">
+<button id="paygo" type="button">Continue to payment</button>
+</div>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+</main>
+<script>
+(function (g) {
+  "use strict";
+
+  // Paying by card goes through Paystack. Leave this false until the sandbox is set up (the PAYMENT_*
+  // settings on bss-app) and its callback address is this page; the prepaid card works without it.
+  var CARD_PAYMENTS = false;
+  var API = "/v1/pay";
+  var NAIRA = "₦";
+
+  var MSG = {
+    phone: "Enter the phone number of the line, for example 0800 000 0000.",
+    card: "The card number has 20 digits. Check it and try again.",
+    pin: "The PIN has 14 digits. Check it and try again.",
+    amount: "Enter the amount in naira, for example 1000.",
+    refused: "This card cannot be used. Check the numbers and try again.",
+    refusedPay: "This payment cannot be started. Check the number and the amount.",
+    malformed: "Check the numbers you typed and try again.",
+    limited: "Too many attempts. Wait a while and try again.",
+    unavailable: "Card payments are not available right now. Use a prepaid card.",
+    trouble: "Something went wrong. Try again.",
+    waiting: "Waiting for your payment to finish...",
+    failed: "The payment did not go through. Nothing was added to your line.",
+    still: "Your payment is still being checked. Come back to this page in a minute."
+  };
+
+  // ---- pure logic (no page, no network); tested in web/pay/tests ------------------------------
+  function digits(s) { return String(s == null ? "" : s).replace(/[\s\-.()]/g, ""); }
+
+  // TODO(PRD): how a typed number becomes the stored form (digits, international, no plus sign).
+  // Today: 0 and ten digits, or 234 and ten digits, with spaces, dashes or a leading plus allowed.
+  function toMsisdn(typed) {
+    var d = digits(typed).replace(/^\+/, "");
+    if (/^0\d{10}$/.test(d)) return "234" + d.slice(1);
+    if (/^234\d{10}$/.test(d)) return d;
+    return null;
+  }
+  function cardNumber(typed) { var d = digits(typed); return /^\d{20}$/.test(d) ? d : null; }
+  function pin(typed) { var d = digits(typed); return /^\d{14}$/.test(d) ? d : null; }
+
+  // Naira typed by a person to whole kobo, in integers only. Up to two decimals.
+  function nairaToKobo(typed) {
+    var t = String(typed == null ? "" : typed).replace(/[\s,]/g, "").split(NAIRA).join("");
+    var m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(t);
+    if (!m) return null;
+    var kobo = Number(m[1]) * 100 + Number(((m[2] || "") + "00").slice(0, 2));
+    return kobo >= 1 ? kobo : null;
+  }
+  function formatNaira(kobo) {
+    var whole = Math.floor(kobo / 100), rest = kobo % 100;
+    return NAIRA + String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (rest < 10 ? "0" : "") + rest;
+  }
+  function newKey() {
+    var a = new Uint8Array(16);
+    g.crypto.getRandomValues(a);
+    return Array.prototype.map.call(a, function (b) { return (b < 16 ? "0" : "") + b.toString(16); }).join("");
+  }
+
+  // One Idempotency-Key per attempt: a retry after a lost reply sends the same key, and anything the
+  // person changed, or any answer we understood, starts a new one.
+  function keyFor(attempt, signature) {
+    if (attempt.sig !== signature) { attempt.sig = signature; attempt.key = newKey(); }
+    return attempt.key;
+  }
+  function forget(attempt) { attempt.sig = null; attempt.key = null; }
+
+  function redeem(fields, post, attempt) {
+    var msisdn = toMsisdn(fields.phone), card = cardNumber(fields.card), secret = pin(fields.pin);
+    if (!msisdn) return Promise.resolve({ ok: false, message: MSG.phone, field: "phone" });
+    if (!card) return Promise.resolve({ ok: false, message: MSG.card, field: "card" });
+    if (!secret) return Promise.resolve({ ok: false, message: MSG.pin, field: "pin" });
+    var key = keyFor(attempt, msisdn + "|" + card + "|" + secret);
+    return post(API + "/vouchers/redeem", { msisdn: msisdn, card_number: card, pin: secret }, key).then(function (r) {
+      var b = r.body;
+      if (r.status === 200 && b && Number.isInteger(b.amount_kobo) && Number.isInteger(b.balance_kobo)) {
+        forget(attempt);
+        return { ok: true, clear: true, message: formatNaira(b.amount_kobo) + " added to your line. Balance: " + formatNaira(b.balance_kobo) + "." };
+      }
+      if (r.status === 400) { forget(attempt); return { ok: false, message: MSG.refused }; }
+      if (r.status === 422) { forget(attempt); return { ok: false, message: MSG.malformed }; }
+      if (r.status === 429) { forget(attempt); return { ok: false, message: MSG.limited }; }
+      return { ok: false, message: MSG.trouble }; // outcome unknown: the key is kept for the retry
+    });
+  }
+
+  function startPayment(fields, post, attempt) {
+    var msisdn = toMsisdn(fields.phone), kobo = nairaToKobo(fields.amount);
+    if (!msisdn) return Promise.resolve({ ok: false, message: MSG.phone, field: "phone" });
+    if (kobo === null) return Promise.resolve({ ok: false, message: MSG.amount, field: "amount" });
+    var key = keyFor(attempt, msisdn + "|" + kobo);
+    return post(API + "/payments", { msisdn: msisdn, amount_kobo: kobo }, key).then(function (r) {
+      var b = r.body;
+      if (r.status === 200 && b && /^[A-Za-z0-9_-]{16,}$/.test(b.payment_id || "") && /^https:\/\//.test(b.checkout_url || "")) {
+        forget(attempt);
+        return { ok: true, paymentId: b.payment_id, checkoutUrl: b.checkout_url };
+      }
+      if (r.status === 400 || r.status === 422) { forget(attempt); return { ok: false, message: MSG.refusedPay }; }
+      if (r.status === 429) { forget(attempt); return { ok: false, message: MSG.limited }; }
+      if (r.status === 503) { forget(attempt); return { ok: false, message: MSG.unavailable }; }
+      return { ok: false, message: MSG.trouble };
+    });
+  }
+
+  function checkPayment(id, get) {
+    if (!/^[A-Za-z0-9_-]{16,}$/.test(id || "")) return Promise.resolve({ state: "unknown", message: MSG.trouble });
+    return get(API + "/payments/" + id).then(function (r) {
+      var b = r.body;
+      if (r.status === 200 && b && b.status === "succeeded" && Number.isInteger(b.amount_kobo)) {
+        return { state: "succeeded", message: formatNaira(b.amount_kobo) + " added to your line." };
+      }
+      if (r.status === 200 && b && b.status === "failed") return { state: "failed", message: MSG.failed };
+      if (r.status === 200 && b && b.status === "pending") return { state: "pending", message: MSG.waiting };
+      if (r.status === 404) return { state: "failed", message: MSG.failed };
+      return { state: "unknown", message: MSG.trouble };
+    });
+  }
+
+  g.RatelPayLogic = {
+    toMsisdn: toMsisdn, cardNumber: cardNumber, pin: pin, nairaToKobo: nairaToKobo,
+    formatNaira: formatNaira, redeem: redeem, startPayment: startPayment, checkPayment: checkPayment, MSG: MSG
+  };
+
+  // ---- the page ---------------------------------------------------------------------------------
+  function send(method, path, body, key) {
+    var ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, 15000) : null;
+    var headers = { Accept: "application/json" };
+    var opts = { method: method, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", headers: headers };
+    if (ctl) opts.signal = ctl.signal;
+    if (body) { headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+    if (key) headers["Idempotency-Key"] = key;
+    return fetch(path, opts).then(function (res) {
+      clearTimeout(timer);
+      return res.json().then(function (b) { return { status: res.status, body: b }; }, function () { return { status: res.status, body: null }; });
+    }, function () { clearTimeout(timer); return { status: 0, body: null }; });
+  }
+
+  function init(doc) {
+    var $ = function (id) { return doc.getElementById(id); };
+    var out = $("status"), busy = false;
+    var redeemAttempt = { sig: null, key: null }, payAttempt = { sig: null, key: null };
+    var STORE = "ratelpay.payment"; // only a payment id, which holds nothing about the line or its owner
+
+    function say(text, kind) { out.textContent = text; out.className = kind || ""; }
+    function hold(on) { busy = on; $("go").disabled = on; $("paygo").disabled = on; }
+    function fields() { return { phone: $("phone").value, card: $("card").value, pin: $("pin").value, amount: $("amount").value }; }
+    function remember(id) { try { if (id) sessionStorage.setItem(STORE, id); else sessionStorage.removeItem(STORE); } catch (e) { /* no storage: the page still works */ } }
+    function recall() { try { return sessionStorage.getItem(STORE); } catch (e) { return null; } }
+
+    $("show").addEventListener("change", function () { $("pin").type = $("show").checked ? "text" : "password"; });
+
+    $("f").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      if (busy) return;
+      hold(true); say("Checking your card...", "");
+      redeem(fields(), function (p, b, k) { return send("POST", p, b, k); }, redeemAttempt).then(function (r) {
+        hold(false); say(r.message, r.ok ? "ok" : "bad");
+        if (r.clear) { $("card").value = ""; $("pin").value = ""; }
+        if (r.field) $(r.field).focus();
+      });
+    });
+
+    function watch(id, tries) {
+      checkPayment(id, function (p) { return send("GET", p); }).then(function (r) {
+        if (r.state === "pending" && tries > 0) { say(r.message, ""); setTimeout(function () { watch(id, tries - 1); }, 3000); return; }
+        if (r.state === "pending") { say(MSG.still, ""); return; }
+        if (r.state !== "unknown") remember(null);
+        say(r.state === "unknown" ? MSG.trouble : r.message, r.state === "succeeded" ? "ok" : "bad");
+      });
+    }
+
+    if (CARD_PAYMENTS) {
+      $("pay").hidden = false;
+      $("paygo").addEventListener("click", function () {
+        if (busy) return;
+        hold(true); say("Starting your payment...", "");
+        startPayment(fields(), function (p, b, k) { return send("POST", p, b, k); }, payAttempt).then(function (r) {
+          hold(false);
+          if (!r.ok) { say(r.message, "bad"); if (r.field) $(r.field).focus(); return; }
+          remember(r.paymentId);
+          g.location.assign(r.checkoutUrl);
+        });
+      });
+      var back = recall();
+      if (back) { say(MSG.waiting, ""); watch(back, 20); }
+    }
+  }
+
+  if (typeof document !== "undefined" && document.getElementById("f")) init(document);
+})(typeof window !== "undefined" ? window : this);
+</script>
+</body>
+</html>
