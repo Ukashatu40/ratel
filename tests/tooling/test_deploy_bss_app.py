@@ -249,3 +249,17 @@ def test_the_public_page_serves_one_file_read_only_with_a_policy_that_loads_noth
     assert "default-src 'none'" in policy.group(1) and "connect-src 'self'" in policy.group(1)
     assert not re.search(r"https?:", policy.group(1)), "the page may talk to this host only"
     assert 'Cache-Control "no-cache"' in body and "nosniff" in body
+
+
+def test_the_desk_is_served_to_the_office_range_only_as_static_files() -> None:
+    text = NGINX.read_text()
+    block = re.search(r"location / \{(.*?)\n    \}", text, re.S)
+    assert block is not None
+    body = block.group(1)
+    assert "allow <office-and-vpn-range>;" in body and "deny  all;" in body
+    assert "root /var/www/ratel-desk;" in body and "try_files $uri /index.html;" in body
+    assert "proxy_pass" not in body and "include /etc/nginx/ratel-pay-key.conf" not in body
+    assert 'Cache-Control "no-cache"' in body and "nosniff" in body and "X-Frame-Options" in body
+    # The longer prefix wins in nginx, so the API, /healthz and /pay keep their own blocks.
+    for name in ("/v1/", "= /healthz", "= /pay"):
+        assert re.search(rf"location {re.escape(name)} \{{", text), name

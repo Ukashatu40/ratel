@@ -17,6 +17,7 @@ BASH = shutil.which("bash") or "bash"
 GIT = shutil.which("git") or "git"
 BUILD = ROOT / "scripts/release/build-meter-release.sh"
 BUILD_ANY = ROOT / "scripts/release/build-release.sh"
+BUILD_DESK = ROOT / "scripts/release/build-desk.sh"
 INSTALL = ROOT / "deploy/core-up/install-release.sh"
 
 # A pip that downloads nothing: it records its arguments and writes one fake wheel.
@@ -29,6 +30,19 @@ while [ $# -gt 0 ]; do
   shift
 done
 echo "not a real wheel" > "$dest/example-1.0-py3-none-any.whl"
+"""
+
+
+# An npm that downloads and builds nothing: it records how it was called and writes a tiny site.
+FAKE_NPM = """#!/usr/bin/env bash
+set -eu
+echo "$1 ${2:-} mock=${VITE_USE_MOCK:-unset} api=${VITE_API_BASE_URL:-unset}" >> "$FAKE_NPM_LOG"
+if [ "$1" = "run" ]; then
+  mkdir -p dist/assets
+  echo "<html></html>" > dist/index.html
+  echo "body{}" > dist/assets/app.css
+  mkdir -p dist/samples && echo "iccid" > dist/samples/sim-batch-ok.csv
+fi
 """
 
 
@@ -158,6 +172,70 @@ def test_the_core_cp_install_script_uses_the_wheels_without_the_network() -> Non
     assert text.count('-c "$release/requirements/constraints.txt"') == 1
 
 
+def _desk(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603  (our own script and fixed arguments)
+        [BASH, str(BUILD_DESK), *args],
+        cwd=ROOT,
+        env={**os.environ, **env},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.fixture
+def fake_npm(tmp_path: Path) -> tuple[Path, Path]:
+    npm = tmp_path / "npm"
+    npm.write_text(FAKE_NPM)
+    npm.chmod(0o755)
+    return npm, tmp_path / "npm-calls.txt"
+
+
+def test_the_desk_build_holds_only_the_built_files_and_is_made_for_the_real_api(
+    tmp_path: Path, fake_npm: tuple[Path, Path]
+) -> None:
+    npm, log = fake_npm
+    out = tmp_path / "out"
+    # A developer's shell could carry these; the build must not.
+    env = {
+        "RATEL_NPM": str(npm),
+        "FAKE_NPM_LOG": str(log),
+        "RATEL_RELEASE_BRANCH": "HEAD",
+        "VITE_USE_MOCK": "true",
+        "VITE_API_BASE_URL": "http://elsewhere.invalid",
+    }
+    result = _desk(["HEAD", str(out)], env)
+    assert result.returncode == 0, result.stderr
+    [tarball] = out.glob("ratel-desk-*.tar.gz")
+    assert re.search(r"[0-9a-f]{64}  ratel-desk-", result.stdout)
+    with tarfile.open(tarball) as tar:
+        names = tar.getnames()
+    name = tarball.name.removesuffix(".tar.gz")
+    assert f"{name}/index.html" in names and f"{name}/assets/app.css" in names
+    for member in names:
+        relative = member.removeprefix(name).lstrip("/")
+        assert not relative.startswith(("src", "node_modules", "tests", ".env", "samples")), member
+        assert "/._" not in member, member
+    calls = log.read_text().splitlines()
+    assert calls[0].startswith("ci ")  # locked packages, not a fresh resolve
+    assert calls[1] == "run build mock=false api=unset"
+
+
+def test_the_desk_build_refuses_code_that_is_not_on_the_reviewed_branch(
+    tmp_path: Path, fake_npm: tuple[Path, Path]
+) -> None:
+    npm, log = fake_npm
+    root_commit = _git("rev-list", "--max-parents=0", "HEAD").split()[-1]
+    if _git("rev-parse", "HEAD").strip() == root_commit:
+        pytest.skip("HEAD is the first commit: nothing older to compare against")
+    result = _desk(
+        ["HEAD", str(tmp_path / "out")],
+        {"RATEL_NPM": str(npm), "FAKE_NPM_LOG": str(log), "RATEL_RELEASE_BRANCH": root_commit},
+    )
+    assert result.returncode != 0 and "not on" in result.stderr
+    assert not (tmp_path / "out").exists() and not log.exists()  # it stopped before building
+
+
 def test_the_builder_refuses_an_unknown_component(tmp_path: Path) -> None:
     result = subprocess.run(  # noqa: S603  (our own script and fixed arguments)
         [BASH, str(BUILD_ANY), "ledger", "HEAD", str(tmp_path / "out")],
@@ -206,6 +284,7 @@ def test_the_release_scripts_hold_no_secret_or_real_address() -> None:
     for script in (
         BUILD,
         BUILD_ANY,
+        BUILD_DESK,
         INSTALL,
         ROOT / "deploy/bss-app/install-release.sh",
         ROOT / "deploy/core-cp/install-release.sh",

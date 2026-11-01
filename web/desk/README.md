@@ -304,5 +304,7 @@ The lines list, the line page and **Suspend / Reinstate / Terminate** call the A
   by the PRD yet (TODO(PRD)); the tabs are the kinds the code writes (top-ups, plan purchases, VAT, corrections) plus any
   other kind the API reports. A line is picked by its id, and its wallet shows whether the balance equals the sum of its
   ledger. RatelBSS keeps no daily balance history, so the summary cards draw no trend lines.
-- The stock, reports and staff screens, and the plans' editing, call paths the contract does not have; they run on mocks
-  until they are mapped or hidden for the demo.
+- **Screens the API cannot serve yet** (Stock & Vouchers, Reports, Staff & Audit; `src/lib/features.ts`) are offered on mock
+  data only. Against the real API they are left out of the menu, and their addresses answer with a plain note saying what
+  to use instead (`staff_cli`, `voucher_cli` on bss-app). Each entry is removed when its operations land and the screen is
+  mapped. Plan editing is read-only in the same way (see Plans above).

@@ -28,7 +28,7 @@ Owner: Software team (project lead). TODO: confirm host details and how deployme
 | `ratel-rating.service`, `.timer` | The rating job every five minutes (usage, out of data, restore, and renewal if turned on) |
 | `ratel-ledger-check.service`, `.timer` | The nightly check that every wallet equals its ledger |
 | `postgres-roles.sql` | The two database roles: an owner for migrations, and a runtime role that cannot change the schema |
-| `nginx/ratel-app.conf.example` | A TLS reverse proxy template. The public paths: the RatelPay page (`/pay`, one static file from the release), the three calls the page makes, and Paystack's webhook |
+| `nginx/ratel-app.conf.example` | A TLS reverse proxy template. RatelDesk (static files, office and VPN only) and the public paths: the RatelPay page (`/pay`, one static file from the release), the three calls the page makes, and Paystack's webhook |
 | `nginx/ratel-pay-key.conf.example` | The one line that adds the redemption key (`PAY_API_KEY`) to that public path. Real file: root-owned, never committed |
 
 ## Layout on bss-app
@@ -123,6 +123,21 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    then reload, then open that address. TODO: the domain name and
    certificate for RatelPay, and the firewall rules (443 public for RatelPay and the webhook only; 22 from admin
    addresses only; the core-up and voice agents to the usage path only).
+
+8b. **RatelDesk, the staff site.** On your machine, from a commit on `main`: `scripts/release/build-desk.sh` (needs Node and
+   npm) builds `ratel-desk-<commit>.tar.gz` and prints its SHA-256. Copy it to `/tmp` on bss-app, check the hash, then:
+   ```bash
+   sudo sha256sum /tmp/ratel-desk-*.tar.gz              # same as the one printed where it was built
+   NAME=$(basename /tmp/ratel-desk-*.tar.gz .tar.gz)    # exactly one file must match
+   sudo install -d -m 0755 /var/www/desk-releases "/var/www/desk-releases/$NAME"
+   sudo tar -xzf "/tmp/$NAME.tar.gz" --strip-components=1 -C "/var/www/desk-releases/$NAME"
+   sudo chown -R root:root "/var/www/desk-releases/$NAME" && sudo chmod -R go-w "/var/www/desk-releases/$NAME"
+   sudo ln -sfn "/var/www/desk-releases/$NAME" /var/www/ratel-desk
+   ```
+   The proxy serves `/var/www/ratel-desk` (the link) to the office range and the VPN only. To go back to the previous
+   release, point the link at its folder again. Old folders are never deleted by these steps. The Desk calls the API
+   on the host it is served from, so it needs no setting. Open `https://<host>/` from inside the range and sign in with a
+   staff account (`staff_cli create`). From outside the range the answer is 403, which is right.
 
 9. **The timers** (after the app answers `healthz` and the migrations are done). Copy the four files, check them, and
    enable the timers (not the services, which the timers start):
