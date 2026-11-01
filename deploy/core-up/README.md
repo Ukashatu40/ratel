@@ -85,6 +85,38 @@ unmetered until it is counted. A check on a real phone is still pending.
    Until the real keys exist, any non-empty placeholder lets the agent start and read its own
    counters, but it cannot reach RatelLink or the usage API.
 
+   **Point it at the two HTTPS servers and make it trust them.** RatelLink's proxy on core-cp and the
+   RatelMeter API on bss-app use self-signed certificates. Both base URLs are `https://<address>` with no port
+   (443), and the agent trusts only the certificates in `/etc/ratel-meter/trusted-certs.pem`, which
+   `SSL_CERT_FILE` names. For each of the two servers, fetch its certificate, check the fingerprint against the one
+   the server itself prints, and only then append it. Run this block once per server:
+   ```bash
+   read -r -p 'server address: ' HOST
+   openssl s_client -connect "$HOST:443" </dev/null 2>/dev/null | openssl x509 -outform PEM > ~/server.pem
+   openssl x509 -in ~/server.pem -noout -fingerprint -sha256     # compare with: openssl x509 -in <its certificate> -noout -fingerprint -sha256, run on that server
+   sudo tee -a /etc/ratel-meter/trusted-certs.pem < ~/server.pem >/dev/null
+   sudo grep -c BEGIN /etc/ratel-meter/trusted-certs.pem          # one more than before
+   ```
+   An env file made from an older template has **no `SSL_CERT_FILE` line**. Check, and add it if the count is 0
+   (the leading newline keeps it off the last line, which may be a key):
+   ```bash
+   sudo grep -c '^SSL_CERT_FILE=' /etc/ratel-meter/ratel-meter.env
+   printf '\nSSL_CERT_FILE=/etc/ratel-meter/trusted-certs.pem\n' | sudo tee -a /etc/ratel-meter/ratel-meter.env >/dev/null
+   ```
+   Without that line the agent checks certificates against the system store, rejects both servers, and logs only
+   `meter.assignments.error` with `ConnectError`, even though `curl --cacert` works from a shell (seen 2026-10-31).
+
+   Check the usage path with an empty request, which stores nothing. The key goes from the file straight into the
+   request, so it is never shown or typed. **422** means the key, the certificate and the proxy rules are all
+   right; 401 means the key differs from `METER_API_KEY` on bss-app; 403 means the proxy does not list core-up:
+   ```bash
+   read -r -p 'bss-app address: ' BSS
+   K=$(sudo sed -n 's/^METER_AGENT_API_KEY=//p' /etc/ratel-meter/ratel-meter.env)
+   printf 'Authorization: Bearer %s\n' "$K" | sudo curl -sS --cacert /etc/ratel-meter/trusted-certs.pem -H @- \
+     -H 'Content-Type: application/json' -X POST -d '{}' -o /dev/null -w '%{http_code}\n' "https://$BSS/v1/usage"
+   unset K BSS
+   ```
+
 6. **Install the units and check them with the host's own systemd:**
    ```bash
    sudo cp /tmp/ratel-meter-nft.service /tmp/ratel-meter.service /etc/systemd/system/
@@ -108,6 +140,7 @@ unmetered until it is counted. A check on a real phone is still pending.
    Exit status 0 means it read the counters. An error line with `error_type` and status 1 says why not.
    Until RatelLink is reachable, a `meter.assignments.error` line with `ConnectError` and status 0 is the
    expected result (seen 2026-10-23): the counters were read, and any usage is kept in the spool.
+   Once both base URLs are `https`, the same line means the agent does not trust the server's certificate (see step 5).
 
 8. **Start the agent, and enable both at boot only when you are happy:**
    ```bash
