@@ -28,7 +28,7 @@ Owner: Software team (project lead). TODO: confirm host details and how deployme
 | `ratel-rating.service`, `.timer` | The rating job every five minutes (usage, out of data, restore, and renewal if turned on) |
 | `ratel-ledger-check.service`, `.timer` | The nightly check that every wallet equals its ledger |
 | `postgres-roles.sql` | The two database roles: an owner for migrations, and a runtime role that cannot change the schema |
-| `nginx/ratel-app.conf.example` | A TLS reverse proxy template. The one public path so far is the voucher redemption; the RatelPay page and the webhook are TODO until they exist |
+| `nginx/ratel-app.conf.example` | A TLS reverse proxy template. The public paths: the RatelPay page (`/pay`, one static file from the release), the three calls the page makes, and Paystack's webhook |
 | `nginx/ratel-pay-key.conf.example` | The one line that adds the redemption key (`PAY_API_KEY`) to that public path. Real file: root-owned, never committed |
 
 ## Layout on bss-app
@@ -119,7 +119,8 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    `<placeholder>`, install the certificate, then make the redemption key: `openssl rand -base64 32`, put it in
    `/etc/ratel-app/ratel-app.env` as `PAY_API_KEY` and, from `ratel-pay-key.conf.example`, in
    `/etc/nginx/ratel-pay-key.conf` (root-owned, group of the nginx user, mode 0640; the same value in both).
-   Test with `sudo nginx -t`, then reload. TODO: the domain name and
+   The RatelPay page is `web/pay/index.html` in the release, served at `https://<host>/pay`. Test with `sudo nginx -t`,
+   then reload, then open that address. TODO: the domain name and
    certificate for RatelPay, and the firewall rules (443 public for RatelPay and the webhook only; 22 from admin
    addresses only; the core-up and voice agents to the usage path only).
 

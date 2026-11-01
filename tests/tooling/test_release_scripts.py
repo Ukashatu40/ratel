@@ -115,6 +115,8 @@ def test_the_app_release_holds_the_app_and_installs_from_the_app_requirements(
     name = tarball.name.removesuffix(".tar.gz")
     assert f"{name}/services/app/main.py" in names
     assert f"{name}/services/app/alembic.ini" in names
+    assert f"{name}/web/pay/index.html" in names  # the page nginx serves at /pay
+    assert not any(n.startswith(f"{name}/web/desk") for n in names)
     assert not any(n.startswith(f"{name}/services/meter_agent") for n in names)
     assert f"{name}/wheels/example-1.0-py3-none-any.whl" in names
     assert "requirements/app.txt" in args_file.read_text()
