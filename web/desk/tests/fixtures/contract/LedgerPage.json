@@ -1,0 +1,38 @@
+{
+  "entries": [
+    {
+      "entry_id": 12,
+      "line_id": 7,
+      "msisdn": "2347000000150",
+      "amount_kobo": -8372,
+      "kind": "vat",
+      "reference": "PUR-7-1",
+      "created_at": 1794690100
+    },
+    {
+      "entry_id": 11,
+      "line_id": 7,
+      "msisdn": "2347000000150",
+      "amount_kobo": -111628,
+      "kind": "purchase",
+      "reference": "PUR-7-1",
+      "created_at": 1794690100
+    },
+    {
+      "entry_id": 10,
+      "line_id": 7,
+      "msisdn": "2347000000150",
+      "amount_kobo": 150000,
+      "kind": "top_up",
+      "reference": "VCH-0001",
+      "created_at": 1794690000
+    }
+  ],
+  "total": 3,
+  "counts": {
+    "all": 3,
+    "top_up": 1,
+    "purchase": 1,
+    "vat": 1
+  }
+}

@@ -1,9 +1,10 @@
 import { useDeferredValue, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { formatMsisdn } from "../../lib/format";
 import { getLines } from "../lines/api";
 
 // Search for a line by name, phone number, ICCID or IMSI and pick it to see its wallet.
-export function LineFinder({ onPick }: { onPick: (imsi: string) => void }) {
+export function LineFinder({ onPick }: { onPick: (lineId: string) => void }) {
   const [text, setText] = useState("");
   const term = useDeferredValue(text.trim());
   const { data, isFetching } = useQuery({ queryKey: ["wallet-line-search", term], queryFn: () => getLines({ q: term, tab: "all", page: 1, pageSize: 6 }), enabled: term.length >= 2 });
@@ -17,8 +18,8 @@ export function LineFinder({ onPick }: { onPick: (imsi: string) => void }) {
         <div className="card wal-finder__list" role="listbox">
           {data.items.length === 0 && <div className="muted wal-finder__empty">No line matches.</div>}
           {data.items.map((l) => (
-            <button key={l.imsi} type="button" role="option" aria-selected="false" onClick={() => { onPick(l.imsi); setText(""); }}>
-              <b>{l.msisdn}</b><span className="muted">{l.customerName} &nbsp;|&nbsp; {l.planName}</span>
+            <button key={l.lineId} type="button" role="option" aria-selected="false" onClick={() => { onPick(String(l.lineId)); setText(""); }}>
+              <b>{formatMsisdn(l.msisdn)}</b><span className="muted">{l.customerName} &nbsp;|&nbsp; {l.planName}</span>
             </button>
           ))}
         </div>
