@@ -1,0 +1,38 @@
+{
+  "lines": [
+    {
+      "line_id": 7,
+      "customer_id": 1,
+      "customer_name": "Demo Customer One",
+      "iccid": "8923400000000012345",
+      "imsi": "621000000000150",
+      "msisdn": "2347000000150",
+      "plan_id": 1,
+      "plan_name": "Demo Weekly",
+      "state": "active",
+      "expires_at": 1795000000
+    },
+    {
+      "line_id": 8,
+      "customer_id": 2,
+      "customer_name": "Demo Customer Two",
+      "iccid": "8923400000000012346",
+      "imsi": "621000000000151",
+      "msisdn": "2347000000151",
+      "plan_id": 1,
+      "plan_name": "Demo Weekly",
+      "state": "awaiting_activation",
+      "expires_at": null
+    }
+  ],
+  "total": 2,
+  "counts": {
+    "all": 2,
+    "awaiting_activation": 1,
+    "active": 1,
+    "out_of_data": 0,
+    "expired": 0,
+    "suspended": 0,
+    "terminated": 0
+  }
+}

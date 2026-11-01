@@ -1,5 +1,6 @@
 import { ApiError } from "../../lib/api";
 import { formatNaira } from "../../lib/format";
+import { mockAddLine, mockFindLine, mockNextLineId, mockSetLineState } from "../lines/mock";
 import type { CreatedLine, CreateLineRequest, Customer, FreeSim, NewCustomer, Plan, Purchase, Wallet } from "./types";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -35,55 +36,66 @@ export const mockPlans: Plan[] = [
   { planId: "3", name: "Family 20GB", priceKobo: 980_000, validityDays: 30, dataBytes: 20_000_000_000, speedUlMbps: 20, speedDlMbps: 40, onExhaustion: "stop", slowUlMbps: 0, slowDlMbps: 0 },
 ];
 
-// ---- the sale: an in-memory line and wallet, so the whole journey runs without a backend ----
-interface MockLine { line: CreatedLine; balanceKobo: number; bought: boolean }
-const mockLines = new Map<number, MockLine>();
-let nextLineId = 1;
+// ---- the sale: wallets in memory, and the lines themselves in the lines mock, so the whole journey runs without a backend ----
+interface MockWallet { balanceKobo: number; bought: boolean }
+const wallets = new Map<number, MockWallet>();
 
-const need = (lineId: number): MockLine => {
-  const m = mockLines.get(lineId);
-  if (!m) throw new ApiError(404, "not_found", "No such line");
-  return m;
+// Any line has a wallet; a line the mock already had starts with an empty one.
+const walletOf = (lineId: number): MockWallet => {
+  if (!mockFindLine(lineId)) throw new ApiError(404, "not_found", "No such line");
+  if (!wallets.has(lineId)) wallets.set(lineId, { balanceKobo: 0, bought: false });
+  return wallets.get(lineId)!;
 };
 const planOf = (planId: string): Plan => mockPlans.find((p) => p.planId === planId)!;
 
 export async function mockCreateLine(req: CreateLineRequest): Promise<CreatedLine> {
   await wait(500);
   const sim = mockSims.find((s) => s.iccid === req.iccid);
-  const line: CreatedLine = { lineId: nextLineId++, imsi: sim?.imsi ?? "621000000000150", msisdn: req.msisdn, planId: req.planId, state: "awaiting_activation", expiresAt: null };
-  mockLines.set(line.lineId, { line, balanceKobo: 0, bought: false });
-  return line;
+  const customer = mockCustomers.find((c) => c.id === req.customerId);
+  const lineId = mockNextLineId();
+  const imsi = sim?.imsi ?? "621000000000150";
+  mockAddLine({
+    lineId, planId: req.planId, imsi, iccid: req.iccid, msisdn: req.msisdn, customerName: customer?.name ?? "Customer",
+    planName: planOf(req.planId).name, state: "awaiting_activation", planEndsEpoch: null,
+  });
+  wallets.set(lineId, { balanceKobo: 0, bought: false });
+  return { lineId, imsi, msisdn: req.msisdn, planId: req.planId, state: "awaiting_activation", expiresAt: null };
 }
 
 export async function mockGetWallet(lineId: number): Promise<Wallet> {
   await wait(200);
-  const m = need(lineId);
-  return { balanceKobo: m.balanceKobo, ledgerSumKobo: m.balanceKobo };
+  const w = walletOf(lineId);
+  return { balanceKobo: w.balanceKobo, ledgerSumKobo: w.balanceKobo };
 }
 
 // Mock only: stands in for the customer redeeming a prepaid card on the RatelPay page.
 export function mockTopUp(lineId: number, kobo: number): void {
-  need(lineId).balanceKobo += kobo;
+  walletOf(lineId).balanceKobo += kobo;
 }
 
 export async function mockBuyPlan(lineId: number, planId: string): Promise<Purchase> {
   await wait(400);
-  const m = need(lineId);
+  const w = walletOf(lineId);
   const plan = planOf(planId);
-  if (m.bought) return { priceKobo: plan.priceKobo, netKobo: 0, vatKobo: 0, balanceKobo: m.balanceKobo, validTo: null, replayed: true };
-  if (m.balanceKobo < plan.priceKobo) {
-    throw new ApiError(409, "insufficient_funds", `The wallet is short by ${formatNaira(plan.priceKobo - m.balanceKobo)}`);
+  if (w.bought) return { priceKobo: plan.priceKobo, netKobo: 0, vatKobo: 0, balanceKobo: w.balanceKobo, validTo: null, replayed: true };
+  if (w.balanceKobo < plan.priceKobo) {
+    throw new ApiError(409, "insufficient_funds", `The wallet is short by ${formatNaira(plan.priceKobo - w.balanceKobo)}`);
   }
-  m.balanceKobo -= plan.priceKobo;
-  m.bought = true;
+  w.balanceKobo -= plan.priceKobo;
+  w.bought = true;
   const net = Math.round((plan.priceKobo * 1000) / 1075); // 7.5% VAT inside the price
-  return { priceKobo: plan.priceKobo, netKobo: net, vatKobo: plan.priceKobo - net, balanceKobo: m.balanceKobo, validTo: Math.floor(Date.now() / 1000) + plan.validityDays * 86400, replayed: false };
+  return { priceKobo: plan.priceKobo, netKobo: net, vatKobo: plan.priceKobo - net, balanceKobo: w.balanceKobo, validTo: Math.floor(Date.now() / 1000) + plan.validityDays * 86400, replayed: false };
 }
 
 export async function mockActivateLine(lineId: number): Promise<CreatedLine> {
   await wait(700);
-  const m = need(lineId);
-  if (!m.bought) throw new ApiError(409, "conflict", "The line has no paid-for allowance yet");
-  m.line = { ...m.line, state: "active", expiresAt: Math.floor(Date.now() / 1000) + planOf(m.line.planId).validityDays * 86400 };
-  return m.line;
+  const w = walletOf(lineId);
+  const line = mockFindLine(lineId)!;
+  if (!w.bought) throw new ApiError(409, "conflict", "The line has no paid-for allowance yet");
+  const expiresAt = Math.floor(Date.now() / 1000) + planOf(line.planId).validityDays * 86400;
+  mockSetLineState(lineId, "active", expiresAt);
+  return { lineId, imsi: line.imsi, msisdn: line.msisdn, planId: line.planId, state: "active", expiresAt };
 }
+
+// A plan by id, whatever its state: the line page needs the price of the plan a line is waiting on.
+export const mockGetPlan = async (planId: string): Promise<Plan | null> => mockPlans.find((p) => p.planId === planId) ?? null;

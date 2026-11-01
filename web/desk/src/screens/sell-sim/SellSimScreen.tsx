@@ -46,7 +46,7 @@ export default function SellSimScreen() {
   };
   const next = () => (step < 3 ? setStep(step + 1) : create.mutate());
 
-  if (create.isSuccess) return <CollectPayment line={create.data} customer={customer!} plan={plan!} onAnother={reset} />;
+  if (create.isSuccess) return <CollectPayment line={create.data} customerName={customer!.name} plan={plan!} onAnother={reset} />;
 
   return (
     <div className="sell">

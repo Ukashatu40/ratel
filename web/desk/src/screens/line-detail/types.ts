@@ -1,6 +1,8 @@
 import type { LineState } from "../dashboard/types";
 
 export interface LineDetail {
+  lineId: number;
+  planId: string;
   imsi: string;
   iccid: string;
   msisdn: string;
@@ -14,13 +16,14 @@ export interface LineDetail {
   speedUlMbps: number;
   speedDlMbps: number;
   staticIp: string | null;            // null until the line is activated
-  provisioning: "provisioned" | "active" | "barred"; // what RatelLink reports
-  networkCheck: "matches" | "mismatch" | "unknown";   // does the BSS view match the network?
+  provisioning: "provisioned" | "active" | "barred" | "unknown"; // what RatelLink reports; "unknown" until RatelBSS can read it (TODO(contract))
+  networkCheck: "matches" | "mismatch" | "unknown";   // does the BSS view match the network? TODO(contract): no operation gives it yet
   dailyUsage: { date: string; bytes: number }[];       // last 7 days, oldest first, date as YYYY-MM-DD
 }
 
-export interface UsageRecord { periodStart: number; periodEnd: number; bytesUp: number; bytesDown: number; rated: boolean; source: string }
-export interface UsagePage { items: UsageRecord[]; total: number }
+export interface UsageRecord { periodStart: number; periodEnd: number; bytesUp: number; bytesDown: number; rated: boolean }
+// Newest first. nextCursor is opaque: send it back unchanged to get the older records.
+export interface UsagePage { items: UsageRecord[]; nextCursor: string | null }
 
 export interface CallRecord {
   callId: string;

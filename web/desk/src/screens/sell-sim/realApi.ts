@@ -38,3 +38,7 @@ export const buyPlan = async (lineId: number, planId: string, idempotencyKey: st
 // The plan's own speeds are used, so the body is empty.
 export const activateLine = (lineId: number, idempotencyKey: string): Promise<CreatedLine> =>
   apiPost<WireLine>(`/v1/lines/${lineId}/activate`, {}, idempotencyKey).then(lineFromWire);
+
+// A plan by id, whatever its state (the list gives retired plans too).
+export const getPlan = (planId: string): Promise<Plan | null> =>
+  apiGet<{ plans: WirePlan[] }>("/v1/plans").then((r) => r.plans.map(planFromWire).find((p) => p.planId === planId) ?? null);
