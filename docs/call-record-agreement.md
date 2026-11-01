@@ -1,6 +1,6 @@
 # Call record agreement: RatelVoice → RatelMeter
 
-**Status:** DRAFT — awaiting sign-off
+**Status:** DRAFT — awaiting sign-off. Section 11 (added 2026-11-01) answers the questions from the lab results of 2026-10-30 and asks the network lead to decide the open points in it
 **Drafted by:** @ml-lawarn
 **To be signed off by:** @CaptRaven (network lead) and @capitanaserdel (RatelMeter owner since 2026-10-18)
 **Reviewers:** @Ukashatu40, @CaptRaven
@@ -11,6 +11,9 @@ record fields with the network team".
 DECISIONS_PENDING.md, W2-10 (call mode), W2-12 (ingest call).
 
 ## Lab finding, 2026-10-16: no finished-call record exists on RatelVoice yet
+
+> **Superseded on 2026-10-30.** `acc` was switched on in the S-CSCF and now writes call records to MySQL. What it writes,
+> and what it does not, is in section 11. The text below is the finding as it was on 2026-10-16.
 
 Read-only checks on the voice VM by @Ukashatu40 (names and counts only, no rows, no credentials):
 
@@ -169,7 +172,7 @@ Call records are personal data. Who called whom, and when, is sensitive.
 ## 9. Contract change
 
 Resolve the `end_reason` TODO in `contracts/openapi.yaml` in the **same
-commit** as this document. Add the enum from §6 to the `CallRecord` schema,
+commit** as the signed document (not in the commit that only adds section 11). Add the enum from §6 to the `CallRecord` schema,
 and remove the `TODO(contract)` marker. CI's Schemathesis run must still pass.
 
 ## 10. Questions for the network lead (@CaptRaven)
@@ -194,7 +197,96 @@ Please answer inline. These block sign-off.
 8. **Volume.** Roughly how many accounting rows per call, and expected peak
    calls per second at the demo, so the agent's 60-second poll can be sized.
 
-## 11. Sign-off
+## 11. Answers from the lab, 2026-10-30 (for the network lead to confirm)
+
+Source: `acc` switched on in the S-CSCF on 2026-10-30 and seven call cases tried between two of our own phones, read
+as counts, times and codes only (no number or Call-ID left the VM). The procedure and the raw results are in
+[runbooks/voice-call-record-checks.md](runbooks/voice-call-record-checks.md), section 3. The configuration change is
+on the voice VM and is not yet in Git. TODO: bring it into `network/voice/` (without credentials).
+
+### Answers to the questions in section 10
+
+1. **Schema.** `scscf.acc` (answered INVITE, and BYE) and `scscf.missed_calls` (an INVITE that failed), from the
+   container's own `acc-create.sql`, plus two columns we added to both: `from_user` and `to_user` (`VARCHAR(64)`),
+   filled from the From and To user parts. The agent reads `id`, `method`, `callid`, `from_tag`, `sip_code`,
+   `sip_reason`, `time`, `from_user`, `to_user`. TODO(network lead): add the `SHOW CREATE TABLE` output of both
+   tables (column names and types, no rows) to the pull request; it also gives the type of `time`.
+2. **Rows.** There is no start row and no end row. An answered call leaves `acc` rows for the INVITE (code 200) and
+   for the BYE; a call that failed leaves `missed_calls` rows. **Each event is written twice** for a call between two
+   of our own phones (one row per leg), and one hang-up can leave up to four BYE rows. `callid` links them all.
+3. **Key.** The SIP Call-ID, and **both legs of a call share it** (seen). The agent groups by `callid`, so the number
+   of rows per call does not matter. Not tested: a Kamailio restart (see 7). Not decided: a phone's Call-ID can
+   embed the phone's address; whether `call_id` is stored as is or hashed is TODO(network lead, RatelMeter owner),
+   and logs must follow section 8 either way.
+4. **`end_reason`.** The codes seen are in the table below. They do **not** separate busy from declined from
+   ringing out, so the set in section 6 cannot be emitted as written. A proposal follows the table.
+5. **Time.** UTC. The VM is `Etc/UTC` and synchronised, MySQL's system time zone is UTC and `NOW()` equals
+   `UTC_TIMESTAMP()`. The agent still converts explicitly, with a test.
+6. **Unanswered.** There is no end row, only a `missed_calls` row written when the final reply passed the S-CSCF.
+   `answered_at` is null. Its code is in the table.
+7. **Restart.** Not tested. `acc` writes each row when the reply passes, so rows already written survive a restart,
+   but a restart drops registrations and the S-CSCF keeps its dialogs in memory only (`ims_dialog` `db_mode` 0).
+   TODO(lab): restart the S-CSCF during a call, hang up, and see whether a BYE row appears. Also unexplained: one
+   answered call (2026-10-30 13:25 UTC) has no BYE row at all.
+8. **Volume.** A failed call leaves 2 rows; an answered call leaves 2 INVITE rows and 2 to 4 BYE rows. At a handful of
+   calls a second that is hundreds of rows a minute at most, so a 60-second poll is no concern.
+
+### What each case looks like
+
+| Case | Rows seen |
+| ---- | --------- |
+| Answered, then a hang-up | `acc` INVITE 200, then BYE 200 |
+| Cancelled by the caller | `missed_calls` INVITE 487 |
+| Busy | `missed_calls` INVITE 486 Busy Here |
+| Declined by the callee | `missed_calls` INVITE **486 Busy Here** (not 603) |
+| Rang out, nobody answered | `missed_calls` INVITE **486 Busy Here**, about 78 s after the call was made |
+| Callee not reachable (airplane mode) | `missed_calls` INVITE **408 Request Timeout** and **500** ("Server error on LIR select next S-CSCF") in the same second |
+
+### Proposal for `end_reason` (the values are PRD decision 8, still open; the network lead and the project lead decide)
+
+| `end_reason` | When |
+| ------------ | ---- |
+| `completed` | the callid has an `acc` INVITE 200 |
+| `cancelled` | no 200 and a `missed_calls` 487 |
+| `not_answered` | no 200 and a 486: busy, declined and ringing out look the same |
+| `unavailable` | no 200 and a 408, 500, 404 or 480 |
+| `failed` | any other `missed_calls` code |
+
+This replaces `busy`, `no_answer` and `error` from section 6: the first two could never be told apart, and no row exists for
+`error`. Take the rule in this order, because the two rows of one failed call can carry different codes. Caution: a 500
+from the HSS lookup is also what a fault on our own HSS would produce, so `unavailable` can hide a network fault.
+If the product needs busy and declined separated, the S-CSCF would have to say so (a 603 for a decline); that is not
+in place.
+
+### Building one `CallRecord` from the rows
+
+- `call_id`: the Call-ID. `from_msisdn`, `to_msisdn`: see the next point.
+- **Number format.** `from_user` came as `234` and ten digits; `to_user` came as dialled, `0` and ten digits. The
+  stored form of a line's number is digits only, international, no plus sign (`contracts/openapi.yaml`, voucher
+  redeem). The agent turns `0XXXXXXXXXX` into `234XXXXXXXXXX`. TODO(network lead): other forms a phone may send
+  (`+234…`, `234…`), and what to do with a number that matches no rule (post it as it is, never drop the call).
+  This also means section 2's "E.164" should read "digits only, international, no plus sign", to match the lines.
+- `answered_at`: the `time` of the INVITE 200, as epoch seconds in UTC; null when there is none.
+- `ended_at`: the `time` of the **lowest-`id` BYE** of the callid (the first hang-up). For a call that never connected,
+  the `time` of its `missed_calls` row.
+- **`started_at` is the open problem.** `acc` records only the time the *final reply* passed the S-CSCF, never when the
+  call began, and the contract requires `started_at`. Options for the network lead:
+  - **(a, recommended)** record the arrival time of the INVITE in the S-CSCF and write it as one more `db_extra`
+    column. We believe this works (a variable set when the INVITE arrives is still there when the reply is accounted)
+    but it is **not verified**: it needs one test call of each kind in the lab.
+  - **(b)** accept `started_at` = `answered_at` for answered calls and the failure time for the rest. Ring time is then
+    lost, and a call that rang for a minute looks as if it started when it was answered.
+- A call with an INVITE 200 and **no BYE** is not posted until a BYE appears. TODO(network lead, RatelMeter owner):
+  after how long such a call is reported to operations instead (the contract has no open-ended call).
+
+### To test in the lab before signing
+
+1. The `started_at` change under (a), for an answered, a cancelled, a declined and an unreachable call.
+2. Restart the S-CSCF during a call and hang up (question 7).
+3. The caller-hangs-up case again, to see whether its BYE rows are mixed as the callee's were.
+4. Whether a call to a phone that is registered but has no data connection behaves like the unreachable case.
+
+## 12. Sign-off
 
 - [ ] @CaptRaven (network lead) — Kamailio side confirmed; questions answered.
 - [ ] @capitanaserdel (RatelMeter owner) — agent side confirmed; contract updated.
