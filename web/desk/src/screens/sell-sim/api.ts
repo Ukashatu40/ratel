@@ -23,3 +23,4 @@ export const buyPlan = (lineId: number, planId: string, idempotencyKey: string):
   isMock() ? mock.mockBuyPlan(lineId, planId) : real.buyPlan(lineId, planId, idempotencyKey);
 export const activateLine = (lineId: number, idempotencyKey: string): Promise<CreatedLine> =>
   isMock() ? mock.mockActivateLine(lineId) : real.activateLine(lineId, idempotencyKey);
+export const getPlan = (planId: string): Promise<Plan | null> => (isMock() ? mock.mockGetPlan(planId) : real.getPlan(planId));

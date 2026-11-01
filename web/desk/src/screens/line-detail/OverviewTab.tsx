@@ -3,7 +3,7 @@ import { BarChart, RingChart } from "../../components/charts/charts";
 import { formatGB1, formatWAT, weekdayShort } from "../../lib/format";
 import type { LineDetail } from "./types";
 
-const PROVISIONING: Record<LineDetail["provisioning"], [Tone, string]> = { active: ["green", "Active"], provisioned: ["amber", "Not in service"], barred: ["red", "Barred"] };
+const PROVISIONING: Record<LineDetail["provisioning"], [Tone, string]> = { active: ["green", "Active"], provisioned: ["amber", "Not in service"], barred: ["red", "Barred"], unknown: ["grey", "Not available yet"] };
 const NETWORK: Record<LineDetail["networkCheck"], [Tone, string]> = { matches: ["green", "Matches RatelLink"], mismatch: ["red", "Does not match"], unknown: ["grey", "Not checked"] };
 
 export function OverviewTab({ line }: { line: LineDetail }) {

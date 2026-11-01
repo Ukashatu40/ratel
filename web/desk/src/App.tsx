@@ -26,7 +26,7 @@ const router = createBrowserRouter([
           { index: true, element: <DashboardScreen /> },
           { path: "sales/activate", element: <SellSimScreen /> },
           { path: "lines", element: <LinesScreen /> },
-          { path: "lines/:imsi", element: <LineDetailScreen /> },
+          { path: "lines/:lineId", element: <LineDetailScreen /> },
           { path: "customers", element: <CustomersScreen /> },
           { path: "plans", element: <PlansScreen /> },
           { path: "inventory", element: <StockScreen /> },

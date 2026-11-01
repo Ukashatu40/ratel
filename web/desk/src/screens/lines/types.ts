@@ -1,6 +1,6 @@
 import type { LineState } from "../dashboard/types";
 
-export type LineTab = "all" | "active" | "out_of_data" | "suspended" | "expired";
+export type LineTab = "all" | LineState;
 
 // PRD decision 9 (2026-10-23): every care action carries a reason from a short fixed list plus free text.
 export type CareReason = "fraud" | "non_payment" | "customer_request" | "lost_sim" | "other";
@@ -13,11 +13,15 @@ export const CARE_REASON_LABEL: Record<CareReason, string> = {
   other: "Other",
 };
 
-// The wire shape accepted by POST /v1/lines/{imsi}/suspend (SuspendLineRequest in the contract).
-// Both fields are required so a request cannot slip past additionalProperties: false.
-export interface SuspendPayload { reason: CareReason; reason_text: string }
+// What a care action sends: suspend, reinstate and terminate share it (SuspendLineRequest, ReinstateLineRequest and
+// TerminateLineRequest in the contract). The free text is optional and at most 200 characters.
+export const REASON_TEXT_MAX = 200;
+export interface CarePayload { reason: CareReason; reasonText: string }
+export type CareKind = "suspend" | "reinstate" | "terminate";
 
 export interface LineRow {
+  lineId: number; // the API's id; the line page is reached by it
+  planId: string;
   imsi: string;
   iccid: string;
   msisdn: string;

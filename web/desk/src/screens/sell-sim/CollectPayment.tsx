@@ -5,17 +5,17 @@ import { newIdempotencyKey } from "../../lib/api";
 import { formatMsisdn, formatNaira, formatWAT } from "../../lib/format";
 import { activateLine, buyPlan, getWallet, isMock } from "./api";
 import { mockTopUp } from "./mock";
-import type { CreatedLine, Customer, Plan, Purchase } from "./types";
+import type { CreatedLine, Plan, Purchase } from "./types";
 
 // Where the customer tops up. RatelPay is served by the same proxy as the API, at /pay; set VITE_PAY_PAGE_URL if it is not.
 const PAY_URL: string = import.meta.env.VITE_PAY_PAGE_URL ?? `${window.location.origin}/pay`;
 
-interface Props { line: CreatedLine; customer: Customer; plan: Plan; onAnother: () => void }
+interface Props { line: CreatedLine; customerName: string; plan: Plan; onAnother?: () => void }
 
 // After the line exists: the customer tops up its wallet on the RatelPay page with a prepaid card, staff buy the plan
 // from that wallet, then activate. Each step is one call with its own Idempotency-Key, so a retry cannot repeat it.
 // The line, its wallet and its purchase live on the server: leaving this page loses nothing.
-export function CollectPayment({ line, customer, plan, onAnother }: Props) {
+export function CollectPayment({ line, customerName, plan, onAnother }: Props) {
   const queryClient = useQueryClient();
   const [purchase, setPurchase] = useState<Purchase | null>(null);
   const [buyKey] = useState(newIdempotencyKey);
@@ -31,6 +31,7 @@ export function CollectPayment({ line, customer, plan, onAnother }: Props) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       void queryClient.invalidateQueries({ queryKey: ["lines"] });
+      void queryClient.invalidateQueries({ queryKey: ["line", String(line.lineId)] });
     },
   });
 
@@ -41,15 +42,15 @@ export function CollectPayment({ line, customer, plan, onAnother }: Props) {
         <h1>Line activated</h1>
         <div className="card sell-done">
           <h3>{formatMsisdn(line.msisdn)} is ready</h3>
-          <div className="sell-kv"><span>Customer</span><span>{customer.name}</span></div>
+          <div className="sell-kv"><span>Customer</span><span>{customerName}</span></div>
           <div className="sell-kv"><span>Plan</span><span>{plan.name}</span></div>
           {ends !== null && <div className="sell-kv"><span>Plan ends</span><span>{formatWAT(ends)}</span></div>}
           <div className="sell-kv"><span>Paid from the wallet</span><span>{formatNaira(purchase?.priceKobo ?? plan.priceKobo)}</span></div>
           {purchase && purchase.vatKobo > 0 && <div className="sell-kv"><span>of which VAT</span><span>{formatNaira(purchase.vatKobo)}</span></div>}
           <p className="muted" style={{ margin: "14px 0" }}>The customer goes online once the phone attaches to the network. This sale appears in the line's History tab.</p>
           <div className="sell-actions">
-            <Link className="btn btn--outline" to={`/lines/${line.imsi}`}>View line</Link>
-            <button type="button" className="btn" onClick={onAnother}>Sell another SIM</button>
+            <Link className="btn btn--outline" to={`/lines/${line.lineId}`}>View line</Link>
+            {onAnother && <button type="button" className="btn" onClick={onAnother}>Sell another SIM</button>}
           </div>
         </div>
       </div>
@@ -64,8 +65,8 @@ export function CollectPayment({ line, customer, plan, onAnother }: Props) {
     <div className="sell">
       <h1>Collect payment and activate</h1>
       <div className="card" style={{ marginBottom: 16 }}>
-        <h3>Line created for {customer.name}</h3>
-        <p className="muted">{formatMsisdn(line.msisdn)} is waiting for activation. Nothing is charged until you buy the plan.</p>
+        <h3>Line for {customerName}</h3>
+        <p className="muted">{formatMsisdn(line.msisdn)} is waiting for activation. Nothing is charged until you buy the plan. The line, its wallet and its purchase are kept: you can leave this page and come back from the line.</p>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>

@@ -1,0 +1,26 @@
+{
+  "records": [
+    {
+      "period_start": 1794699600,
+      "period_end": 1794699900,
+      "bytes_up": 1000,
+      "bytes_down": 9000,
+      "rated": false
+    },
+    {
+      "period_start": 1794699300,
+      "period_end": 1794699600,
+      "bytes_up": 2000,
+      "bytes_down": 18000,
+      "rated": true
+    },
+    {
+      "period_start": 1794300000,
+      "period_end": 1794300300,
+      "bytes_up": 5,
+      "bytes_down": 5,
+      "rated": true
+    }
+  ],
+  "next_cursor": null
+}

@@ -276,3 +276,19 @@ Each step is one call with its own `Idempotency-Key`, so a retry never repeats i
 purchase live on the server: if the page is closed after step 1, the sale can be finished from the line.
 TODO: the line page does not read the real API yet, so that is not possible until the Lines screens are mapped too.
 In mock mode a "Simulate a card top-up" button stands in for step 2.
+
+## Lines, the line page and care actions against the real API
+
+The lines list, the line page and **Suspend / Reinstate / Terminate** call the API too (`src/screens/lines` and
+`src/screens/line-detail`, each with a `contract.ts` and a `realApi.ts`). The line page is reached by the line's id
+(`/lines/:lineId`), as the API names it.
+
+- The line page is put together from four calls: the line, its customer (only the name is kept), the plans, and the usage
+  records since the plan started. The API has no "allowance left", so **data used is an estimate from the usage records**.
+- RatelLink's view of the line (static address, provisioning, network check) is not readable from RatelBSS, so the page
+  shows "Not available yet" instead of inventing it. TODO(contract).
+- **Calls** show a notice until `bss_get_line_calls` exists (it waits for the call record agreement, #26).
+- A line awaiting activation shows the same **Collect payment and activate** panel as the sale, so a sale can be finished
+  from the line. Only an admin sees **Terminate**, and it is final.
+- The wallet, dashboard, customers, stock, reports and staff screens still link by IMSI and call paths the contract does not
+  have; they run on mocks until they are mapped.

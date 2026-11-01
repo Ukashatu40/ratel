@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "../../components/ui";
 import { formatDuration, formatWAT } from "../../lib/format";
-import { getCalls } from "./api";
+import { callsAvailable, getCalls } from "./api";
 
 // Calls are free between Ratelplus lines for now, so there is no charge column.
-export function CallsTab({ imsi }: { imsi: string }) {
-  const { data, isPending, isError, refetch } = useQuery({ queryKey: ["line", imsi, "calls"], queryFn: () => getCalls(imsi) });
+export function CallsTab({ lineKey }: { lineKey: string }) {
+  const available = callsAvailable();
+  const { data, isPending, isError, refetch } = useQuery({ queryKey: ["line", lineKey, "calls"], queryFn: () => getCalls(lineKey), enabled: available });
+  // TODO(contract): the call history waits for the call record agreement (#26); the API has no operation for it yet.
+  if (!available) return <section className="card"><h3>Calls: VoLTE history</h3><p className="muted">Call history is not available yet. It starts once the call records from RatelVoice are agreed and stored.</p></section>;
   return (
     <section className="card ld-table">
       <h3>Calls: VoLTE history</h3>

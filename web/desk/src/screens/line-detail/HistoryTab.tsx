@@ -3,8 +3,8 @@ import { formatWAT } from "../../lib/format";
 import { getHistory } from "./api";
 
 // The audit trail (ACC-3): append-only, newest first. Every change shows who made it and why.
-export function HistoryTab({ imsi }: { imsi: string }) {
-  const { data, isPending, isError, refetch } = useQuery({ queryKey: ["line", imsi, "history"], queryFn: () => getHistory(imsi) });
+export function HistoryTab({ lineKey }: { lineKey: string }) {
+  const { data, isPending, isError, refetch } = useQuery({ queryKey: ["line", lineKey, "history"], queryFn: () => getHistory(lineKey) });
   return (
     <section className="card">
       <h3>History</h3>

@@ -2,17 +2,17 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { StateBadge } from "../../components/ui";
-import { formatCount, formatWAT, initials } from "../../lib/format";
+import { formatCount, formatMsisdn, formatWAT, initials } from "../../lib/format";
 import { getLines } from "./api";
 import { RowMenu } from "./RowMenu";
-import { SuspendDialog } from "./SuspendDialog";
-import type { LineRow, LineTab } from "./types";
+import { CareDialog } from "./CareDialog";
+import type { CareKind, LineRow, LineTab } from "./types";
 import "./LinesScreen.css";
 
 const PAGE_SIZE = 10;
 const TABS: { key: LineTab; label: string }[] = [
-  { key: "all", label: "All" }, { key: "active", label: "Active" }, { key: "out_of_data", label: "Out of Data" },
-  { key: "suspended", label: "Suspended" }, { key: "expired", label: "Expired" },
+  { key: "all", label: "All" }, { key: "awaiting_activation", label: "Awaiting activation" }, { key: "active", label: "Active" }, { key: "out_of_data", label: "Out of Data" },
+  { key: "suspended", label: "Suspended" }, { key: "expired", label: "Expired" }, { key: "terminated", label: "Terminated" },
 ];
 const isTab = (v: string | null): v is LineTab => TABS.some((t) => t.key === v);
 
@@ -30,7 +30,7 @@ export default function LinesScreen() {
   const q = params.get("q") ?? "";
   const tab: LineTab = isTab(params.get("state")) ? (params.get("state") as LineTab) : "all";
   const page = Math.max(1, Number(params.get("page")) || 1);
-  const [suspending, setSuspending] = useState<LineRow | null>(null);
+  const [acting, setActing] = useState<{ kind: CareKind; line: LineRow } | null>(null);
 
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["lines", { q, tab, page }],
@@ -86,15 +86,15 @@ export default function LinesScreen() {
             <tbody>
               {isPending && <tr><td colSpan={8} className="muted">Loading...</td></tr>}
               {data?.items.map((l) => (
-                <tr key={l.imsi}>
+                <tr key={l.lineId}>
                   <td><div className="lines__name"><span className="avatar">{initials(l.customerName)}</span>{l.customerName}</div></td>
-                  <td><Link className="lines__link" to={`/lines/${l.imsi}`}>{l.msisdn}</Link></td>
+                  <td><Link className="lines__link" to={`/lines/${l.lineId}`}>{formatMsisdn(l.msisdn)}</Link></td>
                   <td>{l.imsi}</td>
                   <td>{l.iccid}</td>
                   <td>{l.planName}</td>
                   <td><StateBadge state={l.state} /></td>
                   <td>{l.planEndsEpoch ? formatWAT(l.planEndsEpoch) : "Not started"}</td>
-                  <td><RowMenu line={l} onSuspend={setSuspending} /></td>
+                  <td><RowMenu line={l} onAct={(kind, line) => setActing({ kind, line })} /></td>
                 </tr>
               ))}
               {data && data.items.length === 0 && <tr><td colSpan={8} className="muted">No lines match your search.</td></tr>}
@@ -113,7 +113,7 @@ export default function LinesScreen() {
         </div>
       </section>
 
-      {suspending && <SuspendDialog key={suspending.imsi} line={suspending} onClose={() => setSuspending(null)} />}
+      {acting && <CareDialog key={`${acting.kind}-${acting.line.lineId}`} kind={acting.kind} line={acting.line} onClose={() => setActing(null)} />}
     </div>
   );
 }

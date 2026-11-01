@@ -1,16 +1,16 @@
-import { apiGet } from "../../lib/api";
-import { mockGetCalls, mockGetHistory, mockGetLine, mockGetUsage } from "./mock";
+import * as mock from "./mock";
+import * as real from "./realApi";
 import type { CallRecord, HistoryEntry, LineDetail, UsagePage } from "./types";
 
-// ASSUMED endpoints (confirm with the RatelBSS developers; only this file should change):
-//   GET /v1/lines/{imsi}                      -> LineDetail
-//   GET /v1/lines/{imsi}/usage?page=&pageSize= -> { items, total }   (5-minute records from RatelMeter, plus "rated")
-//   GET /v1/lines/{imsi}/calls                -> CallRecord[]         (qci1Bearer is NOT in the Contract 2 call record; it needs RatelVoice data)
-//   GET /v1/lines/{imsi}/history              -> HistoryEntry[]       (the append-only audit trail, ACC-3)
-const isMock = () => import.meta.env.MODE === "test" || import.meta.env.VITE_USE_MOCK === "true";
+// With VITE_USE_MOCK=true these return fixture data. Otherwise they call the API (realApi.ts, contract.ts).
+// `key` is the line's id from the address. (The mock also accepts an IMSI, for the screens that still link by IMSI.)
+export const isMock = () => import.meta.env.MODE === "test" || import.meta.env.VITE_USE_MOCK === "true";
 
-export const getLine = (imsi: string): Promise<LineDetail> => (isMock() ? mockGetLine(imsi) : apiGet<LineDetail>(`/v1/lines/${imsi}`));
-export const getUsage = (imsi: string, page: number, pageSize: number): Promise<UsagePage> =>
-  isMock() ? mockGetUsage(imsi, page, pageSize) : apiGet<UsagePage>(`/v1/lines/${imsi}/usage?page=${page}&pageSize=${pageSize}`);
-export const getCalls = (imsi: string): Promise<CallRecord[]> => (isMock() ? mockGetCalls(imsi) : apiGet<CallRecord[]>(`/v1/lines/${imsi}/calls`));
-export const getHistory = (imsi: string): Promise<HistoryEntry[]> => (isMock() ? mockGetHistory(imsi) : apiGet<HistoryEntry[]>(`/v1/lines/${imsi}/history`));
+export const getLine = (key: string): Promise<LineDetail> => (isMock() ? mock.mockGetLine(key) : real.getLine(key));
+export const getUsage = (key: string, cursor: string | null): Promise<UsagePage> => (isMock() ? mock.mockGetUsage(key, cursor) : real.getUsage(key, cursor));
+export const getHistory = (key: string): Promise<HistoryEntry[]> => (isMock() ? mock.mockGetHistory(key) : real.getHistory(key));
+
+// Calls: the contract's `bss_get_line_calls` is not built (it waits for the call record agreement, #26), so the
+// real mode has nothing to read yet. TODO(contract): remove `callsAvailable` when meter_get_calls exists.
+export const callsAvailable = (): boolean => isMock();
+export const getCalls = (key: string): Promise<CallRecord[]> => mock.mockGetCalls(key);

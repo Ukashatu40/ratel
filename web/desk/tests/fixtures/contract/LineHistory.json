@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "at": 1794690000,
+      "from_state": "active",
+      "to_state": "suspended",
+      "actor": "staff:2",
+      "reason": "customer_request: asked at the counter"
+    },
+    {
+      "at": 1794600000,
+      "from_state": "awaiting_activation",
+      "to_state": "active",
+      "actor": "staff:1",
+      "reason": "first plan paid"
+    }
+  ],
+  "total": 2
+}

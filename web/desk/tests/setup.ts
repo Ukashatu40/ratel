@@ -15,3 +15,6 @@ afterAll(() => {
 afterEach(() => {
   cleanup();
 });
+// jsdom has no modal <dialog>: open and close it by the attribute, which is what the page relies on.
+HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) { this.setAttribute("open", ""); };
+HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); };
