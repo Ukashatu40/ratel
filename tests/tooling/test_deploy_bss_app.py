@@ -243,6 +243,7 @@ def test_the_public_page_serves_one_file_read_only_with_a_policy_that_loads_noth
     body = block.group(1)
     assert "alias /opt/ratel-app/current/web/pay/index.html;" in body  # a file, never a folder
     assert "limit_except GET HEAD { deny all; }" in body
+    assert "default_type text/html;" in body  # without it the browser downloads /pay as a file
     assert "proxy_pass" not in body and "include /etc/nginx/ratel-pay-key.conf" not in body
     policy = re.search(r'Content-Security-Policy "([^"]+)"', body)
     assert policy is not None

@@ -375,7 +375,9 @@ def test_one_payment_failing_to_settle_does_not_stop_the_run(pay: Pay, engine: E
     pay.start(key="b", amount=20_000)
     with Session(engine) as session, session.begin():
         for row in session.scalars(select(Payment)):
-            row.created_at = row.created_at - timedelta(minutes=5)
+            # Five minutes before the test's own clock (T0), not before the real one: the row's
+            # default created_at is the real now, and T0 is a fixed time that the real clock passes.
+            row.created_at = (T0 - timedelta(minutes=5)).replace(tzinfo=None)
     pay.gateway.fail_verify = True
     assert (
         settle_pending(pay.scope, pay.gateway, T0) == 0
