@@ -55,6 +55,7 @@ server {
     location = /pay {
         limit_except GET HEAD { deny all; }
         alias /opt/ratel-app/current/web/pay/index.html;
+        default_type text/html;  # /pay has no extension, so nginx would not know it is a page and the browser would download it
         add_header Cache-Control "no-cache" always;
         add_header Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
         add_header X-Content-Type-Options "nosniff" always;
