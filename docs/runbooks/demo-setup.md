@@ -35,6 +35,13 @@ bss() {
 
 After changing the file: `sudo systemctl restart ratel-app.service` (the timers pick the file up on their next run).
 
+## 1b. SIMs and numbers in stock
+
+RatelDesk can only sell a SIM that RatelBSS has in stock. Load the lab's SIMs and numbers with
+`bss app.bss_lines.stock_cli add-sims --file ...` and `add-numbers --file ...` (the files and the steps are in
+[bss-app-release-and-first-sale.md](bss-app-release-and-first-sale.md), section 5). The SIMs must also be imported in
+RatelLink, which holds their keys.
+
 ## 2. A plan with a small allowance, and a bigger one
 
 ```bash
