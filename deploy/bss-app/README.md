@@ -29,6 +29,7 @@ Owner: Software team (project lead). TODO: confirm host details and how deployme
 | `ratel-ledger-check.service`, `.timer` | The nightly check that every wallet equals its ledger |
 | `postgres-roles.sql` | The two database roles: an owner for migrations, and a runtime role that cannot change the schema |
 | `nginx/ratel-app.conf.example` | A TLS reverse proxy template. RatelDesk (static files, office and VPN only) and the public paths: the RatelPay page (`/pay`, one static file from the release), the three calls the page makes, and Paystack's webhook |
+| `nginx/add-pay-page-and-desk.py` | Brings a live nginx config made from an older template up to date: adds the RatelPay page and RatelDesk blocks and changes nothing else |
 | `nginx/ratel-pay-key.conf.example` | The one line that adds the redemption key (`PAY_API_KEY`) to that public path. Real file: root-owned, never committed |
 
 ## Layout on bss-app
