@@ -21,22 +21,17 @@ Restart=always
 RestartSec=5
 UMask=0077
 
-# Hardening. Not the data agent's full set: this one runs `sudo` for the single export command, and sudo
-# needs setuid, so NoNewPrivileges stays off and capabilities are not stripped. The rest still applies.
+# Hardening, less than the data agent's. This one runs `sudo` for the single export command, and on the voice VM's
+# systemd (Ubuntu 22.04) every option that drops capabilities or installs a seccomp filter (PrivateDevices,
+# ProtectKernel*, ProtectClock, ProtectHostname, RestrictNamespaces, RestrictRealtime, LockPersonality) makes `sudo`
+# refuse with "no new privileges", even with NoNewPrivileges=no. Tested one option at a time on 2026-11-03: the five kept
+# below work; the nine left out do not. What still protects the host: the agent can run exactly one command as root
+# (deploy/voice/sudoers-ratel-meter.example), and that command takes three whole numbers and nothing else.
 NoNewPrivileges=no
 PrivateTmp=yes
-PrivateDevices=yes
 ProtectSystem=full
 ProtectHome=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectKernelLogs=yes
 ProtectControlGroups=yes
-ProtectClock=yes
-ProtectHostname=yes
-RestrictNamespaces=yes
-RestrictRealtime=yes
-LockPersonality=yes
 ReadWritePaths=/var/spool/ratel-meter
 
 [Install]
