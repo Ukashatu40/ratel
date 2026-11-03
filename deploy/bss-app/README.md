@@ -27,6 +27,7 @@ Owner: Software team (project lead). TODO: confirm host details and how deployme
 | `ratel-app.env.example` | The app's settings, with placeholders |
 | `ratel-rating.service`, `.timer` | The rating job every five minutes (usage, out of data, restore, and renewal if turned on) |
 | `ratel-ledger-check.service`, `.timer` | The nightly check that every wallet equals its ledger |
+| `ratel-pgbackup.sh`, `ratel-pgbackup.service`, `.timer` | The nightly dump of the PostgreSQL database, kept on the VM (see "Backups") |
 | `postgres-roles.sql` | The two database roles: an owner for migrations, and a runtime role that cannot change the schema |
 | `nginx/ratel-app.conf.example` | A TLS reverse proxy template. RatelDesk (static files, office and VPN only) and the public paths: the RatelPay page (`/pay`, one static file from the release), the three calls the page makes, and Paystack's webhook |
 | `nginx/add-pay-page-and-desk.py` | Brings a live nginx config made from an older template up to date: adds the RatelPay page and RatelDesk blocks and changes nothing else |
@@ -166,6 +167,39 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
     Errors like `<name>: No such file or directory` or `syntax error near unexpected token` from a line of the env file
     mean a `<placeholder>` is still in it (bash reads this file here; `<` is a redirect). Replace the value or comment
     the line out; the account is still made, but the lines after the bad one are not read.
+
+## Backups
+
+A nightly dump of the database, run by `postgres` over the local socket. It is written under a temporary name, read back
+(`pg_restore --list`) and only then kept; the newest 14 are kept and older ones deleted **after** a good new one exists. A
+failed dump leaves no file behind and deletes nothing. It catches up after a power cut (`Persistent=true`).
+
+```bash
+# files copied to /tmp with the others (scp deploy/bss-app/ratel-pgbackup.* <bss-app>:/tmp/)
+sudo install -m 0755 -o root -g root /tmp/ratel-pgbackup.sh /usr/local/sbin/ratel-pgbackup
+sudo install -d -m 0700 -o postgres -g postgres /var/backups/ratel-bss
+sudo cp /tmp/ratel-pgbackup.service /tmp/ratel-pgbackup.timer /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo systemd-analyze verify /etc/systemd/system/ratel-pgbackup.{service,timer}     # must print nothing about these files
+sudo systemctl start ratel-pgbackup.service && sudo journalctl -u ratel-pgbackup.service -n 5 --no-pager   # "wrote ratel_bss-... kept"
+sudo systemctl enable --now ratel-pgbackup.timer && systemctl list-timers ratel-pgbackup.timer
+```
+
+**These dumps are on the same VM.** They protect against a mistake or a damaged table, not against losing the VM or its
+disk. A copy that leaves the host, encrypted (the dump holds customers' personal data), is not decided yet: it needs a
+destination from the network team. TODO(network lead).
+
+**A backup is proven only by a restore.** Rehearse it into a scratch database, which prints table names and counts only:
+
+```bash
+DB=ratel_bss; FILE=$(ls -1t /var/backups/ratel-bss/$DB-*.dump | head -1)
+sudo -u postgres createdb rehearsal && sudo -u postgres pg_restore --no-owner --no-privileges -d rehearsal "$FILE"
+Q="select table_name, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text from information_schema.tables where table_schema='public' and table_type='BASE TABLE' order by 1"
+diff <(sudo -u postgres psql -Atd $DB -c "$Q") <(sudo -u postgres psql -Atd rehearsal -c "$Q") && echo restore-matches
+sudo -u postgres dropdb rehearsal
+```
+(The counts match exactly only if nothing was written since the dump; a small difference on a live system is expected.)
+To restore for real after damage: stop `ratel-app.service` and the two timers, restore into a fresh database as above,
+check it, then switch `DATABASE_URL` or rename the databases, and start the services. Do not restore over the live database.
 
 ## Upgrade and rollback
 
