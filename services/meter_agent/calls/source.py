@@ -7,11 +7,16 @@ the agent reads can change what it asks for.
 
 from __future__ import annotations
 
+import logging
 import shlex
 import subprocess
 from typing import Protocol
 
+from common.logging import log_event
+
 from .rows import CallRow
+
+log = logging.getLogger("ratel.meter.calls")
 
 
 class CallSourceError(Exception):
@@ -78,8 +83,13 @@ class CommandCallSource:
                 args, capture_output=True, text=True, timeout=self._timeout, check=False
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
+            log_event(log, logging.WARNING, "meter.calls.export_failed", reason=type(exc).__name__)
             raise CallSourceError(type(exc).__name__) from None
         if result.returncode != 0:
-            # The command's own message could carry a database error; the status is enough.
+            # The command's own message could carry a database error; the status is enough, and
+            # it goes in the journal so a failure under the service's sandbox can be told apart.
+            log_event(
+                log, logging.WARNING, "meter.calls.export_failed", exit_status=result.returncode
+            )
             raise CallSourceError(f"exit {result.returncode}")
         return parse_rows(result.stdout)

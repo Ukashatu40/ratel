@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import stat
 from pathlib import Path
 
@@ -66,6 +67,19 @@ def test_a_command_that_fails_raises_without_its_own_message(tmp_path: Path) -> 
         source.fetch(0, 0, 10)
     assert "2348000000001" not in str(caught.value) and "password" not in str(caught.value)
     assert str(caught.value) == "exit 3"
+
+
+def test_a_failure_is_logged_with_its_status_and_nothing_the_command_said(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    source = command(tmp_path, 'echo "ERROR 1045 password for root 2348000000001" >&2\nexit 3')
+    with pytest.raises(CallSourceError):
+        source.fetch(0, 0, 10)
+    ours = [r for r in caplog.records if r.name.startswith("ratel")]
+    assert [r.getMessage() for r in ours] == ["meter.calls.export_failed"]
+    text = str(ours[0].__dict__)
+    assert "3" in text and "password" not in text and "2348000000001" not in text
 
 
 def test_a_command_that_is_missing_or_slow_raises(tmp_path: Path) -> None:
