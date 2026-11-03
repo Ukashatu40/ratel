@@ -62,6 +62,7 @@ Thumbs.db
 # See docs/source/README.md.
 docs/source/*.pdf
 docs/source/*.docx
+docs/source/*.csv
 # Working notes for the network lead: not project documentation, never committed.
 docs/source/needs-from-captraven.md
 
