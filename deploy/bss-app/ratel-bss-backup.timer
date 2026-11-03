@@ -1,0 +1,16 @@
+# Runs ratel-bss-backup.service once a day. Install as /etc/systemd/system/ratel-bss-backup.timer, then:
+#   sudo systemctl enable --now ratel-bss-backup.timer
+# Check it: systemctl list-timers ratel-bss-backup.timer
+[Unit]
+Description=RatelBSS: daily encrypted dump of the PostgreSQL database
+
+[Timer]
+# Daily, in the host's time (UTC). Persistent: a run missed while the host was off happens at boot, which matters
+# because the servers lose power every night.
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15min
+Unit=ratel-bss-backup.service
+
+[Install]
+WantedBy=timers.target

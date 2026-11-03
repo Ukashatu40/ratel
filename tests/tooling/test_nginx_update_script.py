@@ -118,3 +118,26 @@ def test_the_calls_path_lets_in_the_voice_vm_and_the_office_and_nobody_else() ->
     body = block.group(0)
     assert re.findall(r"allow ([^;]+);", body) == ["192.0.2.11", "127.0.0.1"]
     assert "deny  all;" in body and "ratel-pay-key" not in body
+
+
+def test_a_usage_block_without_the_voice_vm_needs_it_given_and_then_uses_it() -> None:
+    two = re.sub(
+        r"( +allow 192\.0\.2\.11;\n)", "", _filled(_older(TEMPLATE)), count=1
+    )  # core-up and the office only
+    with pytest.raises(ValueError, match=r"--voice"):
+        tool.patch(two, TEMPLATE)
+    new = tool.patch(two, TEMPLATE, voice="192.0.2.77")
+    block = re.search(r"location = /v1/calls \{.*?\n    \}", new, re.S)
+    assert block is not None and re.findall(r"allow ([^;]+);", block.group(0)) == [
+        "192.0.2.77",
+        "127.0.0.1",
+    ]
+    usage = re.search(r"location /v1/usage \{.*?\n    \}", new, re.S)
+    assert usage is not None and "192.0.2.77" not in usage.group(0)  # /v1/usage is not widened
+
+
+def test_the_command_refuses_a_bad_voice_address(tmp_path: Path) -> None:
+    live, template = tmp_path / "live.conf", tmp_path / "template"
+    live.write_text(_filled(_older(TEMPLATE)))
+    template.write_text(TEMPLATE)
+    assert tool.main([str(template), str(live), "--voice", "1.2.3.4; rm"]) == 1
