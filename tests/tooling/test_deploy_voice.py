@@ -103,10 +103,15 @@ def test_the_unit_runs_call_mode_as_the_service_user_and_says_why_it_is_less_har
         and "EnvironmentFile=/etc/ratel-meter/ratel-meter-calls.env" in unit
     )
     assert "meter_agent.main --mode call\n" in unit
-    assert (
-        "\nNoNewPrivileges=no\n" in unit and "needs setuid" in unit
-    )  # the one deliberate exception, explained
+    assert "\nNoNewPrivileges=no\n" in unit and "no new privileges" in unit  # and why
     assert "ReadWritePaths=/var/spool/ratel-meter" in unit and "ProtectSystem=full" in unit
+    # Options that make `sudo` refuse on the voice VM (tested 2026-11-03) must not come back.
+    for option in (
+        "PrivateDevices", "ProtectKernelTunables", "ProtectKernelModules", "ProtectKernelLogs",
+        "ProtectClock", "ProtectHostname", "RestrictNamespaces", "RestrictRealtime",
+        "LockPersonality",
+    ):  # fmt: skip
+        assert f"\n{option}=" not in unit, option
     assert "WantedBy=multi-user.target" in unit
 
 
