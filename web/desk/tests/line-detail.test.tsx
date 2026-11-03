@@ -45,6 +45,16 @@ describe("Line detail page (mock mode)", () => {
     expect(await screen.findByText(/Usage: 5-minute intervals/i, {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
+  it("switches to the Calls tab and shows how each call ended, without a bearer column", async () => {
+    const user = userEvent.setup();
+    renderLineDetail();
+    await user.click(await screen.findByRole("tab", { name: /calls/i }, { timeout: 5000 }));
+    expect((await screen.findAllByText("Answered", {}, { timeout: 5000 })).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/could not be reached/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/QCI/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/from the last 30 days/i)).toBeInTheDocument();
+  }, 15000);
+
   it("is still reachable by IMSI for the screens that link that way", async () => {
     renderLineDetail("621000000000100");
     expect(await screen.findByRole("heading", { name: /234 700 000 0100/ }, { timeout: 5000 })).toBeInTheDocument();

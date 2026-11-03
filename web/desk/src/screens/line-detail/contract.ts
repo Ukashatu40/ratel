@@ -1,6 +1,6 @@
 import type { LineState } from "../dashboard/types";
 import type { WireLine, WirePlan } from "../sell-sim/contract";
-import type { HistoryEntry, LineDetail, UsagePage, UsageRecord } from "./types";
+import type { CallRecord, CallsPage, EndReason, HistoryEntry, LineDetail, UsagePage, UsageRecord } from "./types";
 
 // The wire shapes of the line page (contracts/openapi.yaml) and their mappers. The fixtures in
 // tests/fixtures/contract (LineHistory, LineUsageList) are checked against the contract and against these.
@@ -9,6 +9,19 @@ export interface WireHistoryEntry { at: number; from_state: LineState; to_state:
 export interface WireLineHistory { entries: WireHistoryEntry[]; total: number }
 export interface WireUsageRecord { period_start: number; period_end: number; bytes_up: number; bytes_down: number; rated: boolean }
 export interface WireLineUsageList { records: WireUsageRecord[]; next_cursor: string | null }
+
+export interface WireCallRecord { call_id: string; from_msisdn: string; to_msisdn: string; started_at: number; answered_at: number | null; ended_at: number; end_reason: EndReason }
+export interface WireCallList { records: WireCallRecord[]; next_cursor: string | null }
+
+// The line is the caller or the callee; the record does not say which, so it is told by comparing with the line's own number.
+export const callFromWire = (c: WireCallRecord, ownMsisdn: string): CallRecord => {
+  const outgoing = c.from_msisdn === ownMsisdn;
+  return {
+    callId: c.call_id, direction: outgoing ? "outgoing" : "incoming", number: outgoing ? c.to_msisdn : c.from_msisdn,
+    startedAt: c.started_at, answeredAt: c.answered_at, endedAt: c.ended_at, endReason: c.end_reason,
+  };
+};
+export const callsFromWire = (l: WireCallList, ownMsisdn: string): CallsPage => ({ items: l.records.map((c) => callFromWire(c, ownMsisdn)), nextCursor: l.next_cursor });
 
 export const historyFromWire = (h: WireLineHistory): HistoryEntry[] =>
   h.entries.map((e) => ({ at: e.at, from: e.from_state, to: e.to_state, actor: e.actor, reason: e.reason }));

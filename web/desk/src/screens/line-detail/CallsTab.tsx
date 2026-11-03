@@ -1,36 +1,59 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Badge } from "../../components/ui";
-import { formatDuration, formatWAT } from "../../lib/format";
-import { callsAvailable, getCalls } from "./api";
+import { formatCount, formatDuration, formatMsisdn, formatWAT } from "../../lib/format";
+import { getCalls } from "./api";
+import type { EndReason } from "./types";
+
+// How a call ended, in words for staff. The set is the agreement's proposal (types.ts); the tones follow what
+// the caller or the customer would call a good outcome.
+const RESULT: Record<EndReason, { label: string; tone: "green" | "grey" | "amber" | "red" }> = {
+  completed: { label: "Answered", tone: "green" },
+  cancelled: { label: "Caller hung up before it was answered", tone: "grey" },
+  declined: { label: "Declined", tone: "grey" },
+  not_answered: { label: "Not answered (busy or no reply)", tone: "amber" },
+  unavailable: { label: "Could not be reached", tone: "amber" },
+  failed: { label: "Failed", tone: "red" },
+};
 
 // Calls are free between Ratelplus lines for now, so there is no charge column.
-export function CallsTab({ lineKey }: { lineKey: string }) {
-  const available = callsAvailable();
-  const { data, isPending, isError, refetch } = useQuery({ queryKey: ["line", lineKey, "calls"], queryFn: () => getCalls(lineKey), enabled: available });
-  // TODO(contract): the call history waits for the call record agreement (#26); the API has no operation for it yet.
-  if (!available) return <section className="card"><h3>Calls: VoLTE history</h3><p className="muted">Call history is not available yet. It starts once the call records from RatelVoice are agreed and stored.</p></section>;
+export function CallsTab({ lineKey, msisdn }: { lineKey: string; msisdn: string }) {
+  const { data, isPending, isError, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ["line", lineKey, "calls"],
+    queryFn: ({ pageParam }) => getCalls(lineKey, msisdn, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
+  });
+  const items = data?.pages.flatMap((p) => p.items) ?? [];
   return (
     <section className="card ld-table">
       <h3>Calls: VoLTE history</h3>
       {isError ? <div className="ld-message">Could not load calls. <button type="button" className="btn btn--sm" onClick={() => refetch()}>Try again</button></div> : (
         <table className="data-table">
-          <thead><tr><th>Start (WAT)</th><th>End (WAT)</th><th>Duration</th><th>Number</th><th>QCI 1 bearer</th><th>End reason</th></tr></thead>
+          <thead><tr><th>Start (WAT)</th><th>Number</th><th>Rang for</th><th>Talk time</th><th>Result</th></tr></thead>
           <tbody>
-            {isPending && <tr><td colSpan={6} className="muted">Loading...</td></tr>}
-            {data?.map((c) => (
-              <tr key={c.callId}>
-                <td>{formatWAT(c.startedAt)}</td>
-                <td>{formatWAT(c.endedAt)}</td>
-                <td>{formatDuration(c.answeredAt ? c.endedAt - c.answeredAt : 0)}</td>
-                <td><span className="muted">{c.direction === "outgoing" ? "To" : "From"}</span> {c.number}</td>
-                <td>{c.qci1Bearer === "established" ? <Badge tone="green">Established</Badge> : <Badge tone="grey">Not set up</Badge>}</td>
-                <td>{c.endReason}</td>
-              </tr>
-            ))}
-            {data && data.length === 0 && <tr><td colSpan={6} className="muted">No calls yet.</td></tr>}
+            {isPending && <tr><td colSpan={5} className="muted">Loading...</td></tr>}
+            {items.map((c) => {
+              const result = RESULT[c.endReason] ?? { label: c.endReason, tone: "grey" as const };
+              return (
+                <tr key={c.callId}>
+                  <td>{formatWAT(c.startedAt)}</td>
+                  <td><span className="muted">{c.direction === "outgoing" ? "To" : "From"}</span> {formatMsisdn(c.number)}</td>
+                  <td>{formatDuration((c.answeredAt ?? c.endedAt) - c.startedAt)}</td>
+                  <td>{c.answeredAt ? formatDuration(c.endedAt - c.answeredAt) : <span className="muted">none</span>}</td>
+                  <td><Badge tone={result.tone}>{result.label}</Badge></td>
+                </tr>
+              );
+            })}
+            {data && items.length === 0 && <tr><td colSpan={5} className="muted">No calls in the last 30 days.</td></tr>}
           </tbody>
         </table>
       )}
+      <div className="ld-footer">
+        <span className="muted">{formatCount(items.length)} calls shown, from the last 30 days</span>
+        {hasNextPage && (
+          <button type="button" className="chip" onClick={() => void fetchNextPage()} disabled={isFetchingNextPage}>{isFetchingNextPage ? "Loading..." : "Show older"}</button>
+        )}
+      </div>
     </section>
   );
 }

@@ -25,16 +25,20 @@ export interface UsageRecord { periodStart: number; periodEnd: number; bytesUp: 
 // Newest first. nextCursor is opaque: send it back unchanged to get the older records.
 export interface UsagePage { items: UsageRecord[]; nextCursor: string | null }
 
+// How a call ended. The set is the call record agreement's proposal (docs/call-record-agreement.md, section 11).
+// TODO(PRD): decision 8 may change it; the labels are in CallsTab.tsx.
+export type EndReason = "completed" | "cancelled" | "declined" | "not_answered" | "unavailable" | "failed";
+
 export interface CallRecord {
   callId: string;
-  direction: "outgoing" | "incoming";
-  number: string;                      // the other party
-  startedAt: number;
+  direction: "outgoing" | "incoming";  // from the line's own number: it is the caller or the callee
+  number: string;                      // the other party, as stored (234 and ten digits when the agent knew the form)
+  startedAt: number;                   // the INVITE arrived: the ring time is answeredAt (or endedAt) less this
   answeredAt: number | null;           // null = never answered
   endedAt: number;
-  qci1Bearer: "established" | "not_set_up"; // needs RatelVoice data (not in Contract 2)
-  // TODO(PRD): allowed end_reason values and the meaning of from/to are open (decision 8).
-  endReason: string;
+  endReason: EndReason;
 }
+
+export interface CallsPage { items: CallRecord[]; nextCursor: string | null }
 
 export interface HistoryEntry { at: number; from: LineState | null; to: LineState; actor: string; reason: string }

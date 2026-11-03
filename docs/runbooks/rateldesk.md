@@ -11,7 +11,7 @@ If you get stuck on any step, do not improvise. Follow the "When something goes 
 
 - **Not in the menu:** Stock & Vouchers, Reports, and Staff & Audit. Their jobs are done by the operations team with command-line tools. If you cannot find a screen this runbook does not mention, that is why.
 - **Plans & Bundles is read-only:** you can see the plans on sale; you cannot create or change one.
-- **The Calls tab says "not available yet"**, and the line profile shows "Not available yet" for the static address, provisioning and network check. They are being built.
+- **The line profile shows "Not available yet"** for the static address, provisioning and network check. They are being built. (The Calls tab is built: it lists the last 30 days of calls once the voice VM's call agent is running. Until then it says "No calls in the last 30 days".)
 - **Dashboard and wallet numbers have no "this week" trend lines.**
 
 If your RatelDesk shows a screen or a button this runbook does not, tell your supervisor: you may be on the practice build.
@@ -83,7 +83,7 @@ After all three steps, the line appears in **Lines** with state `active`.
 
    - **Overview** — data used (ring chart, **an estimate from the usage records since the plan started**), data used per day (bar chart), the line profile (speeds; the static address, provisioning status and network check say "Not available yet"), and any outstanding issue (for example an out-of-data banner).
    - **Usage** — the last 24 hours of data usage in 5-minute intervals (uploaded MB, downloaded MB, rated or not yet), newest first. **Show older** loads more.
-   - **Calls** — shows "Call history is not available yet". It will list calls once the call records are connected.
+   - **Calls** — the last 30 days of calls, newest first: when it started (WAT), the number (To or From), how long it rang, the talk time, and the result (Answered, Caller hung up before it was answered, Declined, Not answered, Could not be reached, Failed). "Show older" loads more. The list fills about a minute after each call ends. Call records are personal data: do not copy numbers out of the page.
    - **History** — every change made to this line, newest first, with who made it and why.
 
 Read the customer the relevant tab. The **Overview** is usually enough.

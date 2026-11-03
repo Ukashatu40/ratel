@@ -1,0 +1,32 @@
+{
+  "records": [
+    {
+      "call_id": "fx-call-003",
+      "from_msisdn": "2347000000151",
+      "to_msisdn": "2347000000150",
+      "started_at": 1794699400,
+      "answered_at": null,
+      "ended_at": 1794699425,
+      "end_reason": "not_answered"
+    },
+    {
+      "call_id": "fx-call-002",
+      "from_msisdn": "2347000000150",
+      "to_msisdn": "2347000000151",
+      "started_at": 1794696400,
+      "answered_at": 1794696406,
+      "ended_at": 1794696466,
+      "end_reason": "completed"
+    },
+    {
+      "call_id": "fx-call-001",
+      "from_msisdn": "2347000000150",
+      "to_msisdn": "2347000000152",
+      "started_at": 1794691000,
+      "answered_at": null,
+      "ended_at": 1794691180,
+      "end_reason": "cancelled"
+    }
+  ],
+  "next_cursor": null
+}
