@@ -14,12 +14,14 @@ from app.bss_lines.services.desk_reads import KYC_STATUSES, offset_of, with_all 
 from app.bss_money.domain.days import last_days
 from app.bss_money.repositories.ports import (
     LedgerRow,
+    LineCallRow,
     LineUsageRow,
     MoneyReadRepository,
 )
 
 ATTENTION_LIMIT = 20
 USAGE_PAGE = 500
+CALL_PAGE = 500
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,12 @@ class Dashboard:
 @dataclass(frozen=True)
 class UsagePage:
     records: list[LineUsageRow]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class CallsPage:
+    records: list[LineCallRow]
     next_cursor: str | None
 
 
@@ -128,3 +136,28 @@ def line_usage(
     page = rows[:USAGE_PAGE]
     next_cursor = str(int(page[-1].period_start.timestamp())) if more else None
     return UsagePage(page, next_cursor)
+
+
+def _decode_call_cursor(cursor: str) -> tuple[datetime, str]:
+    """`<epoch>:<call_id>`: the last call given out. A call id may hold a colon; an epoch never."""
+    epoch, separator, call_id = cursor.partition(":")
+    if not separator or not call_id:
+        raise BadCursor
+    return _decode(epoch), call_id
+
+
+def line_calls(
+    money: MoneyReadRepository,
+    msisdn: str,
+    *,
+    start: datetime,
+    end: datetime,
+    cursor: str | None,
+) -> CallsPage:
+    """A line's calls, made or received, newest first. The cursor is the last call given out."""
+    before = None if cursor is None else _decode_call_cursor(cursor)
+    rows = money.line_calls(msisdn, start=start, end=end, before=before, limit=CALL_PAGE + 1)
+    page = rows[:CALL_PAGE]
+    more = len(rows) > CALL_PAGE
+    next_cursor = f"{int(page[-1].started_at.timestamp())}:{page[-1].call_id}" if more else None
+    return CallsPage(page, next_cursor)

@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from common.errors import ApiError
 
-from ..repositories.ports import UsageRepository
-from ..repositories.sql import SqlUsageRepository
+from ..repositories.ports import CallRepository, UsageRepository
+from ..repositories.sql import SqlCallRepository, SqlUsageRepository
 
 log = logging.getLogger("ratel.meter.auth")
 
@@ -80,3 +80,10 @@ def get_usage_repository(
 ) -> UsageRepository:
     """Provide a UsageRepository instance bound to the active session."""
     return SqlUsageRepository(session)
+
+
+def get_call_repository(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> CallRepository:
+    """Provide a CallRepository instance bound to the active session."""
+    return SqlCallRepository(session)

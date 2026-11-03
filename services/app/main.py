@@ -171,7 +171,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def _handle_options(request: Request, call_next: Any) -> Response:
-        if request.method == "OPTIONS" and request.url.path == "/v1/usage":
+        # The two RatelMeter paths that take both a GET and a POST list both in `Allow`.
+        if request.method == "OPTIONS" and request.url.path in ("/v1/usage", "/v1/calls"):
             return Response(status_code=200, headers={"Allow": "GET, POST, OPTIONS"})
         return cast(Response, await call_next(request))
 

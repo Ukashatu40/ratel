@@ -16,7 +16,7 @@ from app.bss_lines.api.deps import now_utc, require
 from app.bss_lines.api.desk_reads import LineCountsOut
 from app.bss_lines.domain.staff import Permission
 from app.bss_lines.repositories.desk_ports import StaffRecord
-from app.bss_money.repositories.ports import DeskReadScope, LedgerRow, LineUsageRow
+from app.bss_money.repositories.ports import DeskReadScope, LedgerRow, LineCallRow, LineUsageRow
 from app.bss_money.services import desk_reads
 from app.meter_api.repositories.sql import MAX_TIMESTAMP_EPOCH
 from common.errors import ApiError
@@ -77,6 +77,21 @@ class LineUsageRecordOut(BaseModel):
 
 class LineUsageListOut(BaseModel):
     records: list[LineUsageRecordOut]
+    next_cursor: str | None
+
+
+class LineCallOut(BaseModel):
+    call_id: str
+    from_msisdn: str
+    to_msisdn: str
+    started_at: int
+    answered_at: int | None
+    ended_at: int
+    end_reason: str
+
+
+class LineCallListOut(BaseModel):
+    records: list[LineCallOut]
     next_cursor: str | None
 
 
@@ -167,6 +182,49 @@ def get_line_usage(
         except desk_reads.BadCursor:
             raise ApiError(422, "validation_error", "Invalid request. Fields: cursor") from None
     return LineUsageListOut(records=[_usage(r) for r in page.records], next_cursor=page.next_cursor)
+
+
+def _call(row: LineCallRow) -> LineCallOut:
+    return LineCallOut(
+        call_id=row.call_id,
+        from_msisdn=row.from_msisdn,
+        to_msisdn=row.to_msisdn,
+        started_at=to_epoch(row.started_at),
+        answered_at=None if row.answered_at is None else to_epoch(row.answered_at),
+        ended_at=to_epoch(row.ended_at),
+        end_reason=row.end_reason,
+    )
+
+
+@router.get("/lines/{line_id}/calls", response_model=LineCallListOut)
+def get_line_calls(
+    request: Request,
+    line_id: LineId,
+    _staff: Reader,
+    from_: Annotated[Epoch, Query(alias="from")],
+    to: Epoch,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+) -> LineCallListOut:
+    """The calls the line's number made or received (`meter_get_calls` filtered by that number).
+
+    Call records are personal data: the same staff permission as the customer records, and nothing
+    here is logged.
+    """
+    with _scope(request)() as reads:
+        msisdn = reads.money.line_msisdn(line_id)
+        if msisdn is None:
+            raise _no_such_line()
+        try:
+            page = desk_reads.line_calls(
+                reads.money,
+                msisdn,
+                start=from_epoch(min(from_, MAX_TIMESTAMP_EPOCH)),
+                end=from_epoch(min(to, MAX_TIMESTAMP_EPOCH)),
+                cursor=cursor,
+            )
+        except desk_reads.BadCursor:
+            raise ApiError(422, "validation_error", "Invalid request. Fields: cursor") from None
+    return LineCallListOut(records=[_call(r) for r in page.records], next_cursor=page.next_cursor)
 
 
 @router.get("/ledger", response_model=LedgerPageOut)
