@@ -1,0 +1,4 @@
+# Install as /etc/sudoers.d/ratel-meter (root-owned, mode 0440), after checking it:  sudo visudo -cf /etc/sudoers.d/ratel-meter
+# The call agent's user may run the export script as root and nothing else, with no password. The script
+# takes only three whole numbers (deploy/voice/ratel-call-export.sh), so the rule needs no wildcard.
+ratelmeter ALL=(root) NOPASSWD: /usr/local/sbin/ratel-call-export

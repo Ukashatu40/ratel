@@ -33,7 +33,8 @@ tool = _load()
 
 def _older(template: str) -> str:
     """The template as it was before the page and the Desk: no /pay block, a 404 at the root."""
-    without_page = tool.PAGE.sub("", template, count=1).replace("\n\n\n", "\n\n")
+    without_calls = tool.CALLS.sub("", template, count=1).replace("\n\n\n", "\n\n")
+    without_page = tool.PAGE.sub("", without_calls, count=1).replace("\n\n\n", "\n\n")
     return tool.DESK.sub("    location / {\n        return 404;\n    }\n", without_page)
 
 
@@ -76,7 +77,7 @@ def test_running_it_twice_changes_nothing() -> None:
 
 def test_an_office_range_is_set_on_the_staff_blocks_only() -> None:
     new = tool.patch(_filled(_older(TEMPLATE)), TEMPLATE, office="203.0.113.0/24")
-    for header in ("/v1/usage", "/v1/", "/"):
+    for header in ("/v1/usage", "= /v1/calls", "/v1/", "/"):
         block = re.search(rf"    location {re.escape(header)} \{{.*?\n    \}}", new, re.S)
         assert block is not None and "allow 203.0.113.0/24;" in block.group(0), header
     health = re.search(r"location = /healthz \{.*?\n    \}", new, re.S)
@@ -86,7 +87,7 @@ def test_an_office_range_is_set_on_the_staff_blocks_only() -> None:
 
 
 def test_a_file_it_does_not_know_is_refused() -> None:
-    with pytest.raises(ValueError, match="does not look like"):
+    with pytest.raises(ValueError, match=r"not a file this knows|does not look like"):
         tool.patch("server { listen 443; }\n", TEMPLATE)
 
 
@@ -100,3 +101,20 @@ def test_the_command_writes_the_file_and_refuses_a_bad_range(tmp_path: Path) -> 
     assert tool.main([str(template), str(live), "--office", "203.0.113.0/24"]) == 0
     assert "location = /pay" in live.read_text()
     assert tool.main([str(template), str(live)]) == 0  # already current
+
+
+def test_a_host_that_already_has_the_page_and_the_desk_only_gains_the_calls_path() -> None:
+    """The state of bss-app today: patched once for /pay and the Desk, not yet for /v1/calls."""
+    current = _filled(TEMPLATE)
+    without_calls = tool.CALLS.sub("", current, count=1).replace("\n\n\n", "\n\n")
+    assert "location = /v1/calls" not in without_calls and "location = /pay" in without_calls
+    assert tool.patch(without_calls, TEMPLATE) == current
+
+
+def test_the_calls_path_lets_in_the_voice_vm_and_the_office_and_nobody_else() -> None:
+    new = tool.patch(_filled(_older(TEMPLATE)), TEMPLATE)
+    block = re.search(r"location = /v1/calls \{.*?\n    \}", new, re.S)
+    assert block is not None
+    body = block.group(0)
+    assert re.findall(r"allow ([^;]+);", body) == ["192.0.2.11", "127.0.0.1"]
+    assert "deny  all;" in body and "ratel-pay-key" not in body

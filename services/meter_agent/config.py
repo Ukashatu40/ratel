@@ -34,3 +34,24 @@ class Settings(BaseSettings):
     nft_timeout_seconds: float = 10.0
     interval_seconds: int = 300
     log_level: str = "INFO"
+
+
+class CallSettings(BaseSettings):
+    """Settings for call mode on the voice VM. It talks to the RatelMeter API only, so unlike the
+    data mode it needs no RatelLink key; the API key still has no default."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="METER_AGENT_", case_sensitive=False, extra="ignore"
+    )
+
+    meter_api_base_url: str = "http://127.0.0.1:18082"
+    api_key: SecretStr
+    spool_dir: Path = Path("/var/spool/ratel-meter")
+    # The fixed command that prints the new rows (deploy/voice/ratel-call-export.sh).
+    call_export_command: str = "/usr/bin/sudo -n /usr/local/sbin/ratel-call-export"
+    call_interval_seconds: int = 60
+    # Rows younger than this are left for the next pass, so the rows of one call arrive together.
+    call_settle_seconds: int = 10
+    # An answered call with no BYE after this long is dropped and counted (default: 6 hours).
+    call_open_max_seconds: int = 21_600
+    log_level: str = "INFO"

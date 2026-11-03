@@ -1,0 +1,43 @@
+# RatelMeter's call agent on the voice VM. Install as /etc/systemd/system/ratel-meter-calls.service
+# (deploy/voice/README.md). It reads finished calls from the S-CSCF's accounting and posts them to bss-app.
+[Unit]
+Description=RatelMeter call agent (voice VM)
+After=network-online.target docker.service
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+User=ratelmeter
+Group=ratelmeter
+WorkingDirectory=/opt/ratel-meter/current
+EnvironmentFile=/etc/ratel-meter/ratel-meter-calls.env
+Environment=PYTHONPATH=/opt/ratel-meter/current/services
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/ratel-meter/current/venv/bin/python -m meter_agent.main --mode call
+Restart=always
+RestartSec=5
+UMask=0077
+
+# Hardening. Not the data agent's full set: this one runs `sudo` for the single export command, and sudo
+# needs setuid, so NoNewPrivileges stays off and capabilities are not stripped. The rest still applies.
+NoNewPrivileges=no
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+ReadWritePaths=/var/spool/ratel-meter
+
+[Install]
+WantedBy=multi-user.target
