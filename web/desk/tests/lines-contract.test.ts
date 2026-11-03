@@ -2,6 +2,7 @@
 // (tests/fixtures/contract, checked against contracts/openapi.yaml by tests/contract/test_desk_fixtures.py).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import customer from "./fixtures/contract/Customer.created.json";
+import callList from "./fixtures/contract/CallList.json";
 import history from "./fixtures/contract/LineHistory.json";
 import lineActive from "./fixtures/contract/Line.active.json";
 import lineList from "./fixtures/contract/LineList.json";
@@ -134,6 +135,25 @@ describe("the line page", () => {
     const entries = await detail.getHistory("7");
     expect(calls()[0].url.pathname).toBe("/v1/lines/7/history");
     expect(entries[0]).toEqual({ at: 1794690000, from: "active", to: "suspended", actor: "staff:2", reason: "customer_request: asked at the counter" });
+  });
+
+  it("reads the last 30 days of calls and tells outgoing from incoming by the line's own number", async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { ...callList, next_cursor: "older" }));
+    const page = await detail.getCalls("7", "2347000000150", "abc");
+    const { url } = calls()[0];
+    expect(url.pathname).toBe("/v1/lines/7/calls");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ from: String(NOW - 30 * 86400), to: String(NOW), cursor: "abc" });
+    expect(page.nextCursor).toBe("older");
+    // 1st: someone rang the line and it was not answered. 2nd: the line rang out and was answered. 3rd: the line hung up first.
+    expect(page.items[0]).toEqual({ callId: "fx-call-003", direction: "incoming", number: "2347000000151", startedAt: NOW - 600, answeredAt: null, endedAt: NOW - 575, endReason: "not_answered" });
+    expect(page.items[1]).toMatchObject({ direction: "outgoing", number: "2347000000151", answeredAt: NOW - 3594, endReason: "completed" });
+    expect(page.items[2]).toMatchObject({ direction: "outgoing", number: "2347000000152", answeredAt: null, endReason: "cancelled" });
+  });
+
+  it("asks for no cursor on the first page", async () => {
+    fetchMock.mockResolvedValueOnce(json(200, callList));
+    await detail.getCalls("7", "2347000000150", null);
+    expect(calls()[0].url.searchParams.has("cursor")).toBe(false);
   });
 
   it("refuses a line key that is not a whole number before asking the API", async () => {

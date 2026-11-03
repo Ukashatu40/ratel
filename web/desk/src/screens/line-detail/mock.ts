@@ -1,6 +1,6 @@
 import { ApiError } from "../../lib/api";
 import { mockFindLine } from "../lines/mock";
-import type { CallRecord, HistoryEntry, LineDetail, UsagePage } from "./types";
+import type { CallRecord, CallsPage, EndReason, HistoryEntry, LineDetail, UsagePage } from "./types";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // small deterministic random numbers, so the same line always shows the same data
@@ -50,20 +50,22 @@ export async function mockGetUsage(key: string, cursor: string | null): Promise<
   return { items, nextCursor: offset + size < total ? String(offset + size) : null };
 }
 
-export async function mockGetCalls(key: string): Promise<CallRecord[]> {
+export async function mockGetCalls(key: string, cursor: string | null): Promise<CallsPage> {
   await wait(200);
   const line = need(key);
   // PRD VOI-1..4: a deactivated (or terminated) line cannot call or be called.
-  if (line.state === "awaiting_activation" || line.state === "terminated") return [];
+  if (line.state === "awaiting_activation" || line.state === "terminated" || cursor) return { items: [], nextCursor: null };
   const n = num(line.imsi), now = nowSec();
-  return Array.from({ length: 8 }, (_, i) => {
-    const r = rng(n * 100 + i), start = now - 3600 * (5 + i * 7), answered = r() > 0.25, dur = Math.round(20 + r() * 420);
+  const reasons: EndReason[] = ["completed", "not_answered", "completed", "cancelled", "declined", "completed", "unavailable", "completed"];
+  const items = Array.from({ length: 8 }, (_, i) => {
+    const r = rng(n * 100 + i), start = now - 3600 * (5 + i * 7), reason = reasons[i], answered = reason === "completed", dur = Math.round(20 + r() * 420);
     return {
-      callId: `call-${n}-${i}`, direction: i % 2 === 0 ? "outgoing" : "incoming", number: `+234 700 000 ${String(100 + ((n + i * 7) % 137)).padStart(4, "0")}`,
-      startedAt: start, answeredAt: answered ? start + 6 : null, endedAt: answered ? start + 6 + dur : start + 25,
-      qci1Bearer: answered ? "established" : "not_set_up", endReason: answered ? (i % 3 ? "Normal" : "Caller hung up") : "No answer",
+      callId: `call-${n}-${i}`, direction: i % 2 === 0 ? "outgoing" : "incoming", number: `234700000${String(100 + ((n + i * 7) % 137)).padStart(4, "0")}`,
+      startedAt: start, answeredAt: answered ? start + 6 : null, endedAt: answered ? start + 6 + dur : start + (reason === "cancelled" ? 40 : 12),
+      endReason: reason,
     } as CallRecord;
   });
+  return { items, nextCursor: null };
 }
 
 export async function mockGetHistory(key: string): Promise<HistoryEntry[]> {

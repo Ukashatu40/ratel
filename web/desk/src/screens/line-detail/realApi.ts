@@ -1,7 +1,7 @@
 import { apiGet } from "../../lib/api";
 import { wireId, type WireCustomer, type WireLine, type WirePlan } from "../sell-sim/contract";
-import { buildLineDetail, historyFromWire, planStartOf, usageFromWire, type WireLineHistory, type WireLineUsageList, type WireUsageRecord } from "./contract";
-import type { HistoryEntry, LineDetail, UsagePage } from "./types";
+import { buildLineDetail, callsFromWire, historyFromWire, planStartOf, usageFromWire, type WireCallList, type WireLineHistory, type WireLineUsageList, type WireUsageRecord } from "./contract";
+import type { CallsPage, HistoryEntry, LineDetail, UsagePage } from "./types";
 
 // The real calls of the line page, to the paths and shapes of contracts/openapi.yaml. `key` is the line's id.
 const DAY = 86400;
@@ -43,6 +43,14 @@ export async function getLine(key: string): Promise<LineDetail> {
 export const getUsage = (key: string, cursor: string | null): Promise<UsagePage> => {
   const now = Math.floor(Date.now() / 1000);
   return apiGet<WireLineUsageList>(usageUrl(wireId(key), now - DAY, now, cursor)).then(usageFromWire);
+};
+
+// The last 30 days of the line's calls, newest first (500 a page); a cursor asks for the next older page.
+// `msisdn` is the line's own number, which tells outgoing from incoming.
+export const getCalls = (key: string, msisdn: string, cursor: string | null): Promise<CallsPage> => {
+  const now = Math.floor(Date.now() / 1000);
+  const query = new URLSearchParams({ from: String(now - 30 * DAY), to: String(now), ...(cursor ? { cursor } : {}) });
+  return apiGet<WireCallList>(`/v1/lines/${wireId(key)}/calls?${query}`).then((l) => callsFromWire(l, msisdn));
 };
 
 export const getHistory = (key: string): Promise<HistoryEntry[]> =>

@@ -83,7 +83,7 @@ export default function LineDetailScreen() {
 
       {tab === "overview" && <OverviewTab line={line} />}
       {tab === "usage" && <UsageTab lineKey={lineId} />}
-      {tab === "calls" && <CallsTab lineKey={lineId} />}
+      {tab === "calls" && <CallsTab lineKey={lineId} msisdn={line.msisdn} />}
       {tab === "history" && <HistoryTab lineKey={lineId} />}
 
       {acting && (
