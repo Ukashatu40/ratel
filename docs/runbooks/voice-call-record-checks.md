@@ -3,7 +3,7 @@
 Keep it short. These are checks, not changes. Nothing here edits Kamailio, MySQL or a table, and nothing
 here prints a phone number, a row or a credential. **Names, counts and column definitions only.**
 
-- **Last verified:** 2026-10-30 (project lead, in the lab): sections 1, 2 and 4, and every call case in section 3. Still open: the number format, a call with no BYE, and the end_reason values
+- **Last verified:** 2026-11-02 (project lead, in the lab): sections 1, 2 and 4, and every call case in section 3, including `start_ts`. Still open: a restart during a call, a call with no BYE, the number format and the end_reason values
 - **Owner:** the network lead; the project lead may run the read-only checks (agreed for the 2026-10-16 lab
   finding; confirm it still stands)
 - **Runs on:** the RatelVoice VM as a user that may run `docker` (the IMS runs in containers: `pcscf`, `scscf`,
@@ -69,17 +69,18 @@ docker exec mysql mysql -uroot -e "SHOW CREATE TABLE scscf.dialog_in\G"      # r
 `SHOW CREATE TABLE` shows the columns and their types and no data. Keep that output: it answers question 1 and,
 with the column types, question 5.
 
-## 3. Call records in `acc` (switched on 2026-10-30)
+## 3. Call records in `acc` (switched on 2026-10-30; `start_ts` added 2026-11-02)
 
 The dialog tables stay empty (see above), so the S-CSCF now writes call records with the `acc` module, in the `scscf`
-schema. **This is a change to a core host, made by hand on the voice VM, and it is not in Git.** To redo it:
+schema. **This is a change to a core host, made by hand on the voice VM.** The same steps, as snippets and SQL, are kept in Git
+in [../../network/voice/](../../network/voice/README.md). To redo it:
 
-1. Create the tables from the container's own script, then add the two columns the agent needs:
+1. Create the tables from the container's own script, then add the three columns the agent needs:
    ```bash
    docker exec scscf cat /usr/local/share/kamailio/mysql/acc-create.sql | docker exec -i mysql mysql -uroot scscf
    docker exec mysql mysql -uroot scscf -e "
-   ALTER TABLE acc          ADD COLUMN from_user VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN to_user VARCHAR(64) NOT NULL DEFAULT '';
-   ALTER TABLE missed_calls ADD COLUMN from_user VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN to_user VARCHAR(64) NOT NULL DEFAULT '';"
+   ALTER TABLE acc          ADD COLUMN from_user VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN to_user VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN start_ts INT UNSIGNED NOT NULL DEFAULT 0;
+   ALTER TABLE missed_calls ADD COLUMN from_user VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN to_user VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN start_ts INT UNSIGNED NOT NULL DEFAULT 0;"
    ```
 2. In `~/docker_open5gs/scscf/kamailio_scscf.cfg` (keep a `.before-acc` copy), add four things, then `docker restart scscf`
    (a restart drops registrations):
@@ -87,30 +88,33 @@ schema. **This is a change to a core host, made by hand on the voice VM, and it 
    - `loadmodule "acc.so"`, after `loadmodule "ims_dialog.so"`;
    - after the `ims_dialog` `db_mode` block, inside `#!ifdef DB_URL`:
      `modparam("acc", "db_url", DB_URL)`, `modparam("acc", "db_flag", FLT_ACC)`,
-     `modparam("acc", "db_missed_flag", FLT_ACCMISSED)`, `modparam("acc", "db_extra", "from_user=$fU;to_user=$tU")`;
+     `modparam("acc", "db_missed_flag", FLT_ACCMISSED)`,
+     `modparam("acc", "db_extra", "from_user=$fU;to_user=$tU;start_ts=$avp(acc_start)")`;
    - in the main `route`, right after `setflag(FLT_DIALOG);`:
-     `if (is_method("INVITE|BYE")) { setflag(FLT_ACC); setflag(FLT_ACCMISSED); }`.
+     `if (is_method("INVITE|BYE")) { setflag(FLT_ACC); setflag(FLT_ACCMISSED); $avp(acc_start) = $TS; }`.
 
-What it writes: an answered INVITE and a BYE go to `acc` (`time` is when the final reply passed the S-CSCF); a failed
-INVITE goes to `missed_calls` with the SIP code. **Each event is written twice** for a call between two of our own
+   Create the three columns **before** the restart: a column named in `db_extra` that does not exist makes every record fail.
+
+What it writes: an answered INVITE and a BYE go to `acc` (`time` is when the final reply passed the S-CSCF, `start_ts`
+is when the request arrived); a failed INVITE goes to `missed_calls` with the SIP code. **Each event is written twice** for a call between two of our own
 phones, once for the calling leg and once for the receiving leg, so a reader groups by `callid`.
 
-What the lab showed on 2026-10-30, between two of our own phones:
+What the lab showed on 2026-10-30 and 2026-11-02, between two of our own phones:
 
 - Both legs of a call **share one Call-ID**, so one call is one `callid` with two rows per event.
 - **The two numbers are written differently.** `from_user` was `234` and ten digits (13 characters); `to_user` was the
   number as dialled, `0` and ten digits (11 characters). TODO(network lead): confirm the format the contract wants.
   The agent has to turn `0XXXXXXXXXX` into `234XXXXXXXXXX` before it compares with a line's number.
-- **A hang-up can leave BYE rows in both directions.** One call where the callee hung up gave four BYE rows in the
-  same second: two with the callee's tag, two with the caller's. Earlier calls gave two BYE rows each, all one way.
-  Until this is explained, take the lowest `id` BYE of a `callid` as the one who hung up. TODO: repeat the case where
-  the caller hangs up and see whether its BYE rows are mixed too.
+- **A hang-up leaves two BYE rows**, both pointing the same way: on 2026-11-02 the callee hanging up gave two rows with
+  `caller_hung_up` = 0, the caller hanging up two rows with 1. Four rows with mixed directions appeared once on
+  2026-10-30, most likely both phones pressing hang up. Take the lowest `id` BYE of a `callid` as the one who hung up.
 - **A failed call gives two `missed_calls` rows that can carry different codes** (a phone in airplane mode gave 408 and
   500 in the same second). Map the pair, not each row.
 - **One answered call (INVITE 200, 2026-10-30 13:25 UTC) has no BYE at all**, not in `acc` and not in `missed_calls`.
   Unexplained: either it was never hung up or the BYE was not recorded.
-- `acc` holds the time the final reply passed the S-CSCF, never when the call started. How long a call rang cannot be
-  read from the rows.
+- **`start_ts` gives the ring time** (`time - start_ts` on the INVITE row, or on the `missed_calls` row for a failed
+  call): 4 to 6 s for the answered calls, 11 s for a decline, 3 s for an unreachable callee, 180 s for a call the caller
+  cancelled after it rang out. Both legs of a call carry the same value; a BYE row's `start_ts` is the BYE's arrival.
 
 The rows hold phone numbers (`from_user`, `to_user`), the Call-ID and the tags: personal data. **Never `SELECT *`,
 never paste a row.** These queries show counts, times and codes only:
@@ -120,23 +124,25 @@ docker exec mysql mysql -uroot scscf -e "SELECT 'acc' t, method, sip_code, COUNT
 docker exec mysql mysql -uroot scscf -e "SELECT 'acc' t, id, method, sip_code, sip_reason, time FROM acc ORDER BY id DESC LIMIT 8; SELECT 'missed' t, id, method, sip_code, sip_reason, time FROM missed_calls ORDER BY id DESC LIMIT 8;"
 # rows and distinct calls; are the numbers filled in (lengths only); did the caller or the callee hang up (true/false only)
 docker exec mysql mysql -uroot scscf -e "SELECT COUNT(*) AS row_count, COUNT(DISTINCT callid) AS calls FROM acc; SELECT id, method, CHAR_LENGTH(from_user) AS from_len, CHAR_LENGTH(to_user) AS to_len FROM acc ORDER BY id DESC LIMIT 8;"
-docker exec mysql mysql -uroot scscf -e "SELECT b.id, (b.from_tag = i.from_tag) AS caller_hung_up FROM acc b JOIN acc i ON i.callid = b.callid AND i.method = 'INVITE' WHERE b.method = 'BYE' ORDER BY b.id DESC LIMIT 8;"
+# ring time of the newest rows (seconds between the request and its final reply; a call's number is never shown)
+docker exec mysql mysql -uroot scscf -e "SELECT 'acc' t, id, method, sip_code, TIMESTAMPDIFF(SECOND, FROM_UNIXTIME(start_ts), time) AS secs FROM acc ORDER BY id DESC LIMIT 8; SELECT 'missed' t, id, method, sip_code, TIMESTAMPDIFF(SECOND, FROM_UNIXTIME(start_ts), time) AS secs FROM missed_calls ORDER BY id DESC LIMIT 8;"
+docker exec mysql mysql -uroot scscf -e "SELECT b.id, (b.from_tag = i.from_tag) AS caller_hung_up FROM acc b JOIN (SELECT DISTINCT callid, from_tag FROM acc WHERE method = 'INVITE') i ON i.callid = b.callid WHERE b.method = 'BYE' ORDER BY b.id DESC LIMIT 8;"
 ```
 
-The cases tried, from phone A to phone B (note the time, wait ten seconds between calls). Every case has now been seen:
+The cases tried, from phone A to phone B (wait ten seconds between calls). Every case has now been seen:
 
-| Case | What to do | Rows seen on 2026-10-30 |
+| Case | What to do | Rows seen |
 | ---- | ---------- | ----------------------- |
 | Answered, caller hangs up | Talk 20 s, A hangs up | `acc` INVITE 200, then BYE 200 with `caller_hung_up` = 1 |
 | Answered, callee hangs up | Talk 20 s, B hangs up | `acc` INVITE 200, then BYE 200 with `caller_hung_up` = 0 (and, once, extra rows marked 1 in the same second, see above) |
 | Cancelled | A hangs up before B answers | `missed_calls` INVITE 487 |
 | Busy | Call a phone already on a call | `missed_calls` INVITE 486 Busy Here |
-| Declined | B declines | `missed_calls` INVITE **486 Busy Here**, not 603: indistinguishable from busy |
-| Not answered | Let it ring out | `missed_calls` INVITE **486 Busy Here**, about 78 s after the call was made. Not 408 or 480 |
-| Not registered | B in airplane mode | `missed_calls` INVITE **408** and **500** ("Server error on LIR select next S-CSCF") in the same second |
+| Declined | B declines | `missed_calls` INVITE **486** on 2026-10-30, **603 Decline** after 11 s on 2026-11-02: the phone decides |
+| Not answered | Let it ring out | `missed_calls` INVITE **486** about 78 s after the call (2026-10-30); **487** at 180 s when the caller cancelled (2026-11-02). The network sent no no-answer code in 3 minutes |
+| Not registered | B in airplane mode | `missed_calls` INVITE **408** and **500** ("Server error on LIR select next S-CSCF") in the same second, 3 s after the call |
 
-So **busy, declined and not answered share one code (486)** and cannot be told apart from the rows. TODO(network lead,
-question 4 of the call record agreement, PRD decision 8): decide the `end_reason` values with that in mind.
+So **busy, declined and not answered cannot be told apart by code alone** (486, 603, 487). TODO(network lead, question 4 of
+the call record agreement, PRD decision 8): decide the `end_reason` values with that in mind. The ring time helps.
 
 `scscf.contact` stays at 0 rows even while phones are registered and calling, so it is not a way to tell whether a
 phone is registered.

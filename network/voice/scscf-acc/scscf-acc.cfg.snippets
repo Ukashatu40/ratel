@@ -1,0 +1,28 @@
+# S-CSCF call records: the changes to ~/docker_open5gs/scscf/kamailio_scscf.cfg on the voice VM (mounted into the
+# `scscf` container). They are fragments to place by hand, not a whole file: the rest of that file is the
+# docker_open5gs project's and holds the database URL, which stays out of Git.
+#
+# Before editing: cp kamailio_scscf.cfg kamailio_scscf.cfg.before-acc
+# After editing:  docker restart scscf        (a restart drops the phones' registrations)
+# Rollback:       cp kamailio_scscf.cfg.before-acc kamailio_scscf.cfg && docker restart scscf
+# Kamailio 6.2 (the image the voice VM runs). Tested on 2026-10-30 (acc) and 2026-11-02 (start_ts).
+
+# --- 1. Flags: after `#!define FLT_DIALOG 2` ---------------------------------------------------------------------
+#!define FLT_ACC 4
+#!define FLT_ACCMISSED 8
+
+# --- 2. Module: after `loadmodule "ims_dialog.so"` ---------------------------------------------------------------
+loadmodule "acc.so"
+
+# --- 3. Parameters: after the ims_dialog db_mode block, INSIDE `#!ifdef DB_URL` ... `#!endif` --------------------
+modparam("acc", "db_url", DB_URL)
+modparam("acc", "db_flag", FLT_ACC)
+modparam("acc", "db_missed_flag", FLT_ACCMISSED)
+modparam("acc", "db_extra", "from_user=$fU;to_user=$tU;start_ts=$avp(acc_start)")
+
+# --- 4. Routing: in the main `route`, right after `setflag(FLT_DIALOG);` -----------------------------------------
+        if (is_method("INVITE|BYE")) {
+                setflag(FLT_ACC);
+                setflag(FLT_ACCMISSED);
+                $avp(acc_start) = $TS;
+        }
