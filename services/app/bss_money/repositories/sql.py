@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import case, exists, func, select, update
+from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
@@ -41,6 +41,7 @@ from app.bss_money.repositories.ports import (
     DuplicateEntry,
     DuplicateKey,
     LedgerRow,
+    LineCallRow,
     LineUsageRow,
     MoneyMoved,
     NewVoucher,
@@ -50,7 +51,7 @@ from app.bss_money.repositories.ports import (
     StoredVoucher,
     VoucherNotRedeemable,
 )
-from app.meter_api.models import UsageRecordModel
+from app.meter_api.models import CallRecordModel, UsageRecordModel
 
 
 class SqlLedgerRepository:
@@ -544,6 +545,49 @@ class SqlMoneyReadRepository:
 
     def line_imsi(self, line_id: int) -> str | None:
         return self._session.scalar(select(Line.imsi).where(Line.line_id == line_id))
+
+    def line_msisdn(self, line_id: int) -> str | None:
+        return self._session.scalar(select(Line.msisdn).where(Line.line_id == line_id))
+
+    def line_calls(
+        self,
+        msisdn: str,
+        *,
+        start: datetime,
+        end: datetime,
+        before: tuple[datetime, str] | None,
+        limit: int,
+    ) -> list[LineCallRow]:
+        statement = select(CallRecordModel).where(
+            or_(CallRecordModel.from_msisdn == msisdn, CallRecordModel.to_msisdn == msisdn),
+            CallRecordModel.started_at >= start,
+            CallRecordModel.started_at <= end,
+        )
+        if before is not None:
+            when, call_id = before
+            statement = statement.where(
+                or_(
+                    CallRecordModel.started_at < when,
+                    and_(CallRecordModel.started_at == when, CallRecordModel.call_id < call_id),
+                )
+            )
+        rows = self._session.scalars(
+            statement.order_by(
+                CallRecordModel.started_at.desc(), CallRecordModel.call_id.desc()
+            ).limit(limit)
+        )
+        return [
+            LineCallRow(
+                call_id=r.call_id,
+                from_msisdn=r.from_msisdn,
+                to_msisdn=r.to_msisdn,
+                started_at=_utc(r.started_at),
+                answered_at=None if r.answered_at is None else _utc(r.answered_at),
+                ended_at=_utc(r.ended_at),
+                end_reason=r.end_reason,
+            )
+            for r in rows
+        ]
 
     def wallet_figures(self, line_id: int) -> tuple[int, int]:
         balance = self._session.scalar(select(Wallet.balance_kobo).where(Wallet.line_id == line_id))

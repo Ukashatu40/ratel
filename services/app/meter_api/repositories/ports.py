@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
-from ..domain import UsageRecord
+from ..domain import CallRecord, UsageRecord
 
 
 class UsageRepository(Protocol):
@@ -43,5 +43,30 @@ class UsageRepository(Protocol):
 
         An IMSI with no record in the window is absent. Used to compare with the network's own
         counters (reconciliation, M-28).
+        """
+        ...
+
+
+class CallRepository(Protocol):
+    def upsert_calls(self, records: Sequence[CallRecord]) -> int:
+        """Upsert a batch of call records, keyed on `call_id`.
+
+        A call already stored is overwritten (the agent may post a call again once it has more to
+        say, for example its end). If the batch holds the same `call_id` twice, the later wins.
+        Returns the number of rows written (one per distinct `call_id`).
+        """
+        ...
+
+    def query_calls(
+        self,
+        from_time: datetime,
+        to_time: datetime,
+        msisdn: str | None = None,
+        limit: int = 5000,
+        cursor: str | None = None,
+    ) -> tuple[list[CallRecord], str | None]:
+        """Calls with `from_time <= started_at <= to_time`, oldest first, at most `limit`.
+
+        With `msisdn`, only calls that number made or received.
         """
         ...

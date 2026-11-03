@@ -17,8 +17,8 @@ from sqlalchemy.orm import Session
 
 from common.timeutil import from_epoch, to_epoch
 
-from ..domain import UsageRecord
-from ..models import UsageRecordModel
+from ..domain import CallRecord, UsageRecord
+from ..models import CallRecordModel, UsageRecordModel
 
 
 def _ensure_utc(dt: datetime) -> datetime:
@@ -180,3 +180,109 @@ class SqlUsageRepository:
         ]
 
         return records, next_cursor
+
+
+def _epoch_or_none(value: datetime | None) -> int | None:
+    return None if value is None else to_epoch(_ensure_utc(value))
+
+
+class SqlCallRepository:
+    """Call records, keyed on `call_id`. PostgreSQL in production, SQLite in tests."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def upsert_calls(self, records: Sequence[CallRecord]) -> int:
+        if not records:
+            return 0
+        # One row per call_id; the last one in the batch wins (PostgreSQL refuses an ON CONFLICT
+        # statement that would change one row twice).
+        by_id: dict[str, dict[str, object]] = {}
+        for r in records:
+            by_id[r.call_id] = {
+                "call_id": r.call_id,
+                "from_msisdn": r.from_msisdn,
+                "to_msisdn": r.to_msisdn,
+                "started_at": from_epoch(min(r.started_at, MAX_TIMESTAMP_EPOCH)),
+                "answered_at": (
+                    None
+                    if r.answered_at is None
+                    else from_epoch(min(r.answered_at, MAX_TIMESTAMP_EPOCH))
+                ),
+                "ended_at": from_epoch(min(r.ended_at, MAX_TIMESTAMP_EPOCH)),
+                "end_reason": r.end_reason,
+            }
+        values = list(by_id.values())
+        dialect_name = (
+            self._session.bind.dialect.name if self._session.bind is not None else "postgresql"
+        )
+        insert = sqlite_insert if dialect_name == "sqlite" else pg_insert
+        statement = insert(CallRecordModel).values(values)
+        self._session.execute(
+            statement.on_conflict_do_update(
+                index_elements=["call_id"],
+                set_={
+                    "from_msisdn": statement.excluded.from_msisdn,
+                    "to_msisdn": statement.excluded.to_msisdn,
+                    "started_at": statement.excluded.started_at,
+                    "answered_at": statement.excluded.answered_at,
+                    "ended_at": statement.excluded.ended_at,
+                    "end_reason": statement.excluded.end_reason,
+                    "updated_at": func.now(),
+                },
+            )
+        )
+        return len(values)
+
+    def query_calls(
+        self,
+        from_time: datetime,
+        to_time: datetime,
+        msisdn: str | None = None,
+        limit: int = 5000,
+        cursor: str | None = None,
+    ) -> tuple[list[CallRecord], str | None]:
+        statement = select(CallRecordModel).where(
+            CallRecordModel.started_at >= from_time, CallRecordModel.started_at <= to_time
+        )
+        if msisdn is not None:
+            statement = statement.where(
+                or_(CallRecordModel.from_msisdn == msisdn, CallRecordModel.to_msisdn == msisdn)
+            )
+        if cursor is not None:
+            try:
+                cursor_epoch, cursor_id = decode_cursor(cursor)
+            except ValueError:
+                return [], None
+            cursor_time = from_epoch(cursor_epoch)
+            statement = statement.where(
+                or_(
+                    CallRecordModel.started_at > cursor_time,
+                    and_(
+                        CallRecordModel.started_at == cursor_time,
+                        CallRecordModel.call_id > cursor_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            CallRecordModel.started_at.asc(), CallRecordModel.call_id.asc()
+        ).limit(limit + 1)
+        rows = list(self._session.scalars(statement))
+        page = rows[:limit]
+        next_cursor = (
+            encode_cursor(to_epoch(_ensure_utc(page[-1].started_at)), page[-1].call_id)
+            if len(rows) > limit and page
+            else None
+        )
+        return [
+            CallRecord(
+                call_id=row.call_id,
+                from_msisdn=row.from_msisdn,
+                to_msisdn=row.to_msisdn,
+                started_at=to_epoch(_ensure_utc(row.started_at)),
+                answered_at=_epoch_or_none(row.answered_at),
+                ended_at=to_epoch(_ensure_utc(row.ended_at)),
+                end_reason=row.end_reason,
+            )
+            for row in page
+        ], next_cursor

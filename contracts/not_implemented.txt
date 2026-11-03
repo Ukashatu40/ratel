@@ -5,7 +5,3 @@
 #     or if an unlisted operation is NOT implemented (add the line, or implement it).
 #   - scripts/ci/run_schemathesis.sh runs Schemathesis only against operations NOT listed here.
 # Remove a line in the same PR that implements the operation.
-meter_get_calls
-
-# RatelDesk's reads and terminate, drafted 2026-10-28. Each line goes when its route lands.
-bss_get_line_calls

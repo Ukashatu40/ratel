@@ -299,16 +299,44 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/calls:
+    post:
+      tags: [RatelMeter]
+      operationId: meter_ingest_calls
+      summary: Ingest a batch of call records.
+      description: |
+        Ingests finished-call records delivered by the meter agent's call mode on the voice VM
+        (docs/call-record-agreement.md). Records are keyed on `call_id`; sending a call again
+        overwrites it, never duplicates. At most 5,000 records per batch. A batch containing any
+        invalid record is rejected as a whole. Times that are out of order are put in order, not refused
+        (see `CallRecord`).
+        Call records are personal data: the numbers and the Call-ID are never logged.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallBatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/OkEmpty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
     get:
       tags: [RatelMeter]
       operationId: meter_get_calls
       summary: Call records (one per call).
       description: |
-        At most 5,000 records per response, with `next_cursor` for the rest.
-        Keyed on call_id. A call that was never answered has `answered_at` null.
+        At most 5,000 records per response, oldest first by `started_at` (then `call_id`), with
+        `next_cursor` for the rest. Keyed on call_id. A call that was never answered has `answered_at` null.
+        `from` and `to` are both inclusive and filter on `started_at`. With `msisdn`, only the calls
+        that number made or received.
         Call records are personal data: same access rules as customer records.
-        TODO(contract): `from`/`to` semantics, and the `end_reason` values. The call record's fields
-        are to be agreed with the network team in Week 2.
       parameters:
         - $ref: "#/components/parameters/From"
         - $ref: "#/components/parameters/To"
@@ -317,7 +345,7 @@ paths:
           required: false
           schema:
             type: string
-            minLength: 1
+            pattern: "^[!-~]{1,32}$"
         - $ref: "#/components/parameters/Cursor"
       responses:
         "200":
@@ -1034,10 +1062,12 @@ paths:
       summary: The line's call records.
       description: |
         The records of `meter_get_calls` for this line's MSISDN, as calls it made or received.
+        Newest first by `started_at`, with `next_cursor` for the rest (500 records per response).
+        `from` and `to` are both inclusive and filter on `started_at`. `next_cursor` is opaque; send
+        it back unchanged.
         Call records are personal data: same access rules as customer records.
-        Not buildable yet: the call record's fields wait on the network team (`meter_get_calls`).
-        The fields RatelDesk's call tab shows beyond the record (`qci1Bearer`) are not in
-        Contract 2 and are not added here. TODO(contract): after `meter_get_calls` is agreed.
+        The fields RatelDesk's call tab used to show beyond the record (`qci1Bearer`) are not in
+        the record and are not added here.
       parameters:
         - $ref: "#/components/parameters/LineId"
         - $ref: "#/components/parameters/From"
@@ -1946,11 +1976,16 @@ components:
       properties:
         call_id:
           type: string
-          minLength: 1
+          pattern: "^[!-~]{1,128}$"
+          description: The SIP Call-ID. Visible ASCII, no spaces.
         from_msisdn:
           type: string
+          pattern: "^[!-~]{1,32}$"
+          description: The caller's number as the agent normalised it (digits, international, no plus). A number that matched no rule is sent as it came.
         to_msisdn:
           type: string
+          pattern: "^[!-~]{1,32}$"
+          description: The callee's number, in the same form.
         started_at:
           type: integer
           minimum: 0
@@ -1963,7 +1998,46 @@ components:
           minimum: 0
         end_reason:
           type: string
-          x-todo: Values to be agreed with the network team (Week 2).
+          enum: [completed, cancelled, declined, not_answered, unavailable, failed]
+          description: |
+            Why the call ended. `completed`: it was answered and then ended; `answered_at` is set exactly then.
+            `cancelled`: the caller gave up before an answer. `declined`: the callee refused it. `not_answered`:
+            busy, or rang without an answer (a phone may refuse with the busy code). `unavailable`: the callee
+            could not be reached. `failed`: any other failure.
+          x-todo: These values are the proposal in docs/call-record-agreement.md, section 11. PRD decision 8 is open; the network lead's sign-off settles them.
+      allOf:
+        - if:
+            required: [end_reason]
+            properties:
+              end_reason:
+                const: completed
+          then:
+            properties:
+              answered_at:
+                type: integer
+          else:
+            properties:
+              answered_at:
+                type: "null"
+      description: |
+        One call. `end_reason` is `completed` exactly when `answered_at` is set. If the times are out of
+        order (a call that ends before it starts, an answer outside the call), the store raises
+        `ended_at` to `started_at` and holds `answered_at` inside the call, so one bad record does not
+        stop a batch; nothing else about a record is changed.
+    CallBatch:
+      type: object
+      required: [records]
+      additionalProperties: false
+      description: |
+        A batch of call records from the meter agent's call mode. Each record is keyed on `call_id`
+        (the SIP Call-ID); sending a call again overwrites it.
+      properties:
+        records:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            $ref: "#/components/schemas/CallRecord"
     CallList:
       type: object
       required: [records, next_cursor]

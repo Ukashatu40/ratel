@@ -19,7 +19,7 @@ from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, 
 from app.bss_money.models.ledger import LedgerEntry, Wallet
 from app.bss_money.models.rating import UsageRating
 from app.db import Base
-from app.meter_api.models import UsageRecordModel
+from app.meter_api.models import CallRecordModel, UsageRecordModel
 from tests.app.bss_lines.desk_helpers import add_staff, make_app, signed_in
 
 NOW = datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
@@ -312,6 +312,111 @@ def test_usage_of_an_unknown_line_is_404(care: TestClient) -> None:
     assert care.get("/v1/lines/99/usage", params={"from": 0, "to": 1}).status_code == 404
 
 
+# --- a line's calls ----------------------------------------------------------------------------
+
+LINE_1, LINE_2, OTHER = "2348000010010", "2348000010020", "2348000999999"
+
+
+def _calls(factory: sessionmaker[Session], *calls: tuple[str, str, str, datetime, bool]) -> None:
+    """(call_id, from, to, started, answered): each lasts a minute, answered after five seconds."""
+    with factory() as s, s.begin():
+        for call_id, frm, to, started, answered in calls:
+            s.add(
+                CallRecordModel(
+                    call_id=call_id,
+                    from_msisdn=frm,
+                    to_msisdn=to,
+                    started_at=started,
+                    answered_at=started + timedelta(seconds=5) if answered else None,
+                    ended_at=started + timedelta(seconds=60),
+                    end_reason="completed" if answered else "declined",
+                )
+            )
+
+
+def test_a_lines_calls_are_the_ones_it_made_or_received_newest_first(
+    care: TestClient, factory: sessionmaker[Session]
+) -> None:
+    t = [NOW - timedelta(minutes=m) for m in (30, 20, 10)]
+    _calls(
+        factory,
+        ("c-old", LINE_1, OTHER, t[0], True),  # made by line 1
+        ("c-mid", OTHER, LINE_1, t[1], False),  # received by line 1, never answered
+        ("c-new", LINE_1, LINE_2, t[2], True),  # between our two lines
+        ("c-other", OTHER, LINE_2, t[1], True),  # line 2 only
+    )
+    body = care.get("/v1/lines/1/calls", params=_window(NOW - timedelta(hours=1), NOW)).json()
+    assert [c["call_id"] for c in body["records"]] == ["c-new", "c-mid", "c-old"]
+    assert body["next_cursor"] is None
+    unanswered = body["records"][1]
+    assert unanswered["answered_at"] is None and unanswered["end_reason"] == "declined"
+    assert set(unanswered) == {
+        *("call_id", "from_msisdn", "to_msisdn", "started_at"),
+        *("answered_at", "ended_at", "end_reason"),
+    }
+    second = care.get("/v1/lines/2/calls", params=_window(NOW - timedelta(hours=1), NOW)).json()
+    assert [c["call_id"] for c in second["records"]] == ["c-new", "c-other"]
+
+
+def test_a_lines_calls_leave_out_the_imsi_and_an_unrelated_number(
+    care: TestClient, factory: sessionmaker[Session]
+) -> None:
+    _calls(factory, ("c1", LINE_1, OTHER, NOW - timedelta(minutes=5), True))
+    text = care.get("/v1/lines/1/calls", params=_window(NOW - timedelta(hours=1), NOW)).text
+    assert "621000000000001" not in text
+
+
+def test_the_window_of_calls_includes_its_own_instants_and_filters_on_the_start(
+    care: TestClient, factory: sessionmaker[Session]
+) -> None:
+    a, b = NOW - timedelta(minutes=10), NOW - timedelta(minutes=5)
+    _calls(factory, ("c-a", LINE_1, OTHER, a, True), ("c-b", LINE_1, OTHER, b, True),
+           ("c-out", LINE_1, OTHER, NOW - timedelta(minutes=20), True))  # fmt: skip
+    body = care.get("/v1/lines/1/calls", params=_window(a, b)).json()
+    assert [c["call_id"] for c in body["records"]] == ["c-b", "c-a"]
+
+
+def test_call_pages_follow_the_cursor_without_a_gap_or_a_repeat_even_for_calls_that_start_together(
+    care: TestClient, factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.bss_money.services.desk_reads.CALL_PAGE", 2)
+    same_second = NOW - timedelta(minutes=5)
+    _calls(
+        factory,
+        *[
+            (f"c:{n}", LINE_1, OTHER, same_second if n < 3 else NOW - timedelta(minutes=n), True)
+            for n in range(5)
+        ],
+    )  # a call id may hold a colon, as a real Call-ID can
+    window = _window(NOW - timedelta(hours=1), NOW)
+    seen: list[str] = []
+    cursor = None
+    for _ in range(6):
+        params = dict(window, **({"cursor": cursor} if cursor else {}))
+        body = care.get("/v1/lines/1/calls", params=params).json()
+        seen += [c["call_id"] for c in body["records"]]
+        cursor = body["next_cursor"]
+        if cursor is None:
+            break
+    # c:3 and c:4 started later. The three that started together come last, newest call id first.
+    assert seen == ["c:3", "c:4", "c:2", "c:1", "c:0"]
+
+
+@pytest.mark.parametrize(
+    "cursor", ["abc", "123", "x:abc", ":abc", "-1e99:abc", "99999999999999999999999:abc"]
+)
+def test_a_cursor_for_calls_the_service_did_not_give_out_is_422(
+    care: TestClient, cursor: str
+) -> None:
+    params = dict(_window(NOW - timedelta(hours=1), NOW), cursor=cursor)
+    assert care.get("/v1/lines/1/calls", params=params).status_code == 422
+
+
+def test_calls_need_both_ends_of_the_window_and_a_line_that_exists(care: TestClient) -> None:
+    assert care.get("/v1/lines/1/calls", params={"from": 0}).status_code == 422
+    assert care.get("/v1/lines/99/calls", params={"from": 0, "to": 1}).status_code == 404
+
+
 # --- the wallet summary ------------------------------------------------------------------------
 
 
@@ -431,6 +536,7 @@ def test_a_pending_customer_with_a_line_points_at_it(
     [
         "/v1/lines/1/wallet",
         "/v1/lines/1/usage?from=0&to=1",
+        "/v1/lines/1/calls?from=0&to=1",
         "/v1/ledger",
         "/v1/wallet/summary",
         "/v1/dashboard",

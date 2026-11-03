@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
@@ -42,4 +42,36 @@ class UsageListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     records: list[UsageRecordSchema] = Field(..., max_length=5000)
+    next_cursor: str | None = None
+
+
+EndReason = Literal["completed", "cancelled", "declined", "not_answered", "unavailable", "failed"]
+
+
+class CallRecordSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    call_id: str = Field(
+        ..., pattern=r"^[!-~]{1,128}$", description="The SIP Call-ID. A replay overwrites."
+    )
+    from_msisdn: str = Field(..., pattern=r"^[!-~]{1,32}$")
+    to_msisdn: str = Field(..., pattern=r"^[!-~]{1,32}$")
+    started_at: NonNegativeInt = Field(..., description="Unix epoch seconds, UTC.")
+    answered_at: NonNegativeInt | None = Field(
+        ..., description="Null when the call was never answered."
+    )
+    ended_at: NonNegativeInt = Field(..., description="Unix epoch seconds, UTC.")
+    end_reason: EndReason = Field(...)
+
+
+class CallBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    records: list[CallRecordSchema] = Field(..., min_length=1, max_length=5000)
+
+
+class CallListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    records: list[CallRecordSchema] = Field(..., max_length=5000)
     next_cursor: str | None = None

@@ -307,6 +307,19 @@ class LineUsageRow:
 
 
 @dataclass(frozen=True)
+class LineCallRow:
+    """One call record, as RatelDesk's line page shows it. Personal data: never logged."""
+
+    call_id: str
+    from_msisdn: str
+    to_msisdn: str
+    started_at: datetime
+    answered_at: datetime | None
+    ended_at: datetime
+    end_reason: str
+
+
+@dataclass(frozen=True)
 class MoneyMoved:
     """Money that moved in a stretch of time. Both figures are positive kobo."""
 
@@ -317,6 +330,25 @@ class MoneyMoved:
 
 class MoneyReadRepository(Protocol):
     """Read-only views of the wallets, the ledger and usage, for RatelDesk. Never writes."""
+
+    def line_msisdn(self, line_id: int) -> str | None:
+        """The line's number, or None if there is no such line."""
+        ...
+
+    def line_calls(
+        self,
+        msisdn: str,
+        *,
+        start: datetime,
+        end: datetime,
+        before: tuple[datetime, str] | None,
+        limit: int,
+    ) -> list[LineCallRow]:
+        """Calls the number made or received with `start <= started_at <= end`, newest first.
+
+        With `before`, only those that sort after (started_at, call_id) in that order.
+        """
+        ...
 
     def line_imsi(self, line_id: int) -> str | None:
         """The line's IMSI, or None if there is no such line."""
