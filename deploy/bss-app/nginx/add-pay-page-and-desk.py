@@ -50,7 +50,7 @@ def _allows(block: str) -> list[str]:
     return re.findall(r"allow ([^;]+);", block)
 
 
-def patch(live: str, template: str, office: str | None = None) -> str:
+def patch(live: str, template: str, office: str | None = None, voice: str | None = None) -> str:
     page, desk, calls = PAGE.search(template), DESK.search(template), CALLS.search(template)
     if page is None or desk is None or calls is None:
         raise ValueError("the template lacks the RatelPay page, RatelDesk or /v1/calls block")
@@ -59,10 +59,17 @@ def patch(live: str, template: str, office: str | None = None) -> str:
     if "location = /v1/calls {" not in out:
         usage = _block(out, "/v1/usage").group(0)
         addresses = _allows(usage)  # core-up, the voice VM, the office, in that order
-        if len(addresses) < 3:
-            raise ValueError("`location /v1/usage` does not list the three addresses")
-        filled = calls.group(0).replace("<address-of-voice-vm>", addresses[1])
-        filled = filled.replace(OFFICE_PLACEHOLDER, addresses[2])
+        voice = voice or (addresses[1] if len(addresses) >= 3 else None)
+        if voice is None:
+            raise ValueError(
+                "the voice VM's address is not in `location /v1/usage` (it lists "
+                f"{len(addresses)} addresses): give it with --voice ADDRESS"
+            )
+        staff = _allows(_block(out, "/v1/").group(0))
+        if not staff:
+            raise ValueError("`location /v1/` has no allow line")
+        filled = calls.group(0).replace("<address-of-voice-vm>", voice)
+        filled = filled.replace(OFFICE_PLACEHOLDER, staff[0])
         out = out.replace(usage, usage + "\n" + filled, 1)
 
     if not ("location = /pay {" in out and "root /var/www/ratel-desk;" in out):
@@ -87,13 +94,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("template", type=Path)
     parser.add_argument("live", type=Path)
     parser.add_argument("--office", help="the office and VPN range for the staff blocks")
+    parser.add_argument(
+        "--voice", help="the voice VM's address, if `location /v1/usage` does not list it"
+    )
     args = parser.parse_args(argv)
-    if args.office and not re.fullmatch(r"[0-9a-fA-F:.]+(/[0-9]{1,3})?", args.office):
-        sys.stderr.write("refused: --office must be an address or a range such as 192.0.2.0/24\n")
-        return 1
+    for name in ("office", "voice"):
+        value = getattr(args, name)
+        if value and not re.fullmatch(r"[0-9a-fA-F:.]+(/[0-9]{1,3})?", value):
+            sys.stderr.write(
+                f"refused: --{name} must be an address or a range such as 192.0.2.0/24\n"
+            )
+            return 1
     live = args.live.read_text()
     try:
-        out = patch(live, args.template.read_text(), args.office)
+        out = patch(live, args.template.read_text(), args.office, args.voice)
     except ValueError as exc:
         sys.stderr.write(f"refused: {exc}\n")
         return 1

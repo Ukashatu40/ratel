@@ -170,36 +170,32 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
 
 ## Backups
 
-A nightly dump of the database, run by `postgres` over the local socket. It is written under a temporary name, read back
-(`pg_restore --list`) and only then kept; the newest 14 are kept and older ones deleted **after** a good new one exists. A
-failed dump leaves no file behind and deletes nothing. It catches up after a power cut (`Persistent=true`).
+A nightly **encrypted** dump of the host's database (`ratel_bss`), run by `postgres` over the local socket. It is dumped,
+read back (`pg_restore --list`), encrypted with `age` to the public keys in `/etc/ratel-backup/age-recipient.txt`, and only
+then kept; the plain dump is deleted at once. The newest 14 are kept and older ones deleted **after** a good new one
+exists. A failed dump leaves no file behind and deletes nothing. It catches up after a power cut (`Persistent=true`).
+
+The network team's older backup (`ratel-pgbackup.*`, dumping the `ratel-postgres` container) is a different thing and keeps
+its names; this one is `ratel-bss-backup.*`.
 
 ```bash
-# files copied to /tmp with the others (scp deploy/bss-app/ratel-pgbackup.* <bss-app>:/tmp/)
-sudo install -m 0755 -o root -g root /tmp/ratel-pgbackup.sh /usr/local/sbin/ratel-pgbackup
+# files copied to /tmp with the others (scp deploy/bss-app/ratel-bss-backup.* <bss-app>:/tmp/)
+command -v age && sudo -u postgres test -r /etc/ratel-backup/age-recipient.txt && echo recipient-readable   # both must pass
+sudo install -m 0755 -o root -g root /tmp/ratel-bss-backup.sh /usr/local/sbin/ratel-bss-backup
 sudo install -d -m 0700 -o postgres -g postgres /var/backups/ratel-bss
-sudo cp /tmp/ratel-pgbackup.service /tmp/ratel-pgbackup.timer /etc/systemd/system/ && sudo systemctl daemon-reload
-sudo systemd-analyze verify /etc/systemd/system/ratel-pgbackup.{service,timer}     # must print nothing about these files
-sudo systemctl start ratel-pgbackup.service && sudo journalctl -u ratel-pgbackup.service -n 5 --no-pager   # "wrote ratel_bss-... kept"
-sudo systemctl enable --now ratel-pgbackup.timer && systemctl list-timers ratel-pgbackup.timer
+sudo cp /tmp/ratel-bss-backup.service /tmp/ratel-bss-backup.timer /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo systemd-analyze verify /etc/systemd/system/ratel-bss-backup.{service,timer}     # must print nothing about these files
+sudo systemctl start ratel-bss-backup.service && sudo journalctl -u ratel-bss-backup.service -n 5 --no-pager   # "wrote ratel_bss-... kept"
+sudo systemctl enable --now ratel-bss-backup.timer && systemctl list-timers ratel-bss-backup.timer
 ```
 
 **These dumps are on the same VM.** They protect against a mistake or a damaged table, not against losing the VM or its
-disk. A copy that leaves the host, encrypted (the dump holds customers' personal data), is not decided yet: it needs a
-destination from the network team. TODO(network lead).
+disk. A copy that leaves the host (they are encrypted, so a copy is safe to move) needs a destination from the network
+team. TODO(network lead).
 
-**A backup is proven only by a restore.** Rehearse it into a scratch database, which prints table names and counts only:
-
-```bash
-DB=ratel_bss; FILE=$(ls -1t /var/backups/ratel-bss/$DB-*.dump | head -1)
-sudo -u postgres createdb rehearsal && sudo -u postgres pg_restore --no-owner --no-privileges -d rehearsal "$FILE"
-Q="select table_name, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text from information_schema.tables where table_schema='public' and table_type='BASE TABLE' order by 1"
-diff <(sudo -u postgres psql -Atd $DB -c "$Q") <(sudo -u postgres psql -Atd rehearsal -c "$Q") && echo restore-matches
-sudo -u postgres dropdb rehearsal
-```
-(The counts match exactly only if nothing was written since the dump; a small difference on a live system is expected.)
-To restore for real after damage: stop `ratel-app.service` and the two timers, restore into a fresh database as above,
-check it, then switch `DATABASE_URL` or rename the databases, and start the services. Do not restore over the live database.
+**Only the holder of the private key can read them, and a backup is proven only by a restore.** Where the private key is
+kept, and who rehearsed a restore, are in [docs/runbooks/bss-backup-restore.md](../../docs/runbooks/bss-backup-restore.md).
+Do that rehearsal once before the demo.
 
 ## Upgrade and rollback
 

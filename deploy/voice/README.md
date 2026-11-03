@@ -30,11 +30,15 @@ than the last it read and at least 10 seconds old, and joins them per Call-ID:
 
 ## Install (the network team's VM: change nothing else on it)
 
-1. **Python 3.12.** The release carries wheels for Python 3.12. TODO(network lead): is `python3.12` installed on the
-   voice VM? If not, say how it should be (it is a package change on a core host).
+1. **Python 3.12 at `/opt/python-3.12/bin/python3.12`** (Ubuntu 22.04 ships 3.10; the release's wheels are for 3.12). It sits
+   next to the system Python and does not touch it, the same as on core-up: build it with
+   [docs/runbooks/python-3.12-on-ubuntu-22.04.md](../../docs/runbooks/python-3.12-on-ubuntu-22.04.md) (that needs build
+   packages, a package change on a core host: **ask the network lead first**). The voice VM and core-up are both
+   Ubuntu 22.04 on x86_64, so copying core-up's `/opt/python-3.12` is an alternative: TODO(network lead) decide which,
+   then check `/opt/python-3.12/bin/python3.12 --version`.
 2. **The release.** On your machine, from a commit on `main`: `scripts/release/build-release.sh meter HEAD ~/ratel-releases`
    (the agent is one package; call mode is a flag). Copy the tarball and `deploy/core-up/install-release.sh` to the VM,
-   check the SHA-256, then `sudo ./install-release.sh ratel-meter-<commit>.tar.gz python3.12`. It creates the user
+   check the SHA-256, then `sudo ./install-release.sh ratel-meter-<commit>.tar.gz /opt/python-3.12/bin/python3.12`. It creates the user
    `ratelmeter` and installs under `/opt/ratel-meter` (the same layout as core-up; the VMs are different hosts).
 3. **The export script and the sudo rule:**
    ```bash
