@@ -15,7 +15,8 @@ from common.timeutil import utc_epoch_now
 
 from .agent import Agent, AgentConfig
 from .assignments import HttpAssignmentCache
-from .config import Settings
+from .calls import CallAgent, CallAgentConfig, CommandCallSource, StateStore
+from .config import CallSettings, Settings
 from .counters import CounterReader, NftablesCounterReader, SnapshotCounterReader
 from .ingest import HttpMeterPoster
 from .spool import Spool
@@ -67,7 +68,27 @@ def create_agent(settings: Settings | None = None) -> Agent:
     return Agent(reader, cache, poster, spool, config)
 
 
-def run_agent_loop(agent: Agent, interval_seconds: int = 300) -> None:
+def create_call_agent(settings: CallSettings | None = None) -> CallAgent:
+    """Call mode: the export command, the poster to /v1/calls, a spool and the state file."""
+    settings = settings or CallSettings()  # type: ignore[call-arg]  # the key comes from the environment
+    poster = HttpMeterPoster(
+        base_url=settings.meter_api_base_url, api_key=settings.api_key, path="/v1/calls"
+    )
+    spool = Spool(
+        settings.spool_dir / "calls"
+    )  # its own folder: usage batches and call batches never mix
+    return CallAgent(
+        CommandCallSource(settings.call_export_command),
+        poster,
+        spool,
+        StateStore(settings.spool_dir / "calls-state"),
+        CallAgentConfig(settings.call_settle_seconds, settings.call_open_max_seconds),
+    )
+
+
+def run_agent_loop(
+    agent: Agent | CallAgent, interval_seconds: int = 300, aligned: bool = True
+) -> None:
     running = True
 
     def handle_signal(sig: int, _frame: FrameType | None) -> None:
@@ -95,7 +116,7 @@ def run_agent_loop(agent: Agent, interval_seconds: int = 300) -> None:
         now = utc_epoch_now()
         # Compute sleep duration until next clock-aligned interval
         next_interval = ((start_time // interval_seconds) + 1) * interval_seconds
-        sleep_secs = max(1, next_interval - now)
+        sleep_secs = max(1, next_interval - now) if aligned else interval_seconds
 
         # Sleep in small slices to respond promptly to shutdown signals
         sleep_until = time.time() + sleep_secs
@@ -106,7 +127,9 @@ def run_agent_loop(agent: Agent, interval_seconds: int = 300) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="RatelMeter agent for core-up")
+    parser = argparse.ArgumentParser(
+        description="RatelMeter agent (data mode on core-up, call mode on the voice VM)"
+    )
     parser.add_argument(
         "--once",
         action="store_true",
@@ -120,9 +143,24 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
+    if args.mode == "call":
+        call_settings = CallSettings()  # type: ignore[call-arg]  # the key comes from the environment
+        configure_logging(call_settings.log_level)
+        call_agent = create_call_agent(call_settings)
+        if args.once:
+            try:
+                call_agent.run_once()
+            except Exception as exc:
+                log_event(
+                    log, logging.ERROR, "meter.agent.tick_error", error_type=type(exc).__name__
+                )
+                return 1
+            return 0
+        run_agent_loop(call_agent, call_settings.call_interval_seconds, aligned=False)
+        return 0
+
     settings = Settings()  # type: ignore[call-arg]  # the keys come from the environment
-    if args.mode:
-        settings.mode = args.mode
+    settings.mode = args.mode
 
     configure_logging(settings.log_level)
 

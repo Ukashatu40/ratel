@@ -255,8 +255,8 @@ section 3. The configuration is on the voice VM; its changes are kept in Git as 
 | `completed` | the callid has an `acc` INVITE 200 |
 | `cancelled` | no 200 and a `missed_calls` 487 |
 | `declined` | no 200 and a 603 (a phone may send 486 instead, which then reads as `not_answered`) |
-| `not_answered` | no 200 and a 486 or 480: busy, ringing out and some declines look the same |
-| `unavailable` | no 200 and a 408, 500, 404 or 480 |
+| `not_answered` | no 200 and a 486 or 600: busy, ringing out and some declines look the same |
+| `unavailable` | no 200 and a 408, 500, 404 or 480 (480 is "temporarily unavailable": the callee cannot be reached) |
 | `failed` | any other `missed_calls` code |
 
 This replaces `busy`, `no_answer` and `error` from section 6: the first two could never be told apart, and no row exists for
@@ -271,7 +271,7 @@ any failed call is `time - start_ts`, so the product can tell a quick refusal fr
 - `call_id`: the Call-ID. `from_msisdn`, `to_msisdn`: see the next point.
 - **Number format.** `from_user` came as `234` and ten digits; `to_user` came as dialled, `0` and ten digits. The
   stored form of a line's number is digits only, international, no plus sign (`contracts/openapi.yaml`, voucher
-  redeem). The agent turns `0XXXXXXXXXX` into `234XXXXXXXXXX`. TODO(network lead): other forms a phone may send
+  redeem). The agent turns `0XXXXXXXXXX` into `234XXXXXXXXXX` (built: [deploy/voice](../deploy/voice/README.md)). TODO(network lead): other forms a phone may send
   (`+234…`, `234…`), and what to do with a number that matches no rule (post it as it is, never drop the call).
   This also means section 2's "E.164" should read "digits only, international, no plus sign", to match the lines.
 - `answered_at`: the `time` of the INVITE 200, as epoch seconds in UTC; null when there is none.

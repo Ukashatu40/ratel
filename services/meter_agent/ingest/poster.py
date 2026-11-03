@@ -15,7 +15,7 @@ log = logging.getLogger("ratel.meter.poster")
 
 
 class HttpMeterPoster:
-    """Posts usage record batches to POST /v1/usage on the RatelMeter API."""
+    """Posts record batches to the RatelMeter API: usage to /v1/usage, call records to /v1/calls."""
 
     def __init__(
         self,
@@ -23,7 +23,9 @@ class HttpMeterPoster:
         api_key: SecretStr | str,
         timeout: float = 10.0,
         client: httpx.Client | None = None,
+        path: str = "/v1/usage",
     ) -> None:
+        self._path = path
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key if isinstance(api_key, SecretStr) else SecretStr(api_key)
         self._timeout = timeout
@@ -50,7 +52,7 @@ class HttpMeterPoster:
             )
             return False
 
-        url = f"{self._base_url}/v1/usage"
+        url = f"{self._base_url}{self._path}"
         headers = {
             "Authorization": f"Bearer {self._api_key.get_secret_value()}",
             "Content-Type": "application/json",
