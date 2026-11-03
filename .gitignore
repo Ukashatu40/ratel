@@ -14,6 +14,8 @@ credentials*.json
 *.sql
 # The one SQL file that is a script, not a dump: roles with no password in it.
 !deploy/bss-app/postgres-roles.sql
+# The voice VM's call-record columns: a script that adds three columns, no data.
+!network/voice/scscf-acc/acc-columns.sql
 *.dump
 *.bak
 *.archive

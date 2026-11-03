@@ -197,29 +197,35 @@ Please answer inline. These block sign-off.
 8. **Volume.** Roughly how many accounting rows per call, and expected peak
    calls per second at the demo, so the agent's 60-second poll can be sized.
 
-## 11. Answers from the lab, 2026-10-30 (for the network lead to confirm)
+## 11. Answers from the lab, 2026-10-30 and 2026-11-02 (for the network lead to confirm)
 
-Source: `acc` switched on in the S-CSCF on 2026-10-30 and seven call cases tried between two of our own phones, read
-as counts, times and codes only (no number or Call-ID left the VM). The procedure and the raw results are in
-[runbooks/voice-call-record-checks.md](runbooks/voice-call-record-checks.md), section 3. The configuration change is
-on the voice VM and is not yet in Git. TODO: bring it into `network/voice/` (without credentials).
+Source: `acc` switched on in the S-CSCF on 2026-10-30, a `start_ts` column added on 2026-11-02, and the call cases
+tried on both days between two of our own phones, read as counts, times and codes only (no number or Call-ID left the
+VM). The procedure and the raw results are in [runbooks/voice-call-record-checks.md](runbooks/voice-call-record-checks.md),
+section 3. The configuration is on the voice VM; its changes are kept in Git as snippets and SQL in
+[../network/voice/](../network/voice/README.md) (no credentials).
 
 ### Answers to the questions in section 10
 
 1. **Schema.** `scscf.acc` (answered INVITE, and BYE) and `scscf.missed_calls` (an INVITE that failed), from the
    container's own `acc-create.sql`, plus two columns we added to both: `from_user` and `to_user` (`VARCHAR(64)`),
-   filled from the From and To user parts. The agent reads `id`, `method`, `callid`, `from_tag`, `sip_code`,
-   `sip_reason`, `time`, `from_user`, `to_user`. TODO(network lead): add the `SHOW CREATE TABLE` output of both
+   filled from the From and To user parts, and a third, `start_ts` (`INT UNSIGNED`, epoch seconds), filled with the
+   arrival time of the INVITE (see `started_at` below). The agent reads `id`, `method`, `callid`, `from_tag`, `sip_code`,
+   `sip_reason`, `time`, `from_user`, `to_user`, `start_ts`. TODO(network lead): add the `SHOW CREATE TABLE` output of both
    tables (column names and types, no rows) to the pull request; it also gives the type of `time`.
 2. **Rows.** There is no start row and no end row. An answered call leaves `acc` rows for the INVITE (code 200) and
    for the BYE; a call that failed leaves `missed_calls` rows. **Each event is written twice** for a call between two
-   of our own phones (one row per leg), and one hang-up can leave up to four BYE rows. `callid` links them all.
+   of our own phones (one row per leg). A hang-up leaves **two** BYE rows when one phone hangs up (seen on 2026-11-02,
+   both directions); four appeared once on 2026-10-30, most likely because both phones pressed hang up. `callid` links
+   them all.
 3. **Key.** The SIP Call-ID, and **both legs of a call share it** (seen). The agent groups by `callid`, so the number
    of rows per call does not matter. Not tested: a Kamailio restart (see 7). Not decided: a phone's Call-ID can
    embed the phone's address; whether `call_id` is stored as is or hashed is TODO(network lead, RatelMeter owner),
    and logs must follow section 8 either way.
-4. **`end_reason`.** The codes seen are in the table below. They do **not** separate busy from declined from
-   ringing out, so the set in section 6 cannot be emitted as written. A proposal follows the table.
+4. **`end_reason`.** The codes seen are in the table below. A decline came back as 486 on 2026-10-30 and as 603 on
+   2026-11-02, and a ring-out as 486 (after about 78 s) and as a 487 after the caller cancelled at 180 s, so the code
+   alone does **not** separate busy from declined from ringing out. The set in section 6 cannot be emitted as written.
+   A proposal follows the table.
 5. **Time.** UTC. The VM is `Etc/UTC` and synchronised, MySQL's system time zone is UTC and `NOW()` equals
    `UTC_TIMESTAMP()`. The agent still converts explicitly, with a test.
 6. **Unanswered.** There is no end row, only a `missed_calls` row written when the final reply passed the S-CSCF.
@@ -238,9 +244,9 @@ on the voice VM and is not yet in Git. TODO: bring it into `network/voice/` (wit
 | Answered, then a hang-up | `acc` INVITE 200, then BYE 200 |
 | Cancelled by the caller | `missed_calls` INVITE 487 |
 | Busy | `missed_calls` INVITE 486 Busy Here |
-| Declined by the callee | `missed_calls` INVITE **486 Busy Here** (not 603) |
-| Rang out, nobody answered | `missed_calls` INVITE **486 Busy Here**, about 78 s after the call was made |
-| Callee not reachable (airplane mode) | `missed_calls` INVITE **408 Request Timeout** and **500** ("Server error on LIR select next S-CSCF") in the same second |
+| Declined by the callee | `missed_calls` INVITE **486 Busy Here** on 2026-10-30; **603 Decline** after 11 s on 2026-11-02 (the phone decides) |
+| Rang out, nobody answered | `missed_calls` INVITE **486 Busy Here** about 78 s after the call was made (2026-10-30); **487** at 180 s when the caller finally cancelled (2026-11-02): the network sent no no-answer code in 3 minutes |
+| Callee not reachable (airplane mode, or off) | `missed_calls` INVITE **408 Request Timeout** and **500** ("Server error on LIR select next S-CSCF") in the same second, 3 s after the call was made |
 
 ### Proposal for `end_reason` (the values are PRD decision 8, still open; the network lead and the project lead decide)
 
@@ -248,15 +254,17 @@ on the voice VM and is not yet in Git. TODO: bring it into `network/voice/` (wit
 | ------------ | ---- |
 | `completed` | the callid has an `acc` INVITE 200 |
 | `cancelled` | no 200 and a `missed_calls` 487 |
-| `not_answered` | no 200 and a 486: busy, declined and ringing out look the same |
+| `declined` | no 200 and a 603 (a phone may send 486 instead, which then reads as `not_answered`) |
+| `not_answered` | no 200 and a 486 or 480: busy, ringing out and some declines look the same |
 | `unavailable` | no 200 and a 408, 500, 404 or 480 |
 | `failed` | any other `missed_calls` code |
 
 This replaces `busy`, `no_answer` and `error` from section 6: the first two could never be told apart, and no row exists for
 `error`. Take the rule in this order, because the two rows of one failed call can carry different codes. Caution: a 500
 from the HSS lookup is also what a fault on our own HSS would produce, so `unavailable` can hide a network fault.
-If the product needs busy and declined separated, the S-CSCF would have to say so (a 603 for a decline); that is not
-in place.
+A phone decides how it declines (603 or 486), so busy and declined cannot be separated for every phone. The ring time of
+any failed call is `time - start_ts`, so the product can tell a quick refusal from a long unanswered ring if it needs to
+(for example, a 487 after 180 s is a caller who gave up on an unanswered call). PRD decision 8.
 
 ### Building one `CallRecord` from the rows
 
@@ -269,22 +277,28 @@ in place.
 - `answered_at`: the `time` of the INVITE 200, as epoch seconds in UTC; null when there is none.
 - `ended_at`: the `time` of the **lowest-`id` BYE** of the callid (the first hang-up). For a call that never connected,
   the `time` of its `missed_calls` row.
-- **`started_at` is the open problem.** `acc` records only the time the *final reply* passed the S-CSCF, never when the
-  call began, and the contract requires `started_at`. Options for the network lead:
-  - **(a, recommended)** record the arrival time of the INVITE in the S-CSCF and write it as one more `db_extra`
-    column. We believe this works (a variable set when the INVITE arrives is still there when the reply is accounted)
-    but it is **not verified**: it needs one test call of each kind in the lab.
-  - **(b)** accept `started_at` = `answered_at` for answered calls and the failure time for the rest. Ring time is then
-    lost, and a call that rang for a minute looks as if it started when it was answered.
+- **`started_at`: verified on 2026-11-02 (option a).** `acc` records only the time the *final reply* passed the S-CSCF,
+  so the S-CSCF now stores the arrival time of each INVITE in `start_ts` (a variable set when the request arrives,
+  written with the row). Every case tried gave a plausible, non-zero value: an answered call's INVITE row showed the ring
+  time (6 s and 4 s), a decline 11 s, an unreachable callee 3 s, an unanswered call cancelled by the caller 180 s. Both
+  legs of one call carried the same `start_ts`. A BYE row's `start_ts` is the BYE's own arrival. `started_at` is the
+  smallest `start_ts` of the callid's INVITE rows (`acc` and `missed_calls`). Nothing here depends on option (b).
 - A call with an INVITE 200 and **no BYE** is not posted until a BYE appears. TODO(network lead, RatelMeter owner):
   after how long such a call is reported to operations instead (the contract has no open-ended call).
 
-### To test in the lab before signing
+### Tested in the lab, and what is left
 
-1. The `started_at` change under (a), for an answered, a cancelled, a declined and an unreachable call.
-2. Restart the S-CSCF during a call and hang up (question 7).
-3. The caller-hangs-up case again, to see whether its BYE rows are mixed as the callee's were.
-4. Whether a call to a phone that is registered but has no data connection behaves like the unreachable case.
+Done on 2026-11-02: the `started_at` change for an answered, a declined, an unanswered and an unreachable call (and a
+call cancelled by the caller); the caller-hangs-up case. For the first two answered calls the direction check
+(`from_tag` of the BYE against the INVITE's) gave 0 for the callee hanging up (two rows) and 1 for the caller hanging up
+(two rows), so the lowest-`id` BYE rule holds.
+
+Still to test before signing:
+
+1. Restart the S-CSCF during a call, hang up, and see whether a BYE row appears (question 7). It drops registrations,
+   so do it last.
+2. Whether a call to a phone that is registered but has no data connection behaves like the unreachable case.
+3. One answered call (2026-10-30 13:25 UTC) has no BYE row at all: hang up and ask again whether that can recur.
 
 ## 12. Sign-off
 
