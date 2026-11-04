@@ -61,7 +61,7 @@ py-serializable==2.1.0
 pycparser==3.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
-pydantic_core==2.46.5
+pydantic_core==2.50.2
 Pygments==2.21.0
 PyJWT==2.15.1
 pymongo==4.19.0
