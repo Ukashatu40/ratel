@@ -9,30 +9,47 @@
 <link rel="icon" href="data:,">
 <style>
 /* One file, one request: see web/pay/README.md for the page-weight budget. */
-:root{--bg:#fff;--fg:#14202b;--mut:#4a5966;--line:#b8c3cc;--acc:#0b5cab;--accfg:#fff;--ok:#146c2e;--bad:#b3261e;--box:#f3f6f9}
-@media (prefers-color-scheme:dark){:root{--bg:#10171d;--fg:#e8eef3;--mut:#a9b6c1;--line:#3b4954;--acc:#7dbaff;--accfg:#08131c;--ok:#7bdc95;--bad:#ff9d94;--box:#18222a}}
+/* Ratel blue (#033399) for headings, buttons and links; green only for success. */
+:root{--bg:#edf0f7;--fg:#1a1d24;--mut:#4a5466;--line:#cfd6e3;--head:#033399;--acc:#033399;--accfg:#fff;--ok:#1a7f3c;--okbg:#fff;--bad:#b42318;--box:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1420;--fg:#e8ecf4;--mut:#aab3c3;--line:#364057;--head:#a9c0ff;--acc:#3b5fd6;--accfg:#fff;--ok:#5fd38a;--okbg:#132219;--bad:#ff8a80;--box:#182032}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:30rem;margin:0 auto;padding:16px 16px 40px}
-h1{font-size:1.4rem;margin:8px 0 4px}
-h2{font-size:1.05rem;margin:24px 0 4px}
-p{margin:4px 0 12px}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{width:100%;max-width:30rem;margin:0 auto;padding:0 16px}
+/* The header stays white in dark mode too, so the logo keeps its own colours. */
+.top{background:#fff;border-bottom:4px solid #033399}
+.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:14px;padding-bottom:14px}
+.logo{display:block;width:132px;height:auto}
+.prod{color:#033399;font-weight:800;font-size:1.125rem}
+main{flex:1;width:100%;max-width:30rem;margin:0 auto;padding:28px 16px 40px}
+h1{color:var(--head);font-size:1.75rem;line-height:1.2;font-weight:800;margin:0 0 12px}
+h2{color:var(--head);font-size:1.2rem;font-weight:800;margin:28px 0 4px}
+p{margin:4px 0 16px}
+a{color:var(--head)}
 .mut{color:var(--mut)}
-label{display:block;margin:14px 0 4px;font-weight:600}
-input{width:100%;min-height:48px;padding:8px 12px;font:inherit;color:inherit;background:var(--box);border:1px solid var(--line);border-radius:8px}
-input:focus-visible,button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
-.chk{display:flex;align-items:center;gap:8px;font-weight:400}
-.chk input{width:auto;min-height:0}
-button{width:100%;min-height:48px;margin-top:20px;padding:8px 16px;font:inherit;font-weight:600;color:var(--accfg);background:var(--acc);border:0;border-radius:8px;cursor:pointer}
+label{display:block;margin:18px 0 6px;font-weight:700}
+input{width:100%;min-height:48px;padding:12px 14px;font:inherit;font-size:1.125rem;letter-spacing:.03em;color:inherit;background:var(--box);border:2px solid var(--line);border-radius:10px}
+input::placeholder{color:var(--mut);opacity:1;letter-spacing:0}
+input:focus-visible,button:focus-visible{outline:3px solid var(--head);outline-offset:2px}
+.chk{display:flex;align-items:center;gap:10px;font-weight:400}
+.chk input{width:20px;height:20px;min-height:0;padding:0;accent-color:var(--acc)}
+button{width:100%;min-height:52px;margin-top:28px;padding:14px 16px;font:inherit;font-size:1.125rem;font-weight:700;color:var(--accfg);background:var(--acc);border:0;border-radius:10px;cursor:pointer}
 button:disabled{opacity:.6;cursor:wait}
-#pay{margin-top:8px;padding-top:4px;border-top:1px solid var(--line)}
-#status{min-height:1.5em;margin-top:20px;padding:0;font-weight:600}
-#status.ok{color:var(--ok)}
+#pay{margin-top:28px;padding-top:4px;border-top:1px solid var(--line)}
+#status{min-height:1.5em;margin-top:24px;padding:0;font-weight:600}
+#status.ok{color:var(--ok);background:var(--okbg);border:2px solid var(--ok);border-radius:10px;padding:20px 16px;text-align:center;font-size:1.25rem;font-weight:800}
 #status.bad{color:var(--bad)}
+.foot{border-top:1px solid var(--line);padding:18px 0 24px;text-align:center;font-size:.9375rem}
+.foot p{margin:0}
 [hidden]{display:none}
 </style>
 </head>
 <body>
+<header class="top">
+<div class="wrap">
+<svg class="logo" viewBox="0 0 580 164" role="img" aria-label="Ratel, power to connect"><title>Ratel</title><g fill="#033399"><path transform="translate(34.2 7.7)" d="M0 0 C14 0 29 0 43 1 C44 1 44 1 49 1 C62 2 73 3 83 12 C89 22 90 30 90 41 C87 56 78 64 67 73 C69 82 71 90 74 99 C84 127 84 127 84 134 C77 134 70 134 63 135 C61 135 58 135 56 135 C54 135 53 135 51 135 C49 135 47 135 45 135 C44 135 42 134 41 134 C37 129 36 125 34 119 C32 112 30 104 28 97 C26 90 26 90 26 88 C25 88 25 88 24 88 C24 89 24 91 23 92 C23 98 22 104 20 111 C20 113 20 115 19 118 C16 132 16 132 14 134 C6 135 -1 134 -9 135 C-11 135 -13 135 -15 135 C-17 135 -19 135 -21 135 C-23 135 -25 135 -27 135 C-28 135 -30 134 -31 134 C-33 131 -33 131 -32 124 C-31 120 -30 115 -29 111 C-27 104 -26 98 -25 92 C-23 84 -22 76 -20 67 C-18 57 -16 47 -14 37 C-6 0 -6 0 0 0Z M37 20 C34 28 32 36 31 45 C31 46 31 48 30 49 C30 52 29 56 29 59 C29 60 30 60 30 60 C37 60 37 60 41 58 C48 50 50 41 50 31 C50 25 50 25 46 20 C41 20 41 20 37 20Z"/><path transform="translate(215.9 51.6)" d="M0 0 C8 8 9 16 8 26 C5 83 5 83 -2 90 C-7 91 -12 91 -17 91 C-19 91 -20 91 -22 91 C-25 91 -29 91 -33 90 C-36 87 -36 87 -38 81 C-42 82 -42 82 -47 85 C-57 91 -67 92 -79 90 C-85 87 -88 85 -92 78 C-95 69 -95 60 -92 51 C-85 41 -75 37 -64 34 C-59 34 -54 33 -48 33 C-48 33 -48 33 -44 32 C-41 32 -37 32 -34 31 C-34 29 -33 26 -33 23 C-33 22 -33 20 -33 18 C-33 14 -33 14 -37 10 C-43 10 -43 10 -48 14 C-48 15 -48 15 -50 18 C-52 22 -52 22 -56 24 C-60 25 -64 25 -67 25 C-68 25 -68 25 -74 25 C-79 24 -79 24 -82 22 C-83 15 -81 10 -78 3 C-59 -13 -21 -14 0 0Z M-49 49 C-54 55 -54 55 -54 61 C-54 62 -54 64 -54 65 C-53 66 -51 67 -50 68 C-43 67 -42 66 -38 61 C-36 56 -36 53 -36 47 C-36 47 -37 47 -37 46 C-43 46 -43 46 -49 49Z"/><path transform="translate(357.9 47.7)" d="M0 0 C2 -0 4 -0 6 -0 C17 1 29 4 37 12 C42 19 41 28 40 37 C37 47 37 47 32 51 C27 52 27 52 21 52 C19 51 17 51 15 51 C13 51 10 51 8 51 C4 51 -1 51 -5 51 C-7 51 -9 51 -11 51 C-16 51 -16 51 -19 54 C-20 67 -20 67 -17 72 C-13 74 -9 73 -5 73 C-5 73 -5 73 -4 69 C-2 64 0 61 5 58 C9 58 14 58 18 58 C20 58 23 58 25 58 C31 58 31 58 33 60 C33 71 31 79 24 86 C8 95 -20 95 -37 91 C-48 85 -53 79 -58 68 C-62 53 -60 40 -53 26 C-44 13 -33 5 -17 1 C-11 0 -6 0 0 0Z M-11 25 C-14 31 -15 33 -14 39 C-13 40 -13 40 -7 41 C0 40 0 40 4 36 C5 30 5 30 4 23 C-2 18 -5 20 -11 25Z"/><path transform="translate(441.3 -0.4)" d="M0 0 C1 -0 3 -0 4 -0 C9 -0 9 -0 16 0 C20 7 20 8 19 15 C18 17 18 19 18 21 C16 27 15 33 14 39 C13 42 13 45 12 48 C11 55 10 63 8 70 C6 83 3 96 1 109 C-3 134 -3 134 -7 138 C-13 140 -19 140 -25 140 C-27 140 -27 140 -33 140 C-39 139 -39 139 -43 137 C-45 130 -43 125 -42 117 C-42 115 -41 112 -41 110 C-40 105 -39 100 -38 95 C-37 90 -36 84 -35 79 C-34 71 -32 63 -30 55 C-30 53 -29 50 -29 48 C-28 39 -26 30 -24 21 C-24 20 -24 20 -24 17 C-21 1 -15 0 0 0Z"/><path transform="translate(281.4 23.5)" d="M0 0 C1 0 1 0 5 0 C6 0 6 0 10 0 C11 0 12 0 14 0 C16 6 15 8 14 13 C13 18 13 22 13 26 C13 27 13 27 14 27 C16 27 19 27 22 27 C23 28 24 29 25 29 C25 36 25 36 22 42 C17 45 13 45 8 45 C4 62 0 79 -0 96 C-0 97 -0 97 2 98 C4 98 6 98 8 98 C9 99 10 100 11 100 C12 106 12 106 9 113 C3 119 -6 119 -14 119 C-24 119 -31 118 -38 111 C-44 103 -44 95 -42 85 C-42 84 -42 84 -41 79 C-38 68 -36 56 -34 44 C-36 45 -37 45 -39 45 C-43 44 -43 44 -47 41 C-47 33 -47 33 -44 27 C-40 26 -35 24 -30 22 C-22 18 -16 12 -9 5 C-4 0 -4 0 0 0Z"/></g><g fill="#fdcf36"><path transform="translate(471 6)" d="M0 0 C28 4 55 25 73 45 C91 69 102 93 108 123 C108 123 109 124 109 124 C109 126 109 129 109 131 C105 131 101 131 97 131 C95 131 93 131 90 131 C85 131 85 131 83 129 C82 126 82 124 81 121 C79 108 74 97 68 85 C68 84 67 82 67 81 C69 79 71 78 73 76 C75 70 74 67 72 61 C67 53 62 49 54 45 C46 45 46 45 42 48 C36 47 34 44 29 40 C20 33 11 29 -0 25 C-1 24 -3 24 -4 23 C-5 16 -4 9 -2 2 C-1 1 -1 1 0 0Z"/></g><g fill="#ed1c24"><path transform="translate(465 38)" d="M0 0 C18 4 33 18 45 30 C43 38 38 43 32 48 C24 47 22 43 16 38 C11 34 6 31 0 28 C-1 27 -2 26 -4 25 C-5 19 -4 16 -3 10 C-3 9 -2 7 -2 5 C-1 1 -1 1 0 0Z"/><path transform="translate(525 87)" d="M0 0 C10 13 20 32 20 49 C18 51 14 50 11 51 C2 50 2 50 -1 47 C-2 45 -2 44 -3 42 C-4 39 -5 37 -7 34 C-7 34 -7 34 -9 30 C-12 24 -17 18 -21 12 C-17 5 -8 -2 0 0Z"/></g><g fill="#1e9e46"><path transform="translate(493 106)" d="M0 0 C6 1 7 3 11 8 C12 11 14 13 15 16 C16 18 17 20 18 22 C21 27 21 27 20 31 C15 31 9 31 4 31 C3 31 3 31 -0 31 C-4 31 -8 31 -12 31 C-15 27 -17 22 -19 17 C-15 13 -11 9 -7 6 C-6 5 -5 3 -3 2 C-2 2 -1 1 0 0Z"/><path transform="translate(458 74)" d="M0 0 C11 2 20 11 28 19 C28 20 28 20 28 21 C24 24 21 27 17 30 C15 32 13 33 11 35 C11 35 11 35 7 38 C-4 34 -4 34 -6 29 C-6 28 -5 28 -5 27 C-4 22 -4 18 -3 13 C-2 8 -1 4 0 0Z"/></g><g fill="#8dc63f"><path transform="translate(451 115)" d="M0 0 C8 3 14 8 17 16 C17 18 17 20 17 22 C15 24 9 23 7 23 C5 23 3 23 1 23 C-3 23 -3 23 -5 21 C-3 3 -3 3 0 0Z"/></g><text x="321" y="161" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="22" fill="#1e9e46" textLength="256" lengthAdjust="spacingAndGlyphs">POWER TO CONNECT</text></svg>
+<span class="prod">RatelPay</span>
+</div>
+</header>
 <main>
 <h1>Top up your line</h1>
 <p class="mut">Add credit with a prepaid card.</p>
@@ -56,6 +73,12 @@ button:disabled{opacity:.6;cursor:wait}
 </form>
 <p id="status" role="status" aria-live="polite"></p>
 </main>
+<footer class="foot">
+<div class="wrap">
+<!-- TODO(PRD): the help wording, and whether to give a customer care number. -->
+<p class="mut">Need help? Visit a Ratel Plus shop or call customer care.</p>
+</div>
+</footer>
 <script>
 (function (g) {
   "use strict";
