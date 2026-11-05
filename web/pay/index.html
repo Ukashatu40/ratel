@@ -51,19 +51,19 @@ button:disabled{opacity:.6;cursor:wait}
 </div>
 </header>
 <main>
-<h1>Top up your line</h1>
-<p class="mut">Add credit with a prepaid card.</p>
+<h1>Recharge your Ratel line</h1>
+<p class="mut">Use a Ratel recharge card. You don't need an account.</p>
 <!-- TODO(PRD): the exact words on this page, and what it says after a top-up. -->
 <form id="f" novalidate>
-<label for="phone">Phone number of the line</label>
+<label for="phone">Ratel number to recharge</label>
 <input id="phone" type="tel" inputmode="numeric" autocomplete="off" placeholder="0800 000 0000">
-<h2>Prepaid card</h2>
+<h2>Recharge card</h2>
 <label for="card">Card number (20 digits)</label>
 <input id="card" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false">
-<label for="pin">PIN (14 digits)</label>
+<label for="pin">PIN (14 digits, under the scratch panel)</label>
 <input id="pin" type="password" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false">
 <label class="chk"><input id="show" type="checkbox"> Show the PIN</label>
-<button id="go" type="submit">Add credit</button>
+<button id="go" type="submit">Recharge</button>
 <div id="pay" hidden>
 <h2>Pay by card</h2>
 <label for="amount">Amount in naira</label>
@@ -90,16 +90,16 @@ button:disabled{opacity:.6;cursor:wait}
   var NAIRA = "₦";
 
   var MSG = {
-    phone: "Enter the phone number of the line, for example 0800 000 0000.",
+    phone: "Enter a Ratel number, for example 0800 000 0000.",
     card: "The card number has 20 digits. Check it and try again.",
     pin: "The PIN has 14 digits. Check it and try again.",
     amount: "Enter the amount in naira, for example 1000.",
     refused: "This card cannot be used. Check the numbers and try again.",
     refusedPay: "This payment cannot be started. Check the number and the amount.",
     malformed: "Check the numbers you typed and try again.",
-    limited: "Too many attempts. Wait a while and try again.",
-    unavailable: "Card payments are not available right now. Use a prepaid card.",
-    trouble: "Something went wrong. Try again.",
+    limited: "Too many attempts. Please wait an hour and try again.",
+    unavailable: "Card payments are not available right now. Use a recharge card.",
+    trouble: "We couldn't finish your recharge. Please try again. If it keeps happening, visit a Ratel shop.",
     waiting: "Waiting for your payment to finish...",
     failed: "The payment did not go through. Nothing was added to your line.",
     still: "Your payment is still being checked. Come back to this page in a minute."
