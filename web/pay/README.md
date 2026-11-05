@@ -83,8 +83,8 @@ The page keeps its CSS and script inside `index.html` (one request). Separate fi
 
 | Date | What | Result |
 | ---- | ---- | ------ |
-| 2026-11-01 | `index.html` size | 13,297 bytes; 4,697 bytes compressed (gzip -9). Limit 30 KB |
+| 2026-11-04 | `index.html` size | 19,852 bytes; 7,373 bytes compressed (gzip -9). Limit 30 KB |
 | 2026-11-01 | Requests for the first load | 1 (checked by `tests/tooling/test_pay_page.py`: no script, stylesheet, image or font file, no other address) |
-| | Load time on "3G" in Chrome DevTools | **Not measured yet.** TODO: measure from the proxy on bss-app and record it here |
+| 2026-11-04 | Load time on "3G" in Chrome DevTools, local (`python3 -m http.server`, Chrome 155, cache disabled) | 1 request, 20.0 kB transferred, DOMContentLoaded 2.63 s, load about 2.7 s. Not yet measured through the proxy on bss-app |
 
 Measured results are recorded in each PR that changes the page.
