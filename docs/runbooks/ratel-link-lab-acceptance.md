@@ -118,6 +118,32 @@ unset TOKEN IMSI KI OPC
 Expected: `0`. Do the same for the nginx log files if the proxy is in use.
 - No screenshot, ticket or chat message holds a key, a caller key or a full IMSI.
 
+## Notes from the first real run (2026-11-04 and 2026-11-05)
+
+Things that cost time, so the next run does not repeat them:
+
+- **Order: import, then activate.** `activate` answers `404 Unknown line` until the SIM's keys were imported with
+  `POST /v1/sims`. The message is correct: RatelLink has no such SIM yet. A line sold in RatelDesk is activated from
+  RatelDesk (its "Activate line" button does step 3 itself); do step 3 by hand only for a SIM that RatelBSS does not sell.
+- **The number in the activate body must be real digits** (`234` and ten digits). A placeholder answers `422` naming
+  `body.msisdn`.
+- **Paste the `read -rs` lines one at a time.** A pasted block lets the prompts swallow the lines that follow. Do not paste
+  a trailing `\` followed by spaces: the shell then runs the rest of the line as a new command. The one-line forms of the
+  `curl` commands avoid both.
+- **Ki and OPc without showing them:** on the laptop, `awk -F, -v i="$IMSI" '$2==i {printf "%s", $6}' docs/source/sims.csv | pbcopy`
+  puts the Ki on the clipboard (column 7 for the OPc), paste it into the hidden prompt, then clear the clipboard with
+  `pbcopy < /dev/null`. Check first that exactly one row matches. The key file holds Ki and OPc for every SIM: it stays in
+  `docs/source/` (ignored by Git) and never goes to a server.
+- **A caller key for the import is made for the session and disabled after it:** `admin_cli api-key create --id <name>`
+  prints it once; `admin_cli api-key disable --id <name>` ends it. There is no "enable": a disabled id is made again under a
+  new name. The key RatelBSS itself uses is never used for this, because the keys would then pass through bss-app.
+- **A new SIM showed "emergency calls only" until the phone's APN was set to `internet`.** Set it before concluding anything
+  about the SIM. With IPv4 only on the core, set the APN protocol to IPv4.
+- **No browsing although the phone attached, and the Usage tab showed intervals with 0 MB.** On 2026-11-05 core-up could not
+  reach the internet (its own `ping 8.8.8.8` failed; the other VMs on the same network reached it). NAT and forwarding were
+  right: `ip_forward = 1` and a masquerade rule for the whole `10.45.0.0/16`. The signature: `ip -s link show ogstun` showed
+  far more RX than TX packets (the phone sends, nothing returns). Check the host's own uplink first.
+
 ## 6. Record it
 
 Copy this into the pull request or a dated file under `docs/`. One record per run.
