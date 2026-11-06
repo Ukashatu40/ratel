@@ -18,10 +18,10 @@ its IMSI only. Not finished: the rows marked TODO are for the next run.
 | 4.4 call | Pass: calls between the lab phones, shown in RatelDesk's Calls tab with their numbers, ring time, talk time and result (answered, caller hung up before it was answered, could not be reached) |
 | 4.5 data off, calls still work | Not run. TODO |
 | 4.6 data on | Not run. TODO |
-| 4.7 deactivate rejects the SIM | Not run. TODO (spare SIM, second one, is ready) |
-| 4.8 re-activate attaches again | Not run. TODO. Decides DECISIONS_PENDING item 52 |
+| 4.7 deactivate rejects the SIM | Pass, 2026-11-06, spare SIM (…0452): deactivate returned 200; after an airplane-mode toggle the phone showed emergency calls only |
+| 4.8 re-activate attaches again | Pass, 2026-11-06: activate again with the same body returned 200; after an airplane-mode toggle the phone attached and a call was placed. Time to attach: TODO (not timed). Settles DECISIONS_PENDING item 52 (delete stays) |
 | 5 log search | 0 matches (RatelLink's journal for the first SIM's Ki and OPc, 2 hours) |
-| Blockers and their owners | Browse retest (project lead, with the uplink back); 4.5 to 4.8 (project lead); template comparison (project lead) |
+| Blockers and their owners | Browse retest (project lead, the uplink is back); 4.5 and 4.6 (project lead); template comparison (project lead) |
 
 Also checked on 2026-11-05: the RatelLink encryption key's offline copy decrypts to the live key (SHA-256 of both equal);
 the passphrase is kept apart from the file.
