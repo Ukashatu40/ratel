@@ -2,7 +2,7 @@
 
 Nothing here is a real customer's: use the lab phones. No number, key, PIN or password goes into this page, a ticket or a chat.
 
-- **Last verified:** TODO (the data half has run on the lab in pieces; the voice half needs the call agent on the voice VM, not installed yet)
+- **Last verified:** data half 2026-11-09 on the lab: 39,213,826 bytes stored against 39,217,060 on the interface, 0.01% off, `within 1%`, exit 0 (three intervals, one phone browsing, release `ratel-meter-f992f8e`). The calls half: timings spot-checked against the S-CSCF's rows on 2026-11-05 (the Calls tab against the query below still to be compared side by side)
 - **Owner:** the project lead (reconciliation: @capitanaserdel; the voice VM: the network team)
 - **Runs on:** core-up (the kernel's byte counters), bss-app (the comparison) and the voice VM (the S-CSCF's call records), with RatelDesk open in a browser
 
@@ -83,6 +83,23 @@ and no Call-ID**. On RatelDesk's Calls tab for the caller's line, the same call 
 match to the second; the start is shown in WAT (one hour ahead of UTC), the epoch minus the time of day tells them apart.
 
 Say: "The right-hand screen is built from the S-CSCF's own accounting rows. This table is those rows."
+
+## What the first runs taught (2026-11-09)
+
+- **The first comparison was 32% off, and the agent was right.** It labelled each record with the interval it was *read* in, so
+  what it counted from 10:35 to 10:40 was stored as 10:40. Fixed in `ratel-meter-f992f8e`. After the fix the same method gave
+  0.01%. Records stored before the fix are one interval late: never compare windows over them.
+- **Take both snapshots with the waiting loop**, 5 to 25 seconds after a boundary (the commands above). Snapshots taken by hand
+  at an arbitrary second give a window that does not match the interval boundaries.
+- **Do not restart `ratel-meter.service` in or near the window.** The agent keeps its previous reading in memory only, so a
+  restart makes the next tick a baseline and the traffic since the last tick is lost. Wait two ticks after any restart before
+  the start snapshot. TODO: persist the previous readings so a restart loses nothing.
+- **Only RatelLink-provisioned SIMs count.** An address without an assignment (a SIM that attached with a dynamic address) is
+  in the interface total but not in our store; the agent logs it as `meter.agent.unmapped_usage` (counts only). On 2026-11-09
+  one such address carried a few hundred bytes per interval, which is below the tolerance, but a lab phone that streams
+  would break the comparison: switch other devices off for the demo.
+- **Both counters agree to the byte when they see the same window:** a direct comparison of the counting table with the
+  interface (no agent) gave 141,112 bytes against 141,112 up and 539,864 against 539,968 down.
 
 ## If the numbers do not match
 
