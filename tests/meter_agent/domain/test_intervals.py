@@ -24,17 +24,34 @@ def _reading(up: int, down: int, at: int = BOUNDARY, ip: str = "10.45.0.5") -> R
 
 
 class TestAlignment:
-    @pytest.mark.parametrize("offset", [0, 1, 299, 300, 301, 599, 600])
-    def test_readings_land_in_the_right_interval(self, offset: int) -> None:
+    """A reading closes an interval: what the agent has just counted happened before it."""
+
+    @pytest.mark.parametrize(
+        ("offset", "closes"),
+        [
+            (-1, -300),  # the tick woke a moment early: still the interval ending at the boundary
+            (0, -300),
+            (1, -300),  # the normal case: the tick runs just after the boundary
+            (60, -300),  # a tick a minute late
+            (149, -300),
+            (150, 0),  # past the half way point the delay is read as a later tick
+            (299, 0),
+            (300, 0),
+            (301, 0),
+            (449, 0),
+            (450, 300),
+            (600, 300),
+        ],
+    )
+    def test_a_reading_lands_in_the_interval_it_closes(self, offset: int, closes: int) -> None:
         start, end = interval_bounds(BOUNDARY + offset)
-        assert start == BOUNDARY + (offset // INTERVAL_SECONDS) * INTERVAL_SECONDS
+        assert start == BOUNDARY + closes
         assert end == start + INTERVAL_SECONDS
 
-    def test_just_before_and_just_after_a_boundary(self) -> None:
-        # 299, 300, 301 seconds past a boundary: 300 belongs to the next.
-        assert interval_bounds(BOUNDARY + 299)[0] == BOUNDARY
-        assert interval_bounds(BOUNDARY + 300)[0] == BOUNDARY + INTERVAL_SECONDS
-        assert interval_bounds(BOUNDARY + 301)[0] == BOUNDARY + INTERVAL_SECONDS
+    def test_the_tick_just_after_a_boundary_labels_the_interval_that_just_ended(self) -> None:
+        # Traffic between 10:35:00 and 10:40:00 is read at 10:40:00.9 and belongs to 10:35 to 10:40.
+        tick = BOUNDARY + 300 + 1
+        assert interval_bounds(tick) == (BOUNDARY, BOUNDARY + INTERVAL_SECONDS)
 
     def test_period_is_300_seconds(self) -> None:
         start, end = interval_bounds(BOUNDARY + 7)
@@ -90,8 +107,8 @@ class TestBuildRecord:
         record = build_record("621000000000001", BOUNDARY + 10, Increase(500, 700))
         assert record is not None
         assert record.imsi == "621000000000001"
-        assert record.period_start == BOUNDARY
-        assert record.period_end == BOUNDARY + INTERVAL_SECONDS
+        assert record.period_start == BOUNDARY - INTERVAL_SECONDS  # the interval that just ended
+        assert record.period_end == BOUNDARY
         assert record.bytes_up == 500
         assert record.bytes_down == 700
 
@@ -111,7 +128,7 @@ class TestReplayStability:
     def test_same_interval_produces_the_same_key_and_values(self) -> None:
         # A replayed interval must produce the same key and the same values.
         first = build_record("621000000000001", BOUNDARY + 10, Increase(500, 700))
-        replay = build_record("621000000000001", BOUNDARY + 250, Increase(500, 700))
+        replay = build_record("621000000000001", BOUNDARY + 100, Increase(500, 700))
         assert first is not None and replay is not None
         assert first.key == replay.key
         assert first == replay

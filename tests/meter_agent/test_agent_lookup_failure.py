@@ -92,8 +92,8 @@ def test_usage_is_kept_when_ratellink_is_down_and_posted_once_it_is_back(tmp_pat
     assert poster.records == [
         {
             "imsi": IMSI,
-            "period_start": T0 + 300,
-            "period_end": T0 + 600,
+            "period_start": T0,  # the bytes counted between T0 and T0 + 300
+            "period_end": T0 + 300,
             "bytes_up": 500,
             "bytes_down": 600,
         }
@@ -153,3 +153,19 @@ def test_usage_from_an_unmapped_address_is_reported_in_the_log(
     assert poster.records == []
     event = next(r for r in caplog.records if r.getMessage() == "meter.agent.unmapped_usage")
     assert (event.addresses, event.bytes_up, event.bytes_down) == (1, 400, 800)  # type: ignore[attr-defined]
+
+
+def test_a_tick_just_after_a_boundary_posts_the_interval_that_just_ended(tmp_path: Path) -> None:
+    """Found in the lab on 2026-11-09: bytes counted from 10:35:00 to 10:40:00, read at 10:40:00.9,
+    were labelled 10:40. The usage page showed them five minutes late, and a comparison with the
+    network's own counters over whole intervals was one interval out."""
+    link = RatelLink([{"ue_ip": "10.45.0.2", "imsi": IMSI}])
+    link.up = True
+    agent, reader, poster, _ = _agent(tmp_path, link)
+
+    _read(reader, 1000, 2000, T0)
+    agent.run_once(now=T0)  # baseline
+    _read(reader, 1600, 3000, T0 + 300)
+    agent.run_once(now=T0 + 301)  # the tick runs a second after the boundary
+
+    assert [(r["period_start"], r["period_end"]) for r in poster.records] == [(T0, T0 + 300)]
