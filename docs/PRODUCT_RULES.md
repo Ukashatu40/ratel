@@ -174,7 +174,7 @@ How they are produced:
 
 - The S-CSCF writes a record when each call starts and ends (Kamailio `acc` and `dialog` modules, into RatelVoice's MySQL). Every 60 seconds the agent joins each call's start and end into one record and posts it to the RatelMeter API. The lab does not do this yet: see the lab finding in the call record agreement.
 - Every 300 seconds the data agent reads per-address counters on the `ogstun` interface, subtracts the previous reading, maps each address to an IMSI with `GET /v1/assignments`, and posts the batch. The internet session is IPv4 only so that every byte is counted (see Addresses and sessions).
-- Intervals align to the clock in UTC (00:00, 00:05, 00:10 and so on), so a replayed interval always lands on the same key. Intervals with zero bytes are skipped.
+- Intervals align to the clock in UTC (00:00, 00:05, 00:10 and so on), so a replayed interval always lands on the same key. Intervals with zero bytes are skipped. The agent reads just after each boundary, so a record is labelled with the interval that has **just ended**: what it reads at 10:40:00 is posted as 10:35 to 10:40. (Until 2026-11-09 the agent labelled it 10:40 to 10:45, five minutes late; records stored before then are shifted by one interval.)
 - A reading lower than the last one means the UPF or its host restarted, so the new reading counts from zero.
 - If the API is unreachable the agent spools to disk and replays in order. Nothing is lost and nothing is counted twice.
 - Clocks on core-up and the voice VM stay synchronised over NTP, because every record's key and every call's duration depend on them.

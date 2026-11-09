@@ -116,7 +116,7 @@ bss app.meter_api.reconcile_cli --from 1793620800 --to 1793624400 --network-tota
 ```
 
 Exit 0 within 1%, exit 1 outside it, exit 2 if it could not run. Take both snapshots just after a 5-minute
-boundary, and wait for the agent's post after the end snapshot before comparing, or the last interval is missing.
+boundary, and wait for the agent's post after the end snapshot before comparing, or the last interval is missing. The record the agent posts at a boundary is for the interval that just ended, so a window `[from, to)` rounded down from the snapshot times holds exactly the traffic between the snapshots. Records stored before 2026-11-09 are labelled one interval late: do not compare windows over them.
 
 ## Recovery
 

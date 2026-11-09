@@ -14,12 +14,19 @@ INTERVAL_SECONDS = 300
 
 
 def interval_bounds(read_at: int) -> tuple[int, int]:
-    """Return (period_start, period_end) for a reading time.
+    """Return (period_start, period_end) of the interval a reading closes.
+
+    The agent reads the counters at the end of an interval, so what it has just counted
+    belongs to the interval that is ending, not to the one that is starting. A reading
+    at 10:35:00.9 closes 10:30 to 10:35. The interval whose end is nearest the reading time
+    is used, so a tick that wakes a moment early (10:34:59.9) or a minute late (10:36:00)
+    still lands on the same key, and a replay of the same interval overwrites, never
+    duplicates.
 
     period_start is aligned to the clock in UTC via common.timeutil.
     period_end is period_start + INTERVAL_SECONDS.
     """
-    start = interval_start(read_at, INTERVAL_SECONDS)
+    start = interval_start(read_at - INTERVAL_SECONDS // 2, INTERVAL_SECONDS)
     return start, start + INTERVAL_SECONDS
 
 
