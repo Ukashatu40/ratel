@@ -3,7 +3,7 @@
 Keep it short. Nothing here is a real customer's: use lab SIMs, the lab's numbers and made-up names. No
 card number, PIN, key or password goes into this page, a ticket or a chat.
 
-- **Last verified:** TODO (nobody has followed it on bss-app yet; the steps are proven on a test database)
+- **Last verified:** 2026-11-10 on bss-app, the backend of acts 4 and 5 (usage beyond the allowance, the line marked out of data and slowed, a voucher, the plan bought again, data restored), with the usage fed in by hand because no data phone was at hand: [the record](../records/demo-acts-4-5-backend-2026-11-10.md). **Not yet verified:** what the phone does (slow data after an airplane-mode toggle, calls still working, data back after the next toggle)
 - **Owner:** the project lead
 - **Runs on:** bss-app (the `ratelbss` user), after `deploy/bss-app/README.md` is done and the app answers `healthz`
 
@@ -35,6 +35,8 @@ bss() {
 
 After changing the file: `sudo systemctl restart ratel-app.service` (the timers pick the file up on their next run).
 
+**`RATING_AUTO_RENEW` was `false` in the live file** (the example file ships it `false`) until 2026-11-10, so a voucher would have credited the wallet and nothing more. Check it before every rehearsal: `sudo grep -c '^RATING_AUTO_RENEW=true' /etc/ratel-app/ratel-app.env` must print `1`.
+
 ## 1b. SIMs and numbers in stock
 
 RatelDesk can only sell a SIM that RatelBSS has in stock. Load the lab's SIMs and numbers with
@@ -65,7 +67,7 @@ done
 
 TODO(PRD): the voucher's value. It must cover the plan's price for act 5: the plan is bought again from the
 wallet, so a voucher worth less than the price credits the wallet and nothing more.
-`/tmp/demo-1.csv` holds every PIN, and only it does. Show one card on stage, then `sudo shred -u` the file (owned by `ratelbss`, readable only by it and root)
+`/tmp/demo-1.csv` holds every PIN, and only it does. **`/tmp` is emptied when the host reboots**, and the database keeps only hashes of the PINs, so a batch whose file is gone cannot be redeemed: make a new batch (the old cards stay on sale, unusable). Show a card with its PIN cut short (`sudo head -3 /tmp/demo-1.csv | cut -c1-24`) and never paste a PIN into a chat. Show one card on stage, then `sudo shred -u` the file (owned by `ratelbss`, readable only by it and root)
 after the rehearsals.
 
 ## 4. The line's first allowance
@@ -100,6 +102,41 @@ The ledger is append-only and a spent allowance stays spent, so the line cannot 
 rehearsal use a second line (as docs/DEMO_SCRIPT.md suggests for act 4), or a fresh plan and a fresh voucher on
 the same line. If a run needs to be faster than seven minutes: `sudo systemctl start ratel-rating.service` runs
 the job now.
+
+## 7. Rehearsing acts 4 and 5 without a phone
+
+Everything in acts 4 and 5 except what the phone does is the backend's: counting beyond the allowance, the out-of-data
+decision, the order to RatelLink, the voucher, the plan bought again, the order that restores data. It can be rehearsed by
+feeding the usage in through the same API the meter agent uses. Done on 2026-11-10 ([record](../records/demo-acts-4-5-backend-2026-11-10.md)).
+
+On bss-app, with the line already **activated** and its plan **bought**. The IMSI comes from the line's header in RatelDesk:
+
+```bash
+read -r -p "line IMSI: " IMSI
+K=$(sudo sed -n 's/^METER_API_KEY=//p' /etc/ratel-app/ratel-app.env)
+PS=$(( $(date +%s) / 300 * 300 - 300 ))        # the last closed interval
+BODY=$(printf '{"records":[{"imsi":"%s","period_start":%d,"period_end":%d,"bytes_up":1000000,"bytes_down":21000000}]}' "$IMSI" "$PS" "$((PS+300))")
+printf 'Authorization: Bearer %s\n' "$K" | curl -sS -X POST http://127.0.0.1:8000/v1/usage -H @- -H 'Content-Type: application/json' -H 'Idempotency-Key: lab-act4-1' --data "$BODY" -w '\nHTTP %{http_code}\n'
+unset K IMSI BODY
+sudo systemctl start ratel-rating.service       # now, instead of waiting for the next :02/:07
+sudo journalctl -u ratel-rating.service --since "-10min" --no-pager | grep '"rating.run"' | sed -E 's/.*"event":"rating.run",//'
+```
+
+Act 4 shows `lines_out_of_data":1` and a `POST …/data` to RatelLink in the journal; the line page says out of data. For act 5
+redeem a voucher for the line's number on `/pay`, run `sudo systemctl start ratel-rating.service` again and read
+`lines_renewed":1,"lines_restored":1` and a second `POST …/data`; `bss app.bss_money.ops_cli wallet show --line-id <id>` gives
+the balance (it must be the voucher plus what was left, less the plan's price).
+
+Three rules, because this writes usage that did not come from a phone:
+
+- **`period_start` must be later than the moment the plan was bought.** A record is charged to the allowances valid at its
+  start. A record before the purchase is not charged to anything.
+- **Keep that interval out of any comparison with the network's counters** (demo-act-6.md). The bytes are in our store and not
+  on the interface.
+- **Use a lab line**, never a customer's, and write it in the lab log.
+
+What this does **not** prove is what the phone does at its next attach. That still needs a phone with data (an iPhone works
+with these SIMs today): airplane-mode toggle, slowed data, a call that still rings, a toggle again after the top-up.
 
 ## If it does not work
 
