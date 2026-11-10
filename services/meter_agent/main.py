@@ -19,7 +19,7 @@ from .calls import CallAgent, CallAgentConfig, CommandCallSource, StateStore
 from .config import CallSettings, Settings
 from .counters import CounterReader, NftablesCounterReader, SnapshotCounterReader
 from .ingest import HttpMeterPoster
-from .spool import Spool
+from .spool import ReadingStore, Spool
 
 log = logging.getLogger("ratel.meter.main")
 
@@ -65,7 +65,7 @@ def create_agent(settings: Settings | None = None) -> Agent:
         spool_dir=str(spool_path),
         interval_seconds=settings.interval_seconds,
     )
-    return Agent(reader, cache, poster, spool, config)
+    return Agent(reader, cache, poster, spool, config, ReadingStore(spool_path / "readings"))
 
 
 def create_call_agent(settings: CallSettings | None = None) -> CallAgent:
