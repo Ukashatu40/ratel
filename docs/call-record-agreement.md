@@ -1,6 +1,6 @@
 # Call record agreement: RatelVoice → RatelMeter
 
-**Status:** DRAFT — awaiting sign-off. Section 11 (added 2026-11-01) answers the questions from the lab results of 2026-10-30 and asks the network lead to decide the open points in it
+**Status:** ACCEPTED 2026-11-10 by the project lead, on the network lead's word that no written signature is needed (see section 12). The `end_reason` values stay **proposed** until PRD decision 8 is made. Section 11 (added 2026-11-01) holds the lab answers it is built on.
 **Drafted by:** @ml-lawarn
 **To be signed off by:** @CaptRaven (network lead) and @capitanaserdel (RatelMeter owner since 2026-10-18)
 **Reviewers:** @Ukashatu40, @CaptRaven
@@ -302,10 +302,20 @@ Still to test before signing:
 
 ## 12. Sign-off
 
-- [ ] @CaptRaven (network lead) — Kamailio side confirmed; questions answered.
-- [ ] @capitanaserdel (RatelMeter owner) — agent side confirmed; contract updated.
-- [ ] `contracts/openapi.yaml` `end_reason` TODO resolved in the same commit.
+**Accepted 2026-11-10.** The network lead told the project lead (2026-11-10) not to wait for a written signature, and the project
+lead closed issue #26 on that basis. What this rests on, so nobody has to ask again:
 
-Signed: ______________________ (network lead)   Date: __________
+- The agreement was built and run, not only written: call mode has been on the voice VM since 2026-11-03 and calls reach RatelDesk's
+  Calls tab. A restart of the S-CSCF during a call kept the BYE row (2026-11-03). The timings of the newest calls matched the
+  S-CSCF's own rows (2026-11-05).
+- **Still open, and not part of this acceptance:** PRD decision 8 (the allowed `end_reason` values). They are the six in section 11,
+  one function in `services/meter_agent/calls/assemble.py` (`reason_for`) and one enum in `contracts/openapi.yaml`. If the PRD says
+  otherwise, change those two places and the labels in `web/desk/src/screens/line-detail/CallsTab.tsx`.
+- **Not tested:** a call to a phone that is registered but has no data connection (point 2 above), and whether an answered call can
+  again be left without a BYE row (point 3). The agent drops such a call after six hours and counts it
+  (`meter.calls.open_calls_dropped`) instead of posting an invented end.
 
-Signed: ______________________ (RatelMeter owner) Date: __________
+- [x] Project lead: accepted 2026-11-10, on the network lead's word (no signature).
+- [ ] @CaptRaven (network lead): no written confirmation; verbal go-ahead only.
+- [ ] @capitanaserdel (RatelMeter owner): not asked in writing; the agent was reviewed in PR #181.
+- [x] `contracts/openapi.yaml` has the `end_reason` enum, marked as proposed until decision 8.
