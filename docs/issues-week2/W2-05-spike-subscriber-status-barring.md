@@ -33,3 +33,12 @@ Comfortable with Open5GS and MongoDB on the lab. Reviewer: one.
 
 ## Source reading 2026-10-16
 In Open5GS v2.8.0 the MME's `mme_s6a_handle_ula` and `mme_s6a_handle_idr` do not read `subscriber_status` or the barring data (see [spike-live-changes.md](../spike-live-changes.md)). So a barred line is probably still let in. This is not measured: the lab test (steps 4.7 and 4.8 of the lab runbook) is still needed, together with the question whether a re-activated SIM attaches after the sequence number is lost.
+
+## Lab result 2026-11-06 (question (b) of the 2026-10-14 update)
+On a real phone with a lab SIM: `deactivate` (the subscriber document deleted) answered 200 and, after an airplane-mode toggle,
+the phone was rejected (emergency calls only). `activate` again with the same body answered 200 and, after another toggle, the
+phone attached and a call was placed. So the feared case, a SIM that rejects the network after a re-activation because the
+sequence number went with the document, **did not show** (one SIM, one run; repeat on a SIM that has been attached many times
+before relying on it). The decision stays **delete** (DECISIONS_PENDING item 52). Question (a), whether the MME rejects a
+barred subscriber, was **not tested**; the source reading above says it does not read `subscriber_status`. Record:
+`docs/records/ratellink-lab-acceptance-2026-11-05.md`.

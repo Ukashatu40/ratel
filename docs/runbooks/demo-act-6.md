@@ -91,9 +91,9 @@ Say: "The right-hand screen is built from the S-CSCF's own accounting rows. This
   0.01%. Records stored before the fix are one interval late: never compare windows over them.
 - **Take both snapshots with the waiting loop**, 5 to 25 seconds after a boundary (the commands above). Snapshots taken by hand
   at an arbitrary second give a window that does not match the interval boundaries.
-- **Do not restart `ratel-meter.service` in or near the window.** The agent keeps its previous reading in memory only, so a
-  restart makes the next tick a baseline and the traffic since the last tick is lost. Wait two ticks after any restart before
-  the start snapshot. TODO: persist the previous readings so a restart loses nothing.
+- **Restarting `ratel-meter.service` before 2026-11-10 lost the traffic since the last tick,** because the previous reading
+  was kept in memory only. Since the release that saves the readings on disk (`meter.agent.resumed` in the journal) a restart
+  loses nothing. Still, do not restart it in or near the window, and wait one tick after any restart before the start snapshot.
 - **Only RatelLink-provisioned SIMs count.** An address without an assignment (a SIM that attached with a dynamic address) is
   in the interface total but not in our store; the agent logs it as `meter.agent.unmapped_usage` (counts only). On 2026-11-09
   one such address carried a few hundred bytes per interval, which is below the tolerance, but a lab phone that streams

@@ -68,3 +68,6 @@ docs/source/needs-from-captraven.md
 
 # Agent spool files (written on core-up and voice, never committed)
 spool/
+# ...but the agent's own source and tests live in folders named spool: keep those
+!services/meter_agent/spool/
+!tests/meter_agent/spool/

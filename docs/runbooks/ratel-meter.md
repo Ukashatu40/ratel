@@ -50,7 +50,7 @@ it fails that interval and logs it. It never reports "no usage" for a failure.
 - **RatelLink (`GET /v1/assignments`):** needed to map UE IP addresses to IMSIs. If down, agent spools raw readings without loss.
 - **RatelMeter API (`POST /v1/usage`):** accepts usage batches. If down, batches spool to disk and replay automatically in chronological order once restored.
 - **NTP / system clock:** must be synchronized (intervals are clock-aligned in UTC).
-- **Spool directory (`/var/spool/ratel-meter`):** must be readable/writable by `ratelmeter` (mode 0700).
+- **Spool directory (`/var/spool/ratel-meter`):** must be readable/writable by `ratelmeter` (mode 0700). Its `readings/` folder holds the previous counter reading of every address (`readings.json`, written after each tick). With it a restart carries on where the last tick stopped: the first tick after a restart counts the traffic since the last tick (`meter.agent.resumed` in the journal). Without it (first run, a damaged file set aside as `readings.damaged`, or readings older than 23 hours, because a released address is held for 24 hours) the first tick is a baseline and counts nothing. Do not delete the folder while the agent runs.
 - **The counting table (`ratel-meter-nft.service`):** if it is not loaded the agent has nothing to read.
 
 ## Logs
@@ -69,6 +69,9 @@ JSON on stdout (`journalctl -u ratel-meter.service`). Key events:
 | `meter.poster.rejected` | RatelMeter API rejected batch. Check API token and status. |
 | `meter.agent.unmapped_usage` | Bytes were counted for addresses that no line owns (`addresses`, `bytes_up`, `bytes_down`; never the addresses). Those bytes are not sent and cannot be recovered. TODO(lab): learn from the lab session how often this happens. A steady stream means the assignments from RatelLink are missing a line. |
 | `meter.spool.replayed` | Pending spooled files delivered to the API. |
+| `meter.agent.resumed` | The agent restarted and picked up its previous readings (`addresses` is how many). |
+| `meter.readings.damaged`, `meter.readings.expired` | The saved readings were unreadable (set aside) or too old (a baseline is taken instead). At most one interval is not counted. |
+| `meter.readings.save_failed` | The readings could not be written (disk full or permissions). Counting goes on, but a restart would lose the traffic since the last tick. |
 
 Logs must never contain tokens, keys, IMSIs or UE IP addresses.
 

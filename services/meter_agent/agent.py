@@ -19,7 +19,7 @@ from .counters import CounterReader
 from .domain.intervals import INTERVAL_SECONDS, build_record, increase
 from .domain.records import Increase, Reading, UsageRecord
 from .ingest import MeterPoster
-from .spool import Spool
+from .spool import ReadingStore, Spool
 
 log = logging.getLogger("ratel.meter.agent")
 
@@ -40,13 +40,19 @@ class Agent:
         poster: MeterPoster,
         spool: Spool,
         config: AgentConfig,
+        readings: ReadingStore | None = None,
     ) -> None:
         self._reader = reader
         self._cache = cache
         self._poster = poster
         self._spool = spool
         self._config = config
-        self._last: dict[str, Reading] = {}
+        self._readings = readings
+        # The previous reading of every address. With a store it survives a restart, so the
+        # first tick after one counts the traffic since the last tick instead of starting over.
+        self._last: dict[str, Reading] = readings.load(utc_epoch_now()) if readings else {}
+        if self._last:
+            log_event(log, logging.INFO, "meter.agent.resumed", addresses=len(self._last))
 
     def run_once(self, now: int | None = None) -> None:
         """Run one interval's work.
@@ -86,6 +92,7 @@ class Agent:
                         "read_at": current.read_at,
                     }
                 )
+            self._save_readings()  # before the raw file: a crash between them loses, never doubles
             if raw:
                 name = (
                     f"raw-{interval_start(current_time, self._config.interval_seconds):010d}.json"
@@ -111,6 +118,10 @@ class Agent:
                 # Zero-byte interval: no record.
                 continue
             batch.append(_as_batch_item(record))
+        # The new readings are saved before the batch is delivered or spooled. A crash between the
+        # two can lose one interval; the other order could count it twice, and a customer must
+        # never be charged twice for the same bytes.
+        self._save_readings()
         unmapped.report()
 
         if not batch:
@@ -120,6 +131,18 @@ class Agent:
             # API unreachable: spool and try later.
             name = f"{interval_start(current_time, self._config.interval_seconds):010d}.json"
             self._spool.spool(name, batch)
+
+    def _save_readings(self) -> None:
+        """Keep the previous readings across a restart. A failure is logged, never fatal: counting
+        goes on, and only a restart would then lose the traffic since the last tick."""
+        if self._readings is None:
+            return
+        try:
+            self._readings.save(self._last)
+        except OSError as exc:
+            log_event(
+                log, logging.WARNING, "meter.readings.save_failed", error_type=type(exc).__name__
+            )
 
     def _refresh_cache(self) -> bool:
         """True when the map is fresh. A cache that raises, or says nothing, counts as failed."""
