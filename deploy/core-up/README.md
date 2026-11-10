@@ -38,6 +38,7 @@ unmetered until it is counted. A check on a real phone is still pending.
 /etc/ratel-meter/ratel-meter.env       settings and the two API keys (mode 0600)
 /etc/ratel-meter/ratel-meter.nft       the counting table
 /var/spool/ratel-meter/                usage waiting to be sent (service user only, mode 0700)
+/var/spool/ratel-meter/readings/       the previous counter reading of every address, so a restart loses nothing
 ```
 
 ## Installation
