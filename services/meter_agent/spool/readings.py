@@ -61,7 +61,8 @@ class ReadingStore:
             return {}
         fresh = {ip: r for ip, r in readings.items() if now - r.read_at < self._max_age}
         if len(fresh) < len(readings):
-            log_event(log, logging.WARNING, "meter.readings.expired", count=len(readings) - len(fresh))
+            dropped = len(readings) - len(fresh)
+            log_event(log, logging.WARNING, "meter.readings.expired", count=dropped)
         return fresh
 
     def save(self, readings: Mapping[str, Reading]) -> None:
