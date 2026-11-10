@@ -53,6 +53,13 @@ These are true today and the Build Plan says they are acceptable for the demo, i
 - Outgoing calls from **iPhones fail today** (a network-side fallback behaviour). Incoming calls to
   them work. Use an Android VoLTE handset to place the call in act 3.
 - A SIM must have a **two-digit MNC** (62100) or it does not belong to the network.
+- **Android handsets do not attach with the vendor SIMs yet (2026-11-10).** The phone shows emergency calls only; the MME logs
+  `Unknown UE by IMSI` and `Rejected by PLMN-ID access control` on every attempt, and the Android shows the network as MNC `002`.
+  The same SIM works on an iPhone. The cause is not confirmed: the likely one is that the SIM's administrative file gives the
+  MNC length as three digits (the network is `62100`, two digits). With the network team. Android also refuses to save an `ims`
+  APN (restricted to the carrier configuration), and VoLTE on an unknown operator needs a handset that already enables it.
+  **Until it is solved, the working set is an iPhone for data and incoming calls plus a phone that places outgoing calls**, and
+  there is no spare of either on the project lead's table: see R-18.
 - **16 October** is the voice decision point. If no phone we could sell registers and calls
   reliably by then, management decides between showing calls on the phones that work and moving
   voice to a later date. Data does not wait for voice.
@@ -109,16 +116,22 @@ postpaid, real-time charging for data, self-care and dealer apps.
 | 16 to 20 Nov | Demo runbook, customer care trained, **two full rehearsals with no step repeated** | Build Plan, Week 8 gate |
 | 23 to 26 Nov | Freeze, on call, the demo | Build Plan |
 
-## What exists today (2026-10-14)
+## What exists today (2026-11-10)
+
+Each row says what was seen on the lab, with the record. "Phone" means a real handset; a row without it was proven on the
+backend only.
 
 | Act | State |
 | --- | ----- |
-| 1 Sell | RatelLink side built and tested: import keys, activate (with voice once the template arrives, N1), change data, deactivate, read a line, list addresses. **Not yet run against a real phone** (waits for N1, N2, N3, MongoDB authentication, SIM keys, radio). RatelBSS lines and RatelDesk: see issues W2-11 and W2-13 |
-| 2 Browse | The address a line gets is allocated and listed for the meter. RatelMeter's agent and API: not assessed here, see W2-08 and W2-09 |
-| 3 Call | The network team reports the first VoLTE call (their documents of 11 Oct). RatelLink writes the voice session from their template |
-| 4 Out of data | RatelLink can set the speed and cut data without touching calls. The rating job and the trigger are Week 3 and 4 work |
-| 5 Top up | Not assessed here: RatelBSS money lives in `services/app/bss_money`, and the Week 4 and 5 gates say what is due |
-| 6 Numbers match | Not assessed here. It depends on the counter spike (W2-08) and on N7 (where usage and call records come from) |
+| 1 Sell | **Done on the lab:** customer, KYC approved by an admin, SIM and number from stock, plan, a voucher on the RatelPay page, the plan bought from the wallet, the SIM's keys imported into RatelLink, **Activate** in RatelDesk. The phone attaches once its APN is `internet` ([record](records/ratellink-lab-acceptance-2026-11-05.md)) |
+| 2 Browse | **Done:** a phone browsed, the agent counted it every 5 minutes, RatelDesk's Usage tab shows it. Stored bytes against the interface's own counters: **0.01% apart** over 15 minutes ([demo-act-6.md](runbooks/demo-act-6.md)) |
+| 3 Call | **Done between lab lines:** calls ring with two-way audio and show on the line's Calls tab with ring time, talk time and result. Outgoing calls from an iPhone fail today; see "Phones" |
+| 4 Out of data | **Backend done 2026-11-10:** usage beyond the allowance, the line marked out of data and slowed (`POST …/data` 200), exactly 2 MB over counted ([record](records/demo-acts-4-5-backend-2026-11-10.md)). **Phone not tested:** slowed speed after an airplane-mode toggle, and a call that still works |
+| 5 Top up | **Backend done:** a voucher redeemed on RatelPay, the plan bought again, data restored, the ledger exact. **Phone not tested:** data back after the next toggle |
+| 6 Numbers match | **Data half done** (0.01%). **Calls half:** the call timings matched the S-CSCF's own rows (5 Nov); the side-by-side on stage needs one call and RatelDesk open next to the voice VM's query |
+
+Still open: a phone to test acts 4 and 5 and a restart of the meter agent with traffic; the two full rehearsals; the pilot on
+staff SIMs; PRD decision 8 (the call end reasons, built as proposed).
 
 ## Rehearsal plan (draft)
 
