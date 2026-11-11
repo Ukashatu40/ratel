@@ -13,6 +13,7 @@ import pytest
 
 from services.meter_agent.agent import Agent, AgentConfig
 from services.meter_agent.domain.records import Reading
+from services.meter_agent.main import tick_at_start
 from services.meter_agent.spool import ReadingStore, Spool
 
 T0 = 1_791_820_800  # aligned to the clock
@@ -175,3 +176,80 @@ def test_a_restart_while_the_api_is_down_keeps_both_the_batch_and_the_readings(
     assert [(r["period_start"], r["bytes_up"], r["bytes_down"]) for r in up.records] == [
         (T0, 500, 600)
     ]
+
+
+class KeyedPoster:
+    """The API's rule: a record with the key (imsi, period_start) replaces the one already there."""
+
+    def __init__(self) -> None:
+        self.stored: dict[tuple[str, int], tuple[int, int]] = {}
+        self.overwrites = 0
+
+    def __call__(self, batch: object) -> bool:
+        assert isinstance(batch, list)
+        for r in batch:
+            key = (str(r["imsi"]), int(r["period_start"]))  # type: ignore[call-overload]
+            if key in self.stored:
+                self.overwrites += 1
+            self.stored[key] = (int(r["bytes_up"]), int(r["bytes_down"]))  # type: ignore[call-overload]
+        return True
+
+    def total(self) -> tuple[int, int]:
+        return sum(u for u, _ in self.stored.values()), sum(d for _, d in self.stored.values())
+
+
+def test_a_restart_in_the_middle_of_an_interval_loses_no_interval_and_overwrites_none(
+    tmp_path: Path,
+) -> None:
+    """Found in the lab on 2026-11-11: the tick the agent made the moment it started, at 10:01:25,
+    labelled its 85 seconds of traffic with the interval 09:55 to 10:00, which had been posted at
+    10:00:00. The API replaced that record, so the interval's traffic was lost and the comparison
+    with the interface counters was 9.95% off."""
+    reader, api = Reader(), KeyedPoster()
+    first = agent(tmp_path, reader, api, store(tmp_path))  # type: ignore[arg-type]
+    reader.set(0, 0, T0)
+    first.run_once(now=T0)  # baseline
+    reader.set(1000, 9000, T0 + 300)
+    first.run_once(now=T0 + 300 + 1)  # the boundary tick: traffic of T0 to T0 + 300
+    # The service restarts 85 seconds into the next interval, and traffic goes on.
+    reader.set(1100, 9800, T0 + 300 + 85)
+    second = agent(tmp_path, reader, api, store(tmp_path))  # type: ignore[arg-type]
+    assert second.wants_immediate_tick() is False  # it waits for the boundary
+    reader.set(1600, 14000, T0 + 600)
+    second.run_once(now=T0 + 600 + 1)  # the next boundary tick
+    assert api.stored == {(IMSI, T0): (1000, 9000), (IMSI, T0 + 300): (600, 5000)}
+    assert api.overwrites == 0
+    assert api.total() == (1600, 14000)  # every byte, none twice
+
+
+def test_a_tick_in_the_middle_of_an_interval_would_replace_the_interval_before_it(
+    tmp_path: Path,
+) -> None:
+    """Why the loop must not tick at once after a restart: the same restart, ticking at once."""
+    reader, api = Reader(), KeyedPoster()
+    first = agent(tmp_path, reader, api, store(tmp_path))  # type: ignore[arg-type]
+    reader.set(0, 0, T0)
+    first.run_once(now=T0)
+    reader.set(1000, 9000, T0 + 300)
+    first.run_once(now=T0 + 300 + 1)
+    reader.set(1100, 9800, T0 + 300 + 85)
+    second = agent(tmp_path, reader, api, store(tmp_path))  # type: ignore[arg-type]
+    second.run_once(now=T0 + 300 + 85)  # what the loop used to do at once
+    assert api.overwrites == 1  # the interval already posted was replaced
+    assert api.total() != (1100, 9800)  # and bytes were lost
+
+
+def test_the_loop_ticks_at_once_only_when_there_is_nothing_to_resume_from(tmp_path: Path) -> None:
+    reader, poster = Reader(), Poster()
+    fresh = agent(tmp_path, reader, poster, store(tmp_path))
+    assert tick_at_start(fresh, aligned=True) is True  # a baseline, which posts nothing
+    reader.set(1000, 2000, T0)
+    fresh.run_once(now=T0)
+    resumed = agent(tmp_path, reader, poster, store(tmp_path))
+    assert tick_at_start(resumed, aligned=True) is False  # waits for the boundary
+    assert tick_at_start(resumed, aligned=False) is True  # not on the clock: as before
+    assert tick_at_start(object(), aligned=True) is True  # call mode
+
+
+def test_an_agent_without_a_store_still_ticks_at_once(tmp_path: Path) -> None:
+    assert tick_at_start(agent(tmp_path, Reader(), Poster()), aligned=True) is True
