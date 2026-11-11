@@ -87,7 +87,7 @@ def calls(env: dict[str, str]) -> str:
 def test_an_unknown_target_or_no_target_prints_the_usage(laptop: dict[str, str]) -> None:
     for args in ([], ["production"]):
         result = deploy(laptop, *args)
-        assert result.returncode == 2 and "deploy.sh <app|desk|meter|calls>" in result.stderr
+        assert result.returncode == 2 and "deploy.sh <app|desk|meter|calls|link>" in result.stderr
     assert calls(laptop) == ""
 
 
@@ -109,12 +109,14 @@ def test_each_target_goes_to_its_own_host(laptop: dict[str, str]) -> None:
         "desk": "ratelplus-bss-app",
         "meter": "ratelplus-core-up",
         "calls": "ratelplus-voice",
+        "link": "ratelplus-core-cp",
     }
     prefix = {
         "app": "ratel-app",
         "desk": "ratel-desk",
         "meter": "ratel-meter",
         "calls": "ratel-meter",
+        "link": "ratel-link",
     }
     for target, host in expected.items():
         tar = tarball(laptop, f"{prefix[target]}-abc1234.tar.gz")
@@ -424,3 +426,28 @@ def test_the_host_script_never_edits_settings_nginx_or_the_firewall() -> None:
     ):
         assert forbidden not in text, forbidden
     assert "set -euo pipefail" in text
+
+
+def test_ratellink_is_restarted_and_checked_on_its_own_port(host: Host) -> None:
+    link = host.root / "opt-link"
+    host.env["RATEL_DEPLOY_LINK_BASE"] = str(link)
+    host.running(link)
+    host.installer(link)
+    checksum = host.tarball("ratel-link-new.tar.gz")
+    result = host.run("link", "ratel-link-new.tar.gz", checksum)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert host.current(link) == "new" and host.restarts() == ["restart ratel-link.service"]
+
+
+@pytest.mark.parametrize("env", [{"FAKE_CURL_STATUS": "22"}, {"FAKE_READY_CODE": "503"}])
+def test_ratellink_that_is_not_ready_is_rolled_back(host: Host, env: dict[str, str]) -> None:
+    """readyz is 503 when MongoDB does not answer or the key file did not load."""
+    link = host.root / "opt-link"
+    host.env["RATEL_DEPLOY_LINK_BASE"] = str(link)
+    host.running(link)
+    host.installer(link)
+    checksum = host.tarball("ratel-link-new.tar.gz")
+    result = host.run("link", "ratel-link-new.tar.gz", checksum, **env)
+    assert result.returncode == 1 and "rolled back" in result.stdout
+    assert host.current(link) == "old"
+    assert host.restarts() == ["restart ratel-link.service"] * 2

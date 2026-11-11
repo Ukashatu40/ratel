@@ -174,7 +174,7 @@ def synthetic_template() -> dict[str, Any]:
         "subscriber_status": 0,
         "operator_determined_barring": 0,
         "access_restriction_data": 32,
-        "network_access_mode": 2,
+        "network_access_mode": 0,
         "subscribed_rau_tau_timer": 12,
         "__v": 0,
     }

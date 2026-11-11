@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The host's half of a deploy (scripts/deploy/deploy.sh runs it with sudo). Not meant to be run by hand.
 #
-#   deploy-remote.sh <app|desk|meter|calls> <tarball-name> <sha256> <python> <workdir>
+#   deploy-remote.sh <app|desk|meter|calls|link> <tarball-name> <sha256> <python> <workdir>
 #
 # In the work folder, next to this script: the tarball, and (not for desk) install-release.sh.
 # Order: check the checksum, remember the running release, install, restart, wait for the service to say it is
@@ -13,7 +13,7 @@
 #   RATEL_DEPLOY_KEEP=1 keeps the work folder
 set -euo pipefail
 
-target="${1:?usage: deploy-remote.sh <app|desk|meter|calls> <tarball> <sha256> <python> <workdir>}"
+target="${1:?usage: deploy-remote.sh <app|desk|meter|calls|link> <tarball> <sha256> <python> <workdir>}"
 tarball_name="${2:?}"
 expected="${3:?}"
 python="${4:-}"
@@ -21,6 +21,7 @@ workdir="${5:-$(cd "$(dirname "$0")" && pwd)}"
 
 app_base="${RATEL_DEPLOY_APP_BASE:-/opt/ratel-app}"
 meter_base="${RATEL_DEPLOY_METER_BASE:-/opt/ratel-meter}"
+link_base="${RATEL_DEPLOY_LINK_BASE:-/opt/ratel-link}"
 www="${RATEL_DEPLOY_WWW:-/var/www}"
 log_file="${RATEL_DEPLOY_LOG:-/var/log/ratel-deploy.log}"
 wait_seconds="${RATEL_DEPLOY_WAIT:-30}"
@@ -59,9 +60,9 @@ wait_for() {  # wait_for <description> <command...>
   done
 }
 
-app_healthy() {
-  "$curl" -fsS -o /dev/null http://127.0.0.1:8000/healthz &&
-    [ "$("$curl" -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/readyz)" = "200" ]
+app_healthy() {  # app_healthy <port>: the process is up and its dependencies answer
+  "$curl" -fsS -o /dev/null "http://127.0.0.1:$1/healthz" &&
+    [ "$("$curl" -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$1/readyz")" = "200" ]
 }
 
 agent_up() {  # agent_up <unit> <epoch the restart began>: it logged its start and nothing has failed since
@@ -89,7 +90,7 @@ case "$target" in
       die "the migration failed; the service was not restarted and still runs $prev_name"
     fi
     "$systemctl" restart ratel-app.service
-    if ! wait_for "ratel-app (healthz, readyz)" app_healthy; then
+    if ! wait_for "ratel-app (healthz, readyz)" app_healthy 8000; then
       switch_back "$link" "$prev"
       "$systemctl" restart ratel-app.service || true
       say "NOTE: the migration was applied and is not undone; check that the old release runs against the new schema"
@@ -109,6 +110,19 @@ case "$target" in
     if [ ! -f "$link/index.html" ]; then
       switch_back "$link" "$prev"
       die "the unpacked Desk has no index.html: rolled back"
+    fi
+    ;;
+  link)
+    link="$link_base/current"
+    prev="$(readlink -f "$link" 2>/dev/null || true)"; prev_name="$(name_of "$prev")"
+    bash "$workdir/install-release.sh" "$workdir/$tarball_name" "$python"
+    new="$(readlink -f "$link")"; new_name="$(name_of "$new")"
+    say "installed $new_name (was $prev_name); restarting ratel-link.service"
+    "$systemctl" restart ratel-link.service
+    if ! wait_for "ratel-link (healthz, readyz)" app_healthy 8081; then
+      switch_back "$link" "$prev"
+      "$systemctl" restart ratel-link.service || true
+      die "RatelLink did not come up (readyz needs MongoDB and the key file): rolled back"
     fi
     ;;
   meter|calls)

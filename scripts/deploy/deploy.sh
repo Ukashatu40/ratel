@@ -2,12 +2,13 @@
 # Deploy a reviewed release to one host, from this machine: build it from origin/main, copy it, check the
 # checksum on the host, install it, restart, check that it came up, and roll back if it did not.
 #
-#   scripts/deploy/deploy.sh <app|desk|meter|calls> [--commit REF] [--tarball FILE] [--dry-run] [--yes]
+#   scripts/deploy/deploy.sh <app|desk|meter|calls|link> [--commit REF] [--tarball FILE] [--dry-run] [--yes]
 #
 # app    RatelBSS, the RatelMeter API and the RatelPay page on bss-app: install, migrate, restart, health check
 # desk   RatelDesk's files on bss-app: unpack and switch the link
 # meter  the RatelMeter data agent on core-up
 # calls  the RatelMeter call agent on the voice VM
+# link   RatelLink on core-cp (restart, then healthz and readyz)
 #
 # The release comes from `git archive` of a commit that is already on origin/main (the build scripts refuse
 # anything else), never from a working tree. The host is reached by its ssh alias; the sudo password is typed
@@ -19,11 +20,13 @@
 #   RATEL_HOST_APP        ssh alias of bss-app           (default: ratelplus-bss-app)
 #   RATEL_HOST_CORE_UP    ssh alias of core-up           (default: ratelplus-core-up)
 #   RATEL_HOST_VOICE      ssh alias of the voice VM      (default: ratelplus-voice)
+#   RATEL_HOST_CORE_CP    ssh alias of core-cp           (default: ratelplus-core-cp)
+#   RATEL_LINK_PYTHON     Python 3.12 on core-cp         (default: /opt/python-3.12/bin/python3.12)
 #   RATEL_SSH, RATEL_SCP  the ssh and scp to use         (default: ssh, scp)
 set -euo pipefail
 
 usage() {
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 fail() { echo "deploy: $*" >&2; exit 1; }
@@ -55,6 +58,7 @@ case "$target" in
   desk)  host="${RATEL_HOST_APP:-ratelplus-bss-app}";      prefix="ratel-desk";  build="desk";  installer="";                                 python="" ;;
   meter) host="${RATEL_HOST_CORE_UP:-ratelplus-core-up}";  prefix="ratel-meter"; build="meter"; installer="deploy/core-up/install-release.sh"; python="/opt/python-3.12/bin/python3.12" ;;
   calls) host="${RATEL_HOST_VOICE:-ratelplus-voice}";      prefix="ratel-meter"; build="meter"; installer="deploy/core-up/install-release.sh"; python="/opt/python-3.12/bin/python3.12" ;;
+  link)  host="${RATEL_HOST_CORE_CP:-ratelplus-core-cp}";  prefix="ratel-link";  build="link";  installer="deploy/core-cp/install-release.sh"; python="${RATEL_LINK_PYTHON:-/opt/python-3.12/bin/python3.12}" ;;
   *) usage ;;
 esac
 

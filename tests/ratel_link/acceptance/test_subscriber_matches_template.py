@@ -175,7 +175,7 @@ BREAKS = [
     ("an integer as a double", "network_access_mode", 2.0, "network_access_mode: type"),
     ("an integer as a string", "subscribed_rau_tau_timer", "12", "subscribed_rau_tau_timer"),
     ("an integer as int64", "access_restriction_data", Int64(32), "access_restriction_data"),
-    ("a wrong constant", "network_access_mode", 0, "network_access_mode: value differs"),
+    ("a wrong constant", "network_access_mode", 2, "network_access_mode: value differs"),
     ("amf changed", "security.amf", "0000", "security.amf: value differs"),
     ("op instead of null", "security.op", "A" * 32, "security.op"),
     ("sqn written", "security.sqn", Int64(1), "security.sqn: RatelLink must never write this"),
