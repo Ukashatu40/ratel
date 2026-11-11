@@ -8,6 +8,8 @@ this page, a ticket or a chat.
 - **Runs on:** your machine (steps 1), bss-app (the rest). bss-app is already installed, its firewall is
   loaded and `healthz` answers ([deploy/bss-app/README.md](../../deploy/bss-app/README.md))
 
+> **Routine upgrades** (a newer release of an installed host) are done with `scripts/deploy/deploy.sh`: [deploying.md](deploying.md). The steps below are the manual version, for a first install and for what the script does not do.
+
 ## 1. On your machine: build and copy
 
 ```bash

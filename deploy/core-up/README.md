@@ -151,7 +151,7 @@ unmetered until it is counted. A check on a real phone is still pending.
 
 ## Upgrade and rollback
 
-Upgrade: build a new release (step 2), run `install-release.sh` (step 3), then
+Routine upgrades: `scripts/deploy/deploy.sh meter` (docs/runbooks/deploying.md). By hand: build a new release (step 2), run `install-release.sh` (step 3), then
 `sudo systemctl restart ratel-meter.service`. Rollback: point `/opt/ratel-meter/current` at the
 previous release in `/opt/ratel-meter/releases/` (`sudo ln -sfn <old release> /opt/ratel-meter/current`)
 and restart. Old releases are never deleted by the script.
