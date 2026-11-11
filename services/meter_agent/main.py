@@ -86,6 +86,16 @@ def create_call_agent(settings: CallSettings | None = None) -> CallAgent:
     )
 
 
+def tick_at_start(agent: Agent | CallAgent, aligned: bool) -> bool:
+    """Whether the loop ticks the moment it starts, or waits for the next boundary.
+
+    Only the data agent on the clock waits, and only when it resumed from saved readings: a tick
+    in the middle of an interval would be labelled with an interval already posted and would
+    overwrite it (Agent.wants_immediate_tick).
+    """
+    return not (aligned and isinstance(agent, Agent) and not agent.wants_immediate_tick())
+
+
 def run_agent_loop(
     agent: Agent | CallAgent, interval_seconds: int = 300, aligned: bool = True
 ) -> None:
@@ -101,10 +111,17 @@ def run_agent_loop(
 
     log_event(log, logging.INFO, "meter.agent.started", interval=interval_seconds)
 
+    skip_first = not tick_at_start(agent, aligned)
+    if skip_first:
+        log_event(log, logging.INFO, "meter.agent.waiting_for_boundary")
+
     while running:
         start_time = utc_epoch_now()
         try:
-            agent.run_once()
+            if skip_first:
+                skip_first = False
+            else:
+                agent.run_once()
         except Exception as exc:
             log_event(
                 log,
