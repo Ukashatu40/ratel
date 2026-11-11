@@ -61,8 +61,9 @@ wait_for() {  # wait_for <description> <command...>
 }
 
 app_healthy() {  # app_healthy <port>: the process is up and its dependencies answer
-  "$curl" -fsS -o /dev/null "http://127.0.0.1:$1/healthz" &&
-    [ "$("$curl" -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$1/readyz")" = "200" ]
+  # Quiet: a service that is still starting refuses the connection, and that is not an error yet.
+  "$curl" -fs -o /dev/null "http://127.0.0.1:$1/healthz" 2>/dev/null &&
+    [ "$("$curl" -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$1/readyz" 2>/dev/null)" = "200" ]
 }
 
 agent_up() {  # agent_up <unit> <epoch the restart began>: it logged its start and nothing has failed since
