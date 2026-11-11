@@ -1,4 +1,4 @@
-# Runbook: deploying a release (app, desk, meter, calls)
+# Runbook: deploying a release (app, desk, meter, calls, link)
 
 Keep it short. Never put a key, a password or a real address in this page. The host names below are the ssh aliases in your
 own `~/.ssh/config`.
@@ -28,6 +28,7 @@ own `~/.ssh/config`.
 | `desk` | bss-app | unpacks RatelDesk's files and switches `/var/www/ratel-desk` | the new folder has an `index.html` |
 | `meter` | core-up | installs the data agent, restarts `ratel-meter.service` | the journal shows `meter.agent.started` and no `tick_error`, `nft_failed` or traceback |
 | `calls` | voice VM | installs the call agent, restarts `ratel-meter-calls.service` | the same |
+| `link` | core-cp | installs RatelLink, restarts `ratel-link.service` | `healthz` answers and `readyz` is 200 (it needs MongoDB and the key file); the calls to it fail for the second or two of the restart |
 
 A failure in a tick shows at the next 5-minute boundary, not at the restart: read the journal then.
 
@@ -39,7 +40,9 @@ mkdir -p ~/.ssh
 ```
 The tool shares one ssh connection per host for ten minutes, so the passphrase is not asked again within a deploy. The aliases
 it uses are `ratelplus-bss-app`, `ratelplus-core-up` and `ratelplus-voice`; set `RATEL_HOST_APP`, `RATEL_HOST_CORE_UP` or
-`RATEL_HOST_VOICE` to use other names.
+`RATEL_HOST_VOICE` to use other names (`ratelplus-core-cp` and `RATEL_HOST_CORE_CP` for `link`). RatelLink's Python is
+`RATEL_LINK_PYTHON`, by default `/opt/python-3.12/bin/python3.12`: check it is right on core-cp before the first `link` deploy
+(`readlink -f /opt/ratel-link/current/venv/bin/python`).
 
 ## Using it
 
@@ -58,8 +61,8 @@ that needs a setting the host does not have will fail its "up" check and be roll
 
 ## What it does not do
 
-It never edits an env file, nginx, the firewall, a systemd unit, a sudo rule or a database role, and it deploys neither RatelLink
-(core-cp, where the key store is) nor the nginx updater. Those stay manual, from the README of the host: `deploy/bss-app/README.md`,
+It never edits an env file, nginx, the firewall, a systemd unit, a sudo rule or a database role, and it does not run the nginx
+updater. Those stay manual, from the README of the host: `deploy/bss-app/README.md`,
 `deploy/core-up/README.md`, `deploy/voice/README.md`, `deploy/core-cp/README.md`.
 
 ## When it fails

@@ -284,3 +284,35 @@ def test_logs_name_the_outcome_and_the_caller_but_never_the_line_or_a_key(
         text = repr(record.__dict__)
         for secret in (SYNTHETIC_IMSI, SYNTHETIC_MSISDN, SYNTHETIC_KI_HEX, SYNTHETIC_OPC_HEX):
             assert secret not in text and secret.upper() not in text
+
+
+def test_every_new_document_has_network_access_mode_zero_and_an_int() -> None:
+    env = Env()
+    env.activate()
+    env.activate(SYNTHETIC_IMSI_2, msisdn=SYNTHETIC_MSISDN_2)
+    for imsi in (SYNTHETIC_IMSI, SYNTHETIC_IMSI_2):
+        mode = env.document(imsi)["network_access_mode"]
+        assert mode == 0 and type(mode) is int
+
+
+@pytest.mark.parametrize("changes", [{}, {"speed_dl_mbps": 25}, {"voice": False}])
+def test_activating_again_puts_zero_back_on_a_document_that_still_says_two(
+    changes: dict[str, Any],
+) -> None:
+    """A document written by an older release, by hand, or by a copy of the guide's template."""
+    env = Env()
+    env.activate()
+    env.document()["network_access_mode"] = 2
+    env.activate(**changes)
+    assert env.document()["network_access_mode"] == 0
+
+
+def test_a_data_change_leaves_network_access_mode_alone() -> None:
+    """Only activation owns the field: a speed change must not rewrite the rest of the document."""
+    env = Env()
+    env.activate()
+    env.document()["network_access_mode"] = 2
+    env.subscribers.set_internet_speeds(
+        SYNTHETIC_IMSI, {"downlink": {"value": 1, "unit": 2}, "uplink": {"value": 1, "unit": 2}}, {}
+    )
+    assert env.document()["network_access_mode"] == 2

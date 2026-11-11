@@ -27,7 +27,10 @@ from a template exported from the lab, not from the guide's abbreviated example 
    int32 is expected can be read as 0.
 4. **Never write `security.sqn`.** Leave it out on create. Resetting it makes the SIM reject the
    network's challenge.
-5. Every new SIM gets `network_access_mode` 2 (packet only). The network is LTE only.
+5. Every new SIM gets `network_access_mode` **0** (packet and circuit). The guide of 11 Oct said 2 (packet only), but with 2 the core
+   answered every Android phone "no voice service" and the phone left LTE within seconds (lab, 2026-11-11). The network lead
+   added a small MSC on core-cp and asked for 0 on every subscriber, and that activating again never puts 2 back. The network is
+   still LTE only. **RatelLink's subscribers now depend on that MSC:** if it is removed, 0 must be revisited.
 6. Ki and OPc are stored as plaintext in this collection, because Open5GS needs them that way. They
    must never be logged, returned by the API, or leave the core host unencrypted. This is the
    place where RatelLink's encrypted store ([ADR 0006](adr/0006-ki-opc-encryption-at-rest.md))
@@ -49,7 +52,7 @@ from a template exported from the lab, not from the guide's abbreviated example 
 | `subscriber_status` | int32 | 0 = service, 1 = barred (see N4) |
 | `operator_determined_barring` | int32 | 0 |
 | `access_restriction_data` | int32 | 32 |
-| `network_access_mode` | int32 | 2 |
+| `network_access_mode` | int32 | 0 (was 2 until 2026-11-11, see fact 5) |
 | `subscribed_rau_tau_timer` | int32 | 12 |
 | HSS-owned: `imeisv`, `mme_host`, `mme_realm`, `purge_flag` | arrays | create as `[]`, never write again |
 | `mm_realm` | array | create as `[]`. **Not an Open5GS field**: the guide's name for `mme_realm` is a typo (checked 2026-10-20 against the v2.8.0 HSS source and web UI schema, and against the lab's two working documents, which carry both). Kept so the document matches the working ones field for field. TODO(network team): correct the guide and say whether `mm_realm` can be dropped |
