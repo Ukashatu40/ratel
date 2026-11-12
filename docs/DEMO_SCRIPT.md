@@ -53,13 +53,15 @@ These are true today and the Build Plan says they are acceptable for the demo, i
 - Outgoing calls from **iPhones fail today** (a network-side fallback behaviour). Incoming calls to
   them work. Use an Android VoLTE handset to place the call in act 3.
 - A SIM must have a **two-digit MNC** (62100) or it does not belong to the network.
-- **Android handsets do not attach with the vendor SIMs yet (2026-11-10).** The phone shows emergency calls only; the MME logs
-  `Unknown UE by IMSI` and `Rejected by PLMN-ID access control` on every attempt, and the Android shows the network as MNC `002`.
-  The same SIM works on an iPhone. The cause is not confirmed: the likely one is that the SIM's administrative file gives the
-  MNC length as three digits (the network is `62100`, two digits). With the network team. Android also refuses to save an `ims`
-  APN (restricted to the carrier configuration), and VoLTE on an unknown operator needs a handset that already enables it.
-  **Until it is solved, the working set is an iPhone for data and incoming calls plus a phone that places outgoing calls**, and
-  there is no spare of either on the project lead's table: see R-18.
+- **Android handsets attach with the vendor SIMs since 2026-11-11 (cause found).** On 2026-11-10 they showed emergency calls
+  only and the MME logged `Rejected by PLMN-ID access control`. The network lead found the real cause: our subscriber records had
+  `network_access_mode` 2 (packet only), so the core answered every Android "no voice service" and the phone left LTE within
+  seconds. He added a small MSC on core-cp (Osmocom: `osmo-stp`, `osmo-hlr`, `osmo-msc`) and RatelLink now writes 0 on every
+  activation (decision 59). The earlier guess here, a three-digit MNC length on the SIM, was **wrong**, and so was the MNC `002`
+  display and the `Unknown UE by IMSI` line as causes. Confirmed on 2026-11-12: a **Samsung Galaxy A6+** browses on a
+  re-activated line. **Not yet recorded:** whether it registers for VoLTE and places and receives calls (TODO: one call each
+  way, note the icon on the phone). A line activated before 2026-11-11 keeps 2 until it is activated again. Android also
+  refuses to save an `ims` APN by hand (restricted to the carrier configuration): VoLTE depends on the handset's own settings.
 - **16 October** is the voice decision point. If no phone we could sell registers and calls
   reliably by then, management decides between showing calls on the phones that work and moving
   voice to a later date. Data does not wait for voice.
