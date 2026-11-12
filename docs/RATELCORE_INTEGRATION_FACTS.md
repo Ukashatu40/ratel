@@ -31,6 +31,12 @@ from a template exported from the lab, not from the guide's abbreviated example 
    answered every Android phone "no voice service" and the phone left LTE within seconds (lab, 2026-11-11). The network lead
    added a small MSC on core-cp and asked for 0 on every subscriber, and that activating again never puts 2 back. The network is
    still LTE only. **RatelLink's subscribers now depend on that MSC:** if it is removed, 0 must be revisited.
+   What the lab showed on 2026-11-12: the MSC is the Osmocom stack on core-cp, three systemd units (`osmo-stp`, `osmo-hlr`,
+   `osmo-msc`), all enabled at boot, with `osmo-msc` ordered after `osmo-hlr`. The HLR creates subscribers on demand
+   (`subscriber-create-on-demand no-msisdn cs+ps` in `/etc/osmocom/osmo-hlr.cfg`), so a line made by RatelLink needs no hand-made
+   HLR entry, and an Android phone browsed on a re-activated line. The MSC, STP and MME talk over the loopback (SGsAP on 29118,
+   M3UA on 2905), so `ratel_fw` does not touch that traffic; it also means the host firewall is what keeps those two ports from
+   the network. TODO(network lead): owner, backup of `/etc/osmocom` and `hlr.db` (it can hold keys, so encrypted), a reboot test.
 6. Ki and OPc are stored as plaintext in this collection, because Open5GS needs them that way. They
    must never be logged, returned by the API, or leave the core host unencrypted. This is the
    place where RatelLink's encrypted store ([ADR 0006](adr/0006-ki-opc-encryption-at-rest.md))

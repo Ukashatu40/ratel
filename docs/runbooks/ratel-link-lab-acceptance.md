@@ -137,6 +137,9 @@ Things that cost time, so the next run does not repeat them:
 - **A caller key for the import is made for the session and disabled after it:** `admin_cli api-key create --id <name>`
   prints it once; `admin_cli api-key disable --id <name>` ends it. There is no "enable": a disabled id is made again under a
   new name. The key RatelBSS itself uses is never used for this, because the keys would then pass through bss-app.
+- **Activating a line again resets its speeds to the ones in the request.** A line that is out of data and slowed becomes full speed
+  in the core, while RatelBSS still says out of data. RatelBSS's own reinstate sends `/data` after `/activate` for that reason. By
+  hand, either activate with the slowed speeds, or top the line up so the rating job restores it. Seen on 2026-11-12.
 - **A new SIM showed "emergency calls only" until the phone's APN was set to `internet`.** Set it before concluding anything
   about the SIM. With IPv4 only on the core, set the APN protocol to IPv4.
 - **No browsing although the phone attached, and the Usage tab showed intervals with 0 MB.** On 2026-11-05 core-up could not
