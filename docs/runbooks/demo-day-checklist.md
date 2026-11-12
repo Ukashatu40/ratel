@@ -69,10 +69,10 @@ One line per act, prepared in RatelDesk. Write the line ids and the last four di
 | 5 Top up | the voucher card | `/pay`: the line's number, card, PIN; `sudo systemctl start ratel-rating.service`; the line page says active; toggle; a speed test at tens of Mbit/s | voucher only |
 | 6 Numbers match | the start snapshot is more than 10 minutes old | the end snapshot and `reconcile_cli` (below); the call timings next to the Calls tab | the stored results of the rehearsals |
 
-**Act 6, data.** Both snapshots on core-up, 5 to 25 seconds after a 5-minute mark, with nothing else browsing:
+**Act 6, data.** Both snapshots on core-up, 1 to 3 seconds after a 5-minute mark, with nothing else browsing. Keep the phone idle (or streaming steadily) for the 10 seconds around **both** snapshots: traffic at only one end shows as an error of about 1% in a 10-minute window:
 
 ```bash
-while :; do s=$(( $(date +%s) % 300 )); [ $s -ge 5 ] && [ $s -le 25 ] && break; sleep 1; done; ./ratel-interface-totals.sh snapshot | tee /tmp/act6-start.txt
+while :; do s=$(( $(date +%s) % 300 )); [ $s -ge 1 ] && [ $s -le 3 ] && break; sleep 1; done; ./ratel-interface-totals.sh snapshot | tee /tmp/act6-start.txt
 # ... later, after a mark, the same loop with act6-end.txt, then:
 ./ratel-interface-totals.sh delta /tmp/act6-start.txt /tmp/act6-end.txt
 ```
