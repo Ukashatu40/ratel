@@ -142,7 +142,7 @@ staff SIMs; PRD decision 8 (the call end reasons, built as proposed).
 2. **First dry run** after the Week 4 gate (23 Oct), with whatever works, to find the slow parts.
 3. **Pilot** on staff SIMs from 9 Nov. Every failure in the pilot is a rehearsal for a demo failure.
 4. **Two full rehearsals** 16 to 20 Nov, on the demo phones, in the demo room if possible, with
-   someone reading this page aloud and someone else timing every act.
+   someone reading this page aloud and someone else timing every act. The sheet to fill in, one per run: [runbooks/rehearsal-sheet.md](runbooks/rehearsal-sheet.md).
 5. **Freeze** on 23 Nov. No change to the network or the software after it except a fix for a
    step that failed in a rehearsal.
 
