@@ -8,7 +8,8 @@ this page. Every command is one we have run on the lab; the first column says on
 - **Runs on:** your laptop, core-up, core-cp, voice, bss-app
 
 The demo is the six acts of [DEMO_SCRIPT.md](../DEMO_SCRIPT.md). This page is what has to be true before each of them. Do the
-whole of it once in each rehearsal (the Week 8 gate: two full runs with no step repeated).
+whole of it once in each rehearsal (the Week 8 gate: two full runs with no step repeated), with [rehearsal-sheet.md](rehearsal-sheet.md)
+in hand to time every step.
 
 ## The rules, learned the hard way
 
