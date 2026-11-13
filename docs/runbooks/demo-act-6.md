@@ -64,6 +64,25 @@ window on the line page's Usage tab (the rows between those times add up to the 
 Say: "The first number is what the platform billed from; the second is the Linux kernel's own count on the interface. The
 platform does not read it."
 
+## The three counts of the window in one script
+
+`deploy/core-up/ratel-window.sh` takes the interface counters, the counting table and the agent's unmapped bytes together, so a
+comparison cannot mix numbers from two windows (it happened twice on 2026-11-12). Copy it to core-up once
+(`scp deploy/core-up/ratel-window.sh ratelplus-core-up:~/`). It asks for the sudo password first, then waits for 1 to 3 seconds past a
+5-minute mark:
+
+```bash
+./ratel-window.sh start        # phone idle until it prints
+# ... the phone browses ...
+./ratel-window.sh end          # phone idle for the 10 seconds before; at least 5 minutes after start
+./ratel-window.sh report       # the three counts, and the commands to paste on bss-app
+```
+
+`report` prints a table (interface, counting table, unmapped, and the table less the unmapped, which is what the agent should have
+stored), the counting rule's error against the interface, and the two commands for bss-app: `reconcile_cli` with `T0`, `T1` and `N`
+already filled in, and the query for the stored total. Wait 2 minutes after `end` before running them. If the stored total is below
+"table less unmapped", the loss is in the agent or its post; if "table less unmapped" is below the interface, it is in the rule.
+
 ## The calls half
 
 **Mark (during act 3, "Call"; on the voice VM, before the call).** Paste once per session:
