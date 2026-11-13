@@ -1,0 +1,69 @@
+# SMSC destination rewrite and delivery timing: the changes to
+# ~/docker_open5gs/smsc/kamailio_smsc.cfg on the voice VM (mounted into the `smsc` container).
+# Fragments to place by hand, not a whole file: the rest of that file is the docker_open5gs
+# project's and holds the database URL, which stays out of Git.
+#
+# Before editing: cp kamailio_smsc.cfg kamailio_smsc.cfg.bak-norm-2026-11-11
+#                 cp kamailio_smsc.cfg kamailio_smsc.cfg.bak-timer-2026-11-12
+# After editing:  docker restart smsc
+# Rollback:       cp kamailio_smsc.cfg.bak-norm-2026-11-11 kamailio_smsc.cfg && docker restart smsc
+# Kamailio 6.2 (the image the voice VM runs). Rule 1 applied and verified 2026-11-11, the timing
+# change 2026-11-12.
+#
+# WARNING: restarting this container empties its message store. Any message waiting to be delivered
+# at that moment is lost. Restart when nothing is in flight.
+
+# --- 1. Destination rewrite: in route[SMS_FROM_3GPP], immediately after -------------------------
+#       dp_translate("1", "$avp(to)/$avp(to)");
+
+		# Ratel: national 0XXXXXXXXXX to 234XXXXXXXXXX
+		if ($avp(to) =~ "^0[0-9]{10}$") {
+			$avp(to) = "234" + $(avp(to){s.substr,1,0});
+		}
+
+# --- 2. Delivery timing: the rtimer parameter near the top of the file ---------------------------
+#       was interval=30, and the comment above it said 30 seconds
+# Time interval for SMS retries is set to 10 seconds
+modparam("rtimer", "timer", "name=sms;interval=10;mode=1;")
+
+# --- 3. Retry limit: in route[SMS_WORKER], the threshold and its message -------------------------
+#       was `> 2` and "after 2 retries"
+			if ($sht(sms_retries=>$dbr(q=>[$var(i),0])) > 6) {
+				xlog("Dropping SMS [$dbr(q=>[$var(i),3])] TO $dbr(q=>[$var(i),2]) after 6 retries \n");
+
+
+# ================================================================================================
+# Why rule 1
+# ================================================================================================
+# Phones address an SMS with the number as the user typed or saved it, and the destination sits
+# inside the message body, so the S-CSCF's request-URI normalisation does not reach it. The keypad
+# handset sends 0XXXXXXXXXX. The SMSC looked for a phone registered under that exact string, found
+# none because the stored identity is 234XXXXXXXXXX, and dropped the message after its retries:
+#
+#   ERROR: Dropping SMS [hi] TO 02064730451 after 2 retries
+#
+# Messages from the iPhone always worked because it sends 234XXXXXXXXXX already. So the symptom was
+# one-directional and looked like a phone problem rather than a numbering one.
+#
+# Verified on 2026-11-12: a message from the keypad handset to the iPhone was logged as
+# `TO 2342064730451` and delivered, and the reverse direction still worked.
+#
+# ================================================================================================
+# Why rules 2 and 3 together
+# ================================================================================================
+# The SMSC does not deliver on receipt. It stores the message and a background worker sends whatever
+# is waiting. On the first message to a given destination the worker only subscribes to that phone's
+# registration state and sends nothing, so a first message needed two rounds of the timer. At 30
+# seconds that measured 53 and 51 seconds end to end.
+#
+# The interval alone cannot be shortened: the retry limit counts rounds, not time, so going from 30
+# to 10 seconds would have cut the window in which a sleeping phone can be paged and answer from
+# about 90 seconds to about 30. Raising the limit from 2 to 6 keeps roughly the same real window
+# while making delivery about three times quicker.
+#
+# Measured after the change on 2026-11-12: 16 and 18 seconds for a first message to each phone. A
+# later message to the same phone should arrive inside one round.
+#
+# Watch for duplicates. If a phone takes longer than 10 seconds to acknowledge, the worker can send
+# the same message again on the next round and the user would see it twice. Not observed on this
+# network, where both phones acknowledged in well under a second.
