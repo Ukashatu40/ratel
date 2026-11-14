@@ -1,0 +1,40 @@
+$ORIGIN ims.mnc000.mcc621.3gppnetwork.org.
+$TTL 1W
+@                       1D IN SOA       localhost. root.localhost. (
+                                        1		; serial
+                                        3H              ; refresh
+                                        15M             ; retry
+                                        1W              ; expiry
+                                        1D )            ; minimum
+
+                        1D IN NS        ns
+ns                      1D IN A         172.22.0.15
+
+pcscf                   1D IN A         172.22.0.21
+_sip._udp.pcscf         1D SRV 0 0 5060 pcscf
+_sip._tcp.pcscf         1D SRV 0 0 5060 pcscf
+
+icscf                   1D IN A         172.22.0.19
+_sip._udp               1D SRV 0 0 4060 icscf
+_sip._tcp               1D SRV 0 0 4060 icscf
+
+scscf                   1D IN A         172.22.0.20
+_sip._udp.scscf         1D SRV 0 0 6060 scscf
+_sip._tcp.scscf         1D SRV 0 0 6060 scscf
+
+hss                     1D IN A         172.22.0.18
+
+smsc                    1D IN A         172.22.0.33
+_sip._udp.smsc          1D SRV 0 0 7090 smsc
+_sip._tcp.smsc          1D SRV 0 0 7090 smsc
+
+ibcf                    1D IN A         172.22.0.140
+_sip._udp.ibcf          1D SRV 0 0 5090 ibcf
+_sip._tcp.ibcf          1D SRV 0 0 5090 ibcf
+
+voicemail               1D IN A         172.22.0.140
+_sip._udp.voicemail     1D SRV 0 0 5090 voicemail
+_sip._tcp.voicemail     1D SRV 0 0 5090 voicemail
+
+@ 1D IN NAPTR 100 10 "s" "SIP+D2T" "" _sip._tcp.ims.mnc000.mcc621.3gppnetwork.org.
+@ 1D IN NAPTR 100 10 "s" "SIP+D2U" "" _sip._udp.ims.mnc000.mcc621.3gppnetwork.org.
