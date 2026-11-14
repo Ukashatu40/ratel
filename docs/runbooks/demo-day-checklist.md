@@ -64,18 +64,18 @@ One line per act, prepared in RatelDesk. Write the line ids and the last four di
 | Act | Before it | The step | If it fails |
 | --- | --- | --- | --- |
 | 1 Sell | line A's customer is KYC-approved; a voucher card on the table | Desk: Sell SIM, pick SIM, number, plan; the customer tops up on `/pay`; Buy plan; Activate. Import the keys beforehand if the SIM is new ([ratel-link-lab-acceptance.md](ratel-link-lab-acceptance.md), step 2) | show line B, already sold |
-| 2 Browse | **start the Act 6 snapshot now** (below) | the phone opens a page; the Usage tab shows the interval at the next 5-minute mark | show the counters on core-up |
+| 2 Browse | **start the Act 6 window now** (below) | the phone opens a page; the Usage tab shows the interval at the next 5-minute mark | show the counters on core-up |
 | 3 Call | the call phones registered | one call between two Ratelplus lines; the Calls tab shows it about 70 seconds after the hang-up | play the other direction |
 | 4 Out of data | line D has used 20 MB (or use the rehearsal feed, [demo-setup.md](demo-setup.md) section 7, **before** the demo only) | `sudo systemctl start ratel-rating.service`; the line page says out of data; airplane toggle; a speed test at about 1 Mbit/s; a call still rings | line D already at zero; call from it |
 | 5 Top up | the voucher card | `/pay`: the line's number, card, PIN; `sudo systemctl start ratel-rating.service`; the line page says active; toggle; a speed test at tens of Mbit/s | voucher only |
-| 6 Numbers match | the start snapshot is more than 10 minutes old | the end snapshot and `reconcile_cli` (below); the call timings next to the Calls tab | the stored results of the rehearsals |
+| 6 Numbers match | the window was started more than 10 minutes ago | `ratel-window.sh end` and `report`, then the commands it prints for bss-app (below); the call timings next to the Calls tab | the stored results of the rehearsals |
 
 **Act 6, data.** Both snapshots on core-up, 1 to 3 seconds after a 5-minute mark, with nothing else browsing. Keep the phone idle (or streaming steadily) for the 10 seconds around **both** snapshots: traffic at only one end shows as an error of about 1% in a 10-minute window:
 
 ```bash
-while :; do s=$(( $(date +%s) % 300 )); [ $s -ge 1 ] && [ $s -le 3 ] && break; sleep 1; done; ./ratel-interface-totals.sh snapshot | tee /tmp/act6-start.txt
-# ... later, after a mark, the same loop with act6-end.txt, then:
-./ratel-interface-totals.sh delta /tmp/act6-start.txt /tmp/act6-end.txt
+./ratel-window.sh start      # on core-up, in act 2; asks for the sudo password first, so type it before the audience arrives (sudo -v)
+./ratel-window.sh end        # later, after the same wait
+./ratel-window.sh report     # prints the three counts and the two commands to paste on bss-app
 ```
 
 On bss-app: `bss app.meter_api.reconcile_cli --from $((T0 / 300 * 300)) --to $((T1 / 300 * 300)) --network-total $N`, with `T0`, `T1`

@@ -17,6 +17,13 @@ What the steps are and why: [DEMO_SCRIPT.md](../DEMO_SCRIPT.md). What must be tr
 | Run number (1 or 2 of the gate) | |
 | Where | |
 
+**Alone, or with fewer people than this table.** `scripts/demo/rehearse.sh` is the Reader and the Timer: it shows you each step, what
+you must see and the command to type, times the step, and takes `r` (repeated), `f` (failed, and what you did instead), `n` (a note) or
+`q` (stop and save) at each Enter. It runs nothing on any host: you type the commands yourself. It writes this sheet, filled in, to
+`docs/records/rehearsal-<date>-run<N>.md`. Run it as `scripts/demo/rehearse.sh --run 1`, or with `--people "name, name, name"` when others
+are there. A run alone is a real rehearsal and finds the failures, but it is recorded as not counting towards the gate (the gate asks for
+someone else reading and timing), and the record says so.
+
 **People.** One person has one job. Write the names, and use people who can act on the day: the repository's collaborators
 (@Ukashatu40, @capitanaserdel, @CaptRaven, @Abbalolo, @ml-lawarn, @Arfaaah). A suggestion from the ownership matrix, with a backup each:
 Operator @Ukashatu40 (backup @capitanaserdel, who owns the meter); Presenter @ml-lawarn (backup @Abbalolo, who owns the lines);
@@ -64,7 +71,7 @@ is a target, not a limit: a step that takes longer is a finding, not a failure. 
 | 1.5 | Presenter | **Activate line** | the line is **active** | | | | |
 | 1.6 | Phones | Put the SIM in the phone; toggle airplane mode | the phone shows the network name | | | | |
 | **2** | | **Browse** | | **1:00** | | | |
-| 2.1 | Operator | **Start snapshot** on `core-up` (the loop, then the snapshot); phone idle until it prints | three numbers printed; write the first (`T0`) here: | | | | |
+| 2.1 | Operator | **Start the window** on `core-up`: `./ratel-window.sh start` (phone idle until it prints) | one line: the interface and the counting table at that second | | | | |
 | 2.2 | Phones | Open a web page on line B's phone | the page loads | | | | |
 | 2.3 | Presenter | Line B's page, **Usage** tab | intervals with MB, newest first | | | | |
 | **3** | | **Call** | | **1:30** | | | |
@@ -83,8 +90,8 @@ is a target, not a limit: a step that takes longer is a finding, not a failure. 
 | 5.3 | Presenter | Line D's page | state **active**, the history says allowance restored | | | | |
 | 5.4 | Phones | Toggle airplane mode; run a speed test | tens of Mbit/s | | | | |
 | **6** | | **Prove the numbers** | | **1:30** | | | |
-| 6.1 | Operator | **End snapshot** on `core-up` (phone idle 10 seconds before); then `delta`; write the first number (`T1`) and the bytes (`N`): | | | | | |
-| 6.2 | Operator | `reconcile_cli --from $((T0/300*300)) --to $((T1/300*300)) --network-total $N` on `bss-app` | **`within 1%`**, exit 0; write the line: | | | | |
+| 6.1 | Operator | **End the window** on `core-up` (phone idle 10 seconds before): `./ratel-window.sh end`, then `./ratel-window.sh report` | the table of three counts and the two commands for `bss-app` | | | | |
+| 6.2 | Operator | On `bss-app`, paste the two commands the report printed (`reconcile_cli` and the stored-total query) | **`within 1%`**, exit 0; write the line, and the stored total next to "table less unmapped": | | | | |
 | 6.3 | Operator | The `calls` query on the voice VM for one call, next to the Calls tab | the same start, rang for and talk time to the second | | | | |
 
 Total budget: **9:30**, plus about 30 seconds between acts. Write the total actual time: ________
