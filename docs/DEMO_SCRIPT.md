@@ -53,13 +53,15 @@ These are true today and the Build Plan says they are acceptable for the demo, i
 - Outgoing calls from **iPhones fail today** (a network-side fallback behaviour). Incoming calls to
   them work. Use an Android VoLTE handset to place the call in act 3.
 - A SIM must have a **two-digit MNC** (62100) or it does not belong to the network.
-- **Android handsets do not attach with the vendor SIMs yet (2026-11-10).** The phone shows emergency calls only; the MME logs
-  `Unknown UE by IMSI` and `Rejected by PLMN-ID access control` on every attempt, and the Android shows the network as MNC `002`.
-  The same SIM works on an iPhone. The cause is not confirmed: the likely one is that the SIM's administrative file gives the
-  MNC length as three digits (the network is `62100`, two digits). With the network team. Android also refuses to save an `ims`
-  APN (restricted to the carrier configuration), and VoLTE on an unknown operator needs a handset that already enables it.
-  **Until it is solved, the working set is an iPhone for data and incoming calls plus a phone that places outgoing calls**, and
-  there is no spare of either on the project lead's table: see R-18.
+- **Android handsets attach with the vendor SIMs since 2026-11-11 (cause found).** On 2026-11-10 they showed emergency calls
+  only and the MME logged `Rejected by PLMN-ID access control`. The network lead found the real cause: our subscriber records had
+  `network_access_mode` 2 (packet only), so the core answered every Android "no voice service" and the phone left LTE within
+  seconds. He added a small MSC on core-cp (Osmocom: `osmo-stp`, `osmo-hlr`, `osmo-msc`) and RatelLink now writes 0 on every
+  activation (decision 59). The earlier guess here, a three-digit MNC length on the SIM, was **wrong**, and so was the MNC `002`
+  display and the `Unknown UE by IMSI` line as causes. Confirmed on 2026-11-12: a **Samsung Galaxy A6+** browses on a
+  re-activated line. **Not yet recorded:** whether it registers for VoLTE and places and receives calls (TODO: one call each
+  way, note the icon on the phone). A line activated before 2026-11-11 keeps 2 until it is activated again. Android also
+  refuses to save an `ims` APN by hand (restricted to the carrier configuration): VoLTE depends on the handset's own settings.
 - **16 October** is the voice decision point. If no phone we could sell registers and calls
   reliably by then, management decides between showing calls on the phones that work and moving
   voice to a later date. Data does not wait for voice.
@@ -125,7 +127,7 @@ backend only.
 | --- | ----- |
 | 1 Sell | **Done on the lab:** customer, KYC approved by an admin, SIM and number from stock, plan, a voucher on the RatelPay page, the plan bought from the wallet, the SIM's keys imported into RatelLink, **Activate** in RatelDesk. The phone attaches once its APN is `internet` ([record](records/ratellink-lab-acceptance-2026-11-05.md)) |
 | 2 Browse | **Done:** a phone browsed, the agent counted it every 5 minutes, RatelDesk's Usage tab shows it. Stored bytes against the interface's own counters: **0.01% apart** over 15 minutes ([demo-act-6.md](runbooks/demo-act-6.md)) |
-| 3 Call | **Done between lab lines:** calls ring with two-way audio and show on the line's Calls tab with ring time, talk time and result. Outgoing calls from an iPhone fail today; see "Phones" |
+| 3 Call | **Works between the keypad phone and the telephone (2026-11-12, 12:01 UTC: answered, 38 s, hang-up recorded, shown on the Calls tab).** It does **not** work to or from the iPhone or the Android: those calls end in SIP 500 or 404 (the callee is not registered in IMS), while data works on both. Calls between the iPhone and the keypad worked on 2026-11-11 (the Act 4 test) and stopped after that evening's core changes (the MSC on core-cp and `network_access_mode` 0). With the network team. The accounting is not the problem (`check-acc.sh` all ok). Open question for them: does PyHSS need an IMS entry per line? If yes, a newly sold line cannot call until someone adds it |
 | 4 Out of data | **Backend done 2026-11-10:** usage beyond the allowance, the line marked out of data and slowed (`POST …/data` 200), exactly 2 MB over counted ([record](records/demo-acts-4-5-backend-2026-11-10.md)). **Phone not tested:** slowed speed after an airplane-mode toggle, and a call that still works |
 | 5 Top up | **Backend done:** a voucher redeemed on RatelPay, the plan bought again, data restored, the ledger exact. **Phone not tested:** data back after the next toggle |
 | 6 Numbers match | **Data half done** (0.01%). **Calls half:** the call timings matched the S-CSCF's own rows (5 Nov); the side-by-side on stage needs one call and RatelDesk open next to the voice VM's query |
@@ -140,7 +142,7 @@ staff SIMs; PRD decision 8 (the call end reasons, built as proposed).
 2. **First dry run** after the Week 4 gate (23 Oct), with whatever works, to find the slow parts.
 3. **Pilot** on staff SIMs from 9 Nov. Every failure in the pilot is a rehearsal for a demo failure.
 4. **Two full rehearsals** 16 to 20 Nov, on the demo phones, in the demo room if possible, with
-   someone reading this page aloud and someone else timing every act.
+   someone reading this page aloud and someone else timing every act. The sheet to fill in, one per run: [runbooks/rehearsal-sheet.md](runbooks/rehearsal-sheet.md).
 5. **Freeze** on 23 Nov. No change to the network or the software after it except a fix for a
    step that failed in a rehearsal.
 

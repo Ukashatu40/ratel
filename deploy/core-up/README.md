@@ -28,6 +28,8 @@ unmetered until it is counted. A check on a real phone is still pending.
 | `ratel-meter.nft` | The counting table: one set per direction, an element counter per address. Counts only, never drops or changes a packet |
 | `ratel-meter-nft.service` | Loads that table at boot and removes it on stop (runs as root, does only that) |
 | `ratel-meter.service` | The agent. Runs as the unprivileged user `ratelmeter` with one capability, `CAP_NET_ADMIN`, so it can read the table |
+| `ratel-interface-totals.sh` | Read-only: the kernel's own byte counters on `ogstun` (a snapshot, and the bytes between two). No privilege needed. For checking the agent's totals against something it does not count |
+| `ratel-window.sh` | Read-only, run with `sudo` access: the interface, the counting table and the agent's unmapped bytes for one window, taken together, with the commands to paste on bss-app. See `docs/runbooks/demo-act-6.md` |
 | `ratel-meter.env.example` | The agent's settings, with placeholders |
 
 ## Layout on core-up
@@ -151,7 +153,7 @@ unmetered until it is counted. A check on a real phone is still pending.
 
 ## Upgrade and rollback
 
-Upgrade: build a new release (step 2), run `install-release.sh` (step 3), then
+Routine upgrades: `scripts/deploy/deploy.sh meter` (docs/runbooks/deploying.md). By hand: build a new release (step 2), run `install-release.sh` (step 3), then
 `sudo systemctl restart ratel-meter.service`. Rollback: point `/opt/ratel-meter/current` at the
 previous release in `/opt/ratel-meter/releases/` (`sudo ln -sfn <old release> /opt/ratel-meter/current`)
 and restart. Old releases are never deleted by the script.

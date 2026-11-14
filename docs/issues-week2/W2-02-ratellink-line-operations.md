@@ -47,7 +47,7 @@ Live changes (throttle or detach mid-session). Switching deactivation to `subscr
 ## Acceptance criteria
 - A document created through the API matches the template **field for field**, apart from its own values (automated comparison against the template).
 - Activating a line whose document already exists changes only the fields RatelLink owns: `sqn`, `imeisv`, `mme_host`, `mm_realm`, `mme_timestamp` and `purge_flag` are untouched (test with a document that has them set). `security.sqn` is never written.
-- Integers are written as int32, `internet` is at index 0, `network_access_mode` is 2, the MSISDN is a one-item array in `234` form, Ki and OPc are upper case.
+- Integers are written as int32, `internet` is at index 0, `network_access_mode` is 0 (it was 2 until 2026-11-11, see RATELCORE_INTEGRATION_FACTS.md fact 5), the MSISDN is a one-item array in `234` form, Ki and OPc are upper case.
 - The `security` object never appears in any response, log line or audit entry.
 - Activate twice with the same settings: one document, no change on the second call.
 - `data` with `off` removes only the internet APN; the ims APN remains.

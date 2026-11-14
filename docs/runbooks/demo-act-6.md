@@ -32,17 +32,19 @@ Rehearse the whole act **twice** with the stopwatch (the Week 8 gate). The data 
 
 ## The data half
 
-**Start (during act 2, "Browse"; the phone is attached and about to browse).** On core-up, right after a 5-minute boundary (a
-minute or two past :00, :05, :10 ...):
+**Start (during act 2, "Browse"; the phone is attached and about to browse).** On core-up. The loop waits for 1 to 3 seconds
+past a 5-minute boundary (:00, :05, :10 ...) and then takes the snapshot, so the window starts on an interval boundary. Keep the
+phone idle until it prints:
 
 ```bash
-./ratel-interface-totals.sh snapshot | tee /tmp/act6-start.txt      # prints: <epoch> <rx bytes> <tx bytes>
+while :; do s=$(( $(date +%s) % 300 )); [ $s -ge 1 ] && [ $s -le 3 ] && break; sleep 1; done; ./ratel-interface-totals.sh snapshot | tee /tmp/act6-start.txt      # prints: <epoch> <rx bytes> <tx bytes>
 ```
 
-**End (just before act 6; at least 5 minutes after the start).** Wait for a boundary, then right after it:
+**End (just before act 6; at least 5 minutes after the start).** Stop the phone about 10 seconds before a boundary (or keep it
+streaming as steadily as at the start), then:
 
 ```bash
-./ratel-interface-totals.sh snapshot | tee /tmp/act6-end.txt
+while :; do s=$(( $(date +%s) % 300 )); [ $s -ge 1 ] && [ $s -le 3 ] && break; sleep 1; done; ./ratel-interface-totals.sh snapshot | tee /tmp/act6-end.txt
 ./ratel-interface-totals.sh delta /tmp/act6-start.txt /tmp/act6-end.txt     # prints the bytes between the two (the window on stderr)
 ```
 
@@ -61,6 +63,25 @@ window on the line page's Usage tab (the rows between those times add up to the 
 
 Say: "The first number is what the platform billed from; the second is the Linux kernel's own count on the interface. The
 platform does not read it."
+
+## The three counts of the window in one script
+
+`deploy/core-up/ratel-window.sh` takes the interface counters, the counting table and the agent's unmapped bytes together, so a
+comparison cannot mix numbers from two windows (it happened twice on 2026-11-12). Copy it to core-up once
+(`scp deploy/core-up/ratel-window.sh ratelplus-core-up:~/`). It asks for the sudo password first, then waits for 1 to 3 seconds past a
+5-minute mark:
+
+```bash
+./ratel-window.sh start        # phone idle until it prints
+# ... the phone browses ...
+./ratel-window.sh end          # phone idle for the 10 seconds before; at least 5 minutes after start
+./ratel-window.sh report       # the three counts, and the commands to paste on bss-app
+```
+
+`report` prints a table (interface, counting table, unmapped, and the table less the unmapped, which is what the agent should have
+stored), the counting rule's error against the interface, and the two commands for bss-app: `reconcile_cli` with `T0`, `T1` and `N`
+already filled in, and the query for the stored total. Wait 2 minutes after `end` before running them. If the stored total is below
+"table less unmapped", the loss is in the agent or its post; if "table less unmapped" is below the interface, it is in the rule.
 
 ## The calls half
 
@@ -89,11 +110,16 @@ Say: "The right-hand screen is built from the S-CSCF's own accounting rows. This
 - **The first comparison was 32% off, and the agent was right.** It labelled each record with the interval it was *read* in, so
   what it counted from 10:35 to 10:40 was stored as 10:40. Fixed in `ratel-meter-f992f8e`. After the fix the same method gave
   0.01%. Records stored before the fix are one interval late: never compare windows over them.
-- **Take both snapshots with the waiting loop**, 5 to 25 seconds after a boundary (the commands above). Snapshots taken by hand
+- **Take both snapshots with the waiting loop**, 1 to 3 seconds after a boundary (the commands above). Until 2026-11-12 the
+  loop waited 5 to 25 seconds, and a window of 10 minutes with the phone streaming at the start and idle at the end was 1.11% off
+  (ours 19,064,606 against 18,854,389 on the interface): the 5 to 25 seconds of traffic at one edge. Keep the phone
+  idle, or streaming steadily, for 10 seconds around both snapshots. Snapshots taken by hand
   at an arbitrary second give a window that does not match the interval boundaries.
 - **Restarting `ratel-meter.service` before 2026-11-10 lost the traffic since the last tick,** because the previous reading
-  was kept in memory only. Since the release that saves the readings on disk (`meter.agent.resumed` in the journal) a restart
-  loses nothing. Still, do not restart it in or near the window, and wait one tick after any restart before the start snapshot.
+  was kept in memory only. From the release that saves the readings (`ratel-meter-dedb131`) until the fix of 2026-11-11, a restart in the
+  middle of an interval was worse than it looked: the tick the agent made at once overwrote the interval before it. The lab
+  test on 2026-11-11 showed it (9.95% off). Since the fix the agent waits for the next boundary after a restart
+  (`meter.agent.waiting_for_boundary`) and loses nothing. Still, do not restart it in or near the window.
 - **Only RatelLink-provisioned SIMs count.** An address without an assignment (a SIM that attached with a dynamic address) is
   in the interface total but not in our store; the agent logs it as `meter.agent.unmapped_usage` (counts only). On 2026-11-09
   one such address carried a few hundred bytes per interval, which is below the tolerance, but a lab phone that streams

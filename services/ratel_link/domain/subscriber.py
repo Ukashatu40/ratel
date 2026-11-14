@@ -179,7 +179,12 @@ def activation_fields(
         "subscriber_status": 0,
         "operator_determined_barring": 0,
         "access_restriction_data": 32,
-        "network_access_mode": 2,
+        # 0 is packet and circuit. The guide of 11 Oct said 2 (packet only), but with 2 the core
+        # answers an Android phone "no voice service" and the phone leaves LTE within seconds
+        # (found in the lab on 2026-11-11). The network lead added a small MSC on core-cp and asked
+        # for 0 on every subscriber. It is an owned field, so activating again, with the same
+        # settings or others, puts 0 back on a document that still says 2.
+        "network_access_mode": 0,
     }
     created_only: dict[str, Any] = {
         "schema_version": 1,

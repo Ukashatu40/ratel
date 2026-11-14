@@ -122,7 +122,7 @@ def test_the_integers_are_the_values_the_guide_lists() -> None:
         owned["operator_determined_barring"],
         owned["access_restriction_data"],
         owned["network_access_mode"],
-    ) == (0, 0, 32, 2)
+    ) == (0, 0, 32, 0)
     assert all(type(owned[k]) is int for k in ("subscriber_status", "network_access_mode"))
 
 

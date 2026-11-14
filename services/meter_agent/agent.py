@@ -132,6 +132,18 @@ class Agent:
             name = f"{interval_start(current_time, self._config.interval_seconds):010d}.json"
             self._spool.spool(name, batch)
 
+    def wants_immediate_tick(self) -> bool:
+        """False when the agent resumed from saved readings.
+
+        The loop ticks at once when it starts, but a tick in the middle of an interval would label
+        its bytes with an interval that has already been posted, and the API overwrites a record
+        with the same key: the earlier interval would be replaced. So a resumed agent waits for the
+        next boundary, and that tick counts everything since the saved reading (what happened
+        before the restart too) into the interval it closes. With nothing saved there is nothing
+        to count from, so a baseline is taken at once and nothing is posted.
+        """
+        return not self._last
+
     def _save_readings(self) -> None:
         """Keep the previous readings across a restart. A failure is logged, never fatal: counting
         goes on, and only a restart would then lose the traffic since the last tick."""
