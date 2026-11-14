@@ -17,7 +17,17 @@ What the steps are and why: [DEMO_SCRIPT.md](../DEMO_SCRIPT.md). What must be tr
 | Run number (1 or 2 of the gate) | |
 | Where | |
 
-**People.** One person has one job. Write the names.
+**People.** One person has one job. Write the names, and use people who can act on the day: the repository's collaborators
+(@Ukashatu40, @capitanaserdel, @CaptRaven, @Abbalolo, @ml-lawarn, @Arfaaah). A suggestion from the ownership matrix, with a backup each:
+Operator @Ukashatu40 (backup @capitanaserdel, who owns the meter); Presenter @ml-lawarn (backup @Abbalolo, who owns the lines);
+Phones @Arfaaah (backup @Abbalolo); Reader @Abbalolo (backup @Arfaaah); Timer @capitanaserdel (backup @ml-lawarn); @CaptRaven for the
+voice and network questions of act 3, by phone if he cannot come.
+
+**If not everyone can come, this is the least that still counts.** Only the Phones person must be in the room with the phones. The
+Reader and the Timer can join by a video call or a phone call with the sheet in front of them, and the Presenter's screen can be
+shared. Three people is the minimum: the Operator, one person for the phones and the Presenter's clicks, and one for the Reader and
+Timer jobs together. With fewer than three, still do the run and fill in the sheet, and write "run with N people" in the header: it
+finds the failures, but it does not count towards the gate, which asks for someone else reading and timing.
 
 | Role | What they do | Name |
 | --- | --- | --- |

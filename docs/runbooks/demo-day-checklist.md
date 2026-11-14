@@ -36,7 +36,7 @@ in hand to time every step.
 | core-up | `ping -c2 -W2 8.8.8.8 \| tail -2`; `getent hosts example.com \| wc -l` | 0% loss; 1 or more (no uplink means no browsing: it happened on 5 Nov) |
 | voice | `docker ps --format '{{.Names}} {{.Status}}' \| sort`; `systemctl is-active ratel-meter-calls.service` | all containers Up; active |
 | core-cp | `systemctl is-active open5gs-mmed open5gs-hssd osmo-stp osmo-hlr osmo-msc ratel-link ratel-fw`; `curl -s http://127.0.0.1:8081/healthz` | all active; `{"status":"ok"}` |
-| core-up, bss-app | `chronyc tracking \| grep -E 'Leap status\|System time'` | normal; under a second |
+| every host (core-up, bss-app, voice, core-cp) | `timedatectl \| grep -E 'System clock synchronized\|NTP service'` (core-up has no `chronyc`: 2026-11-14) | `yes` and `active`: every usage record's key and every call's duration depend on the clocks |
 
 ## Three hours before: the lines, the phones, the money
 
