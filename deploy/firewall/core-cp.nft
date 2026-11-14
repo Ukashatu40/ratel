@@ -39,6 +39,9 @@ table inet ratel_fw {
         # BEFORE this file is loaded, or the load fails and the host has no firewall.
         ip saddr { $core_up, $bss_app } tcp dport 443 accept
 
+        # RatelOps scrapes node_exporter. Only the ops VM: these addresses are public.
+        ip saddr $ops tcp dport 9100 accept
+
         # Not a verdict: it counts what the policy then drops (sudo nft list chain inet ratel_fw input).
         counter
     }

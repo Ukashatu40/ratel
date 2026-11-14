@@ -16,3 +16,7 @@ define bss_app = 192.0.2.50
 # The hosts allowed to reach PyHSS's API (port 8080) on the voice VM, which Docker publishes. Used
 # only by voice.nft, and it MUST be defined there or the firewall will not load.
 define pyhss_clients = { 192.0.2.60 }
+
+# The RatelOps VM. Used by every host's node_exporter rule; a host whose rules name it MUST define
+# it or the firewall will not load.
+define ops = 192.0.2.46

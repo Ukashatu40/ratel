@@ -35,6 +35,9 @@ table inet ratel_fw {
         # PFCP: the SGW-C and the SMF on core-cp control the SGW-U and the UPF.
         ip saddr $core_cp udp dport { 8805, 8806 } accept
 
+        # RatelOps scrapes node_exporter. Only the ops VM: these addresses are public.
+        ip saddr $ops tcp dport 9100 accept
+
         # Not a verdict: it counts what the policy then drops (sudo nft list chain inet ratel_fw input).
         counter
     }

@@ -34,6 +34,9 @@ table inet ratel_fw {
         tcp dport 22 ct state new meter ssh_new6 { ip6 saddr timeout 1m limit rate over 10/minute burst 10 packets } drop
         tcp dport 22 accept
 
+        # RatelOps scrapes node_exporter. Only the ops VM: these addresses are public.
+        ip saddr $ops tcp dport 9100 accept
+
         # Not a verdict: it counts what the policy then drops (sudo nft list chain inet ratel_fw input).
         counter
     }
