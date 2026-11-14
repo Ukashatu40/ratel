@@ -1,0 +1,84 @@
+# S-CSCF number normalisation on the originating side: the changes to
+# ~/docker_open5gs/scscf/kamailio_scscf.cfg on the voice VM (mounted into the `scscf` container).
+# Fragments to place by hand, not a whole file: the rest of that file is the docker_open5gs
+# project's and holds the database URL, which stays out of Git.
+#
+# Before editing: cp kamailio_scscf.cfg kamailio_scscf.cfg.bak-plus234-2026-11-12
+# After editing:  docker restart scscf      (a restart drops every phone's IMS registration, and the
+#                                            S-CSCF only reads a subscriber's profile, including the
+#                                            SMS trigger, on a fresh registration, so re-register the
+#                                            phones afterwards)
+# Rollback:       cp kamailio_scscf.cfg.bak-plus234-2026-11-12 kamailio_scscf.cfg && docker restart scscf
+# Kamailio 6.2 (the image the voice VM runs). Rule 1 applied 2026-10-11, rule 2 applied and verified
+# on the lab on 2026-11-12.
+
+# --- Placement: in the originating branch, immediately before ------------------------------------
+#       if (!is_method("REGISTER|SUBSCRIBE")) {
+#     which is the block that rewrites a sip: URI carrying phone-context, and which is followed a
+#     few lines later by `route(orig);`. Both rules must sit before `route(orig)`, because the
+#     off-net and terminating paths run after it and by then it is too late to change the number.
+
+		# Ratelplus: normalise national numbers (0XXXXXXXXXX -> 234XXXXXXXXXX)
+		if (is_method("INVITE|MESSAGE") && $rU =~ "^0[0-9]{10}$") {
+			$var(natl_old) = $ru;
+			$rU = "234" + $(rU{s.substr,1,0});
+			msg_apply_changes();
+			xnotice("SCSCF: Normalised R-URI from $var(natl_old) to $ru\n");
+		}
+		# Ratelplus: international form of our own IMS block (+234206473XXXX -> 234206473XXXX)
+		if (is_method("INVITE|MESSAGE") && $rU =~ "^[+]234206473[0-9]{4}$") {
+			$var(intl_old) = $ru;
+			$rU = $(rU{s.substr,1,0});
+			msg_apply_changes();
+			xnotice("SCSCF: Normalised international R-URI from $var(intl_old) to $ru\n");
+		}
+
+
+# ================================================================================================
+# Why
+# ================================================================================================
+# A line's public identities in the IMS are derived by the Open5GS HSS from the `msisdn` field of
+# the subscriber record, as `sip:<msisdn>@<ims domain>` and `tel:<msisdn>`, with no plus sign. The
+# subscriber document holds no IMS fields of its own, so there is nothing else to look up and
+# nothing to provision separately. A number in any other form is simply not a known identity.
+#
+# Without these rules the I-CSCF asks the HSS to locate the dialled identity, the HSS does not know
+# it, and the caller gets:
+#   SIP/2.0 500 Forbidden - HSS responded with unknown Experimental Result
+# which is what a phone dialling +2342064730451 received until 2026-11-12. Note that this is the
+# I-CSCF turning "subscriber not found" into a 500; a mistyped or genuinely unknown number produces
+# the same confusing error rather than a clean rejection. That is a separate item to improve.
+#
+# Rule 1 covers a number dialled nationally, which is how the phones dial by default.
+# Rule 2 covers the international form, which is what a contact saved as +234... produces and what a
+# handset offers when the caller redials from its call log.
+#
+# ================================================================================================
+# Why rule 2 is deliberately narrow
+# ================================================================================================
+# It matches our own IMS block only, 206473 plus four digits. Stripping the plus from every +234
+# number would make a call to another operator, say +2348031234567, look like a local subscriber and
+# fail as an unknown user instead of reaching the trunk once off-net interconnect exists. Numbers
+# outside the block still take the off-net path, which is correct, and still get a 503 until a
+# gateway is configured, because `scscf/dispatcher.list` is empty.
+#
+# Extend the pattern when a new IMS number range is allocated. Keep it tied to ranges that are
+# actually served by the IMS, not to every Ratelplus range: the 0206470 and 0209701 to 0209710
+# numbers live on the VOS3000 softswitch and should take the trunk.
+#
+# ================================================================================================
+# A bare 234XXXXXXXXXX needs no rule
+# ================================================================================================
+# That form already matches the stored identity, so it routes without help. Verified on 2026-11-12:
+# a handset redialling 2342064730452 from its call log rang the called phone normally.
+#
+# ================================================================================================
+# Note on verification
+# ================================================================================================
+# Do not rely on the xnotice lines to confirm these rules fire. This container has produced no
+# script log output since 2026-10-18 for reasons not yet established, so both rules run silently.
+# Confirm by behaviour instead: the call connects, and the I-CSCF returns no 500. Capturing SIP
+# between the components also works:
+#   tcpdump -i any -nn -s0 -w /tmp/x.pcap 'net 172.22.0.0/24 and portrange 4060-7100'
+# Reading it needs an unanchored match, because tcpdump -A puts binary header bytes in front of the
+# first line of a TCP payload.

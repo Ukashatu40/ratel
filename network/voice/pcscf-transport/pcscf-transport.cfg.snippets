@@ -1,0 +1,54 @@
+# P-CSCF transport choice for phones registered over UDP: the change to
+# ~/docker_open5gs/pcscf/kamailio_pcscf.cfg on the voice VM (mounted into the `pcscf` container).
+# A fragment to place by hand, not a whole file: the rest of that file is the docker_open5gs
+# project's and holds credentials, which stay out of Git.
+#
+# Before editing: cp kamailio_pcscf.cfg kamailio_pcscf.cfg.bak-udpmtu-2026-11-12
+# After editing:  docker restart pcscf      (a restart drops every phone's IMS registration)
+# Rollback:       cp kamailio_pcscf.cfg.bak-udpmtu-2026-11-12 kamailio_pcscf.cfg && docker restart pcscf
+# Kamailio 6.2 (the image the voice VM runs). Applied and verified on the lab on 2026-11-12.
+
+# --- 1. Transport: comment out the udp_mtu_try_proto line (it sits just after `udp_mtu = 1300`) ---
+udp_mtu = 1300
+#RATEL-2026-11-12 udp_mtu_try_proto = TCP
+
+
+# ================================================================================================
+# Why
+# ================================================================================================
+# With udp_mtu_try_proto set to TCP, the P-CSCF sent any message larger than udp_mtu to a phone
+# over TCP even when that phone had registered over UDP, opening the connection itself from its own
+# port 5060 to the phone's port 5060, and keeping it open for the registration lifetime.
+#
+# An iPhone's INVITE is about 1800 bytes, so the handset also decided it needed TCP and tried to
+# open a connection with the same four values (both addresses, both ports 5060). Its kernel refused
+# with error 48, address already in use, because the P-CSCF's connection already held that pair.
+# Nothing was sent at all. The INVITE timed out after 8 seconds and the call fell back to circuit
+# switched voice, which this network does not provide, so every outgoing call from an iPhone failed
+# after about 10 seconds with no SIP ever reaching the IMS.
+#
+# The same wall blocked the BYE when an iPhone ended a call it had received, so the caller's side
+# stayed up until the caller hung up. That had been broken since mid-October.
+#
+# Evidence, from the handset's own log (macOS Console, process CommCenter):
+#   "encoded message is too big for UDP (1799 bytes)"
+#   "falling over to TCP"
+#   "ImsTcpSocket: Couldn't connect socket to 172.22.0.21:5060"
+#   "unable to initialize outgoing connection"   then   "SIP INVITE timed out"
+#
+# Verified after the change on 2026-11-12: first INVITE ever seen from the iPhone at 13:12:42 UTC,
+# answered with audio both ways; the iPhone's own BYE accepted at 13:13:13 UTC; an incoming call to
+# the iPhone still rang and answered at 13:14:46 UTC.
+#
+# ================================================================================================
+# Trade-off, and what to watch
+# ================================================================================================
+# Large messages to a UDP-registered phone now travel as fragmented UDP. That works on this network.
+# If incoming calls to such a phone ever fail at a particular site, check for dropped IP fragments on
+# that path before anything else.
+#
+# tcp_reuse_port stays as it is. The IPsec phones (the keypad handset and the desk telephone) connect
+# on the P-CSCF's own ports and depend on it, so turning it off to free the address pair would have
+# broken the two phones that already worked.
+#
+# A phone that registers over TCP is unaffected: it never used this path.

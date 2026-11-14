@@ -1,0 +1,122 @@
+services:
+  dns:
+    image: docker_dns
+    container_name: dns
+    restart: unless-stopped
+    env_file: [.env]
+    volumes:
+      - ./dns:/mnt/dns
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      default:
+        ipv4_address: ${DNS_IP}
+  mysql:
+    image: docker_mysql
+    container_name: mysql
+    restart: unless-stopped
+    env_file: [.env]
+    volumes:
+      - dbdata:/var/lib/mysql
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      default:
+        ipv4_address: ${MYSQL_IP}
+  rtpengine:
+    image: docker_rtpengine
+    container_name: rtpengine
+    restart: unless-stopped
+    privileged: true
+    cap_add: [NET_ADMIN]
+    env_file: [.env]
+    volumes:
+      - ./rtpengine:/mnt/rtpengine
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TABLE=0
+      - INTERFACE=${RTPENGINE_IP}
+      - LISTEN_NG=${RTPENGINE_IP}:2223
+      - PIDFILE=/run/ngcp-rtpengine-daemon.pid
+      - PORT_MIN=49000
+      - PORT_MAX=50000
+      - NO_FALLBACK=no
+      - TOS=184
+    networks:
+      default:
+        ipv4_address: ${RTPENGINE_IP}
+  icscf:
+    image: docker_kamailio
+    container_name: icscf
+    restart: unless-stopped
+    dns: ${DNS_IP}
+    env_file: [.env]
+    environment:
+      - COMPONENT_NAME=icscf
+    volumes:
+      - ./icscf:/mnt/icscf
+      - /etc/localtime:/etc/localtime:ro
+    depends_on: [dns, mysql]
+    networks:
+      default:
+        ipv4_address: ${ICSCF_IP}
+  scscf:
+    image: docker_kamailio
+    container_name: scscf
+    restart: unless-stopped
+    dns: ${DNS_IP}
+    env_file: [.env]
+    environment:
+      - COMPONENT_NAME=scscf
+    volumes:
+      - ./scscf:/mnt/scscf
+      - /etc/localtime:/etc/localtime:ro
+    depends_on: [dns, mysql]
+    networks:
+      default:
+        ipv4_address: ${SCSCF_IP}
+  pcscf:
+    image: docker_kamailio
+    container_name: pcscf
+    restart: unless-stopped
+    dns: ${DNS_IP}
+    privileged: true
+    cap_add: [NET_ADMIN]
+    env_file: [.env]
+    environment:
+      - COMPONENT_NAME=pcscf
+      - DEPLOY_MODE=4G
+    volumes:
+      - ./pcscf:/mnt/pcscf
+      - /etc/localtime:/etc/localtime:ro
+    depends_on: [dns, mysql, rtpengine, icscf, scscf]
+    networks:
+      default:
+        ipv4_address: ${PCSCF_IP}
+  smsc:
+    image: docker_kamailio
+    container_name: smsc
+    restart: unless-stopped
+    dns: ${DNS_IP}
+    env_file: [.env]
+    environment:
+      - COMPONENT_NAME=smsc
+    volumes:
+      - ./smsc:/mnt/smsc
+      - /etc/localtime:/etc/localtime:ro
+    depends_on: [dns, mysql]
+    networks:
+      default:
+        ipv4_address: ${SMSC_IP}
+
+networks:
+  default:
+    name: ratel_ims
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: nat-unprotected
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+      com.docker.network.bridge.name: br-ratel-ims
+    ipam:
+      config:
+        - subnet: ${TEST_NETWORK}
+volumes:
+  dbdata:
+    name: ratel_ims_dbdata
