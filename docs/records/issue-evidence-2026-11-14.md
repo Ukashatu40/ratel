@@ -86,7 +86,7 @@ PIN and time display; the gateway path.
 | C, live changes | deferred: needs the single-node replica set (N5); owner the network team |
 | D, byte counter | pass: the counting table is within 0.01% of the interface, 0.17% over 2.2 GB; R-03 updated |
 | E, the data agent on core-up | pass: service, within 1%, restart and outage |
-| F, the RatelBSS flow | **open:** count `/activate` calls for one sale (during rehearsal 1, step 1.5: `sudo journalctl -u ratel-link --since "-3min" --no-pager \| grep -c line.activate` on core-cp should say 1) and read the line back from RatelLink (needs a key) |
+| F, the RatelBSS flow | **one `/activate` per sale: pass** (rehearsal 1, 2026-11-17, step 1.5: the count was 1; [rehearsal-2026-11-17-run1.md](rehearsal-2026-11-17-run1.md)). **Open:** read the line back from RatelLink (needs a key) |
 
 Close #52 when every section reads pass or a named blocker with an owner (C is the network team's, F is yours).
 
@@ -101,4 +101,4 @@ subscribers removed, the owner and backup of `/etc/osmocom` and `hlr.db`, the co
 ## #65 project lead
 
 Ticked: M-22, M-23 (the key backup is proven: the offline copy decrypts to the live key, 2026-11-05), M-27. Open and honest: M-24 and M-30
-(independent reviews), M-31 (rehearsals: sheet and checklist exist, none run yet).
+(independent reviews), M-31 (rehearsals: run 1 on 2026-11-17, all 24 steps, one F, two people, so it does not count; [rehearsal-2026-11-17-run1.md](rehearsal-2026-11-17-run1.md)).
