@@ -71,7 +71,7 @@ before the window was started. The pace is measured in rehearsal 2.
 
 | Step | What | Why | Who, by when |
 | --- | --- | --- | --- |
-| 4.4 F | The keypad called the Android (…0453, out of data) and it did not ring; the keypad then called the telephone, which rang | Smartphones cannot make or receive calls (IPsec through the P-CSCF), known since 2026-11-05 | @CaptRaven; the phone set for the demo is decided on 2026-11-18 evening |
+| 4.4 F | The keypad called the Android (…0453, out of data) and it did not ring; the keypad then called the telephone, which rang | The Android cannot make or receive calls (IPsec through the P-CSCF), known since 2026-11-05. Calls on the iPhone work again as of 2026-11-18 (the network team) | @CaptRaven; the phone set for the demo is decided on 2026-11-18 evening |
 | 5.4 | TODO (project lead): confirm whether the first speed test read 2.5 Mbit/s and needed a second airplane toggle. If so, the step is R | | |
 
 ## Other findings (not R or F, but they would hurt on the day)
