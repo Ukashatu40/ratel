@@ -44,6 +44,21 @@ a type (never a value). Fix the code or ask the network team, then run it again 
 
 ## 2. Import the SIM's keys without them touching a file, a command line or the history
 
+**From the laptop, for one SIM or several (since 2026-11-19):** make a caller key on core-cp
+(`admin_cli api-key create --id lab-import-<n> --name "lab <n>"`), then on the laptop, in the repository:
+
+```
+scripts/sims/import-keys.sh 0455 0456      # the last four digits of each IMSI
+```
+
+It reads only those rows of `docs/source/sims.csv` on the laptop, checks each (one row, 15-digit IMSI, 32-hex Ki and OPc) before
+sending anything, asks for the caller key hidden, and sends the keys over SSH on standard input to `POST /v1/sims` on core-cp. Nothing
+is written on the server, shown on screen or put on a command line. It prints one line per SIM: `imported (200)`, or why not. Disable
+the caller key afterwards (`admin_cli api-key disable --id lab-import-<n>`). The leak check of step 5 is not part of the script:
+it needs the keys in a core-cp shell, which this path avoids. TODO: a leak check that does not need them there.
+
+**By hand, on core-cp**, when the laptop cannot reach core-cp over SSH:
+
 Run these on core-cp, in `bash`, as a user allowed to reach `127.0.0.1:8081`. Each `read -rs` types
 nothing on screen and is not recorded in the history.
 
