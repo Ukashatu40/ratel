@@ -64,7 +64,12 @@ def lab(tmp_path: Path) -> Path:
 
 
 def run(
-    lab: Path, *fours: str, code: str = "200", token: str = TOKEN, **extra: str
+    lab: Path,
+    *fours: str,
+    code: str = "200",
+    token: str = TOKEN,
+    confirm: str | None = None,
+    **extra: str,
 ) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
@@ -76,7 +81,7 @@ def run(
     return subprocess.run(  # noqa: S603  (our own script, fake ssh and curl, made-up keys)
         [BASH, str(SCRIPT), *fours],
         env=env,
-        input=token + "\n",
+        input=("" if confirm is None else confirm + "\n") + token + "\n",
         capture_output=True,
         text=True,
         check=False,
@@ -173,3 +178,86 @@ def test_only_a_local_ratellink_address_is_accepted(lab: Path) -> None:
 def test_a_bad_argument_is_refused(lab: Path) -> None:
     assert run(lab, "455").returncode == 2
     assert run(lab, "04555").returncode == 2
+
+
+# Chosen by prefix: the whole file, Active rows only unless asked, confirmed before sending.
+
+
+def bulk_row(index: int, imsi: str, status: str = "Active") -> str:
+    return f"{index},{imsi},0,0,8000,{index:02d}{'a' * 30},{index:02d}{'b' * 30},{status}"
+
+
+@pytest.fixture
+def stock(lab: Path) -> Path:
+    rows = [
+        bulk_row(1, "621000000000001"),
+        bulk_row(2, "621000000000002"),
+        bulk_row(3, "621000000000003", "Deactivate"),
+        bulk_row(4, "621302000000004"),  # another prefix
+        bulk_row(5, "001010000000005"),  # a test IMSI
+        bulk_row(2, "621000000000002"),  # the same row twice: sent once
+    ]
+    (lab / "sims.csv").write_text("\n".join([HEADER, *rows]) + "\r\n")
+    return lab
+
+
+def test_a_prefix_sends_its_active_rows_once_each_after_a_yes(stock: Path) -> None:
+    result = run(stock, "--prefix", "62100", confirm="yes")
+    assert result.returncode == 0, result.stderr
+    assert [b["imsi"] for _, b in received(stock)] == ["621000000000001", "621000000000002"]
+    assert "2 SIMs with an IMSI starting 62100" in result.stderr
+    assert "left out: 1 (not Active)" in result.stderr and "left out: 1 (repeated)" in result.stderr
+    assert "done: 2 in RatelLink" in result.stdout and "of 2" in result.stdout
+
+
+def test_deactivated_rows_are_sent_only_when_asked(stock: Path) -> None:
+    run(stock, "--prefix", "62100", "--include-deactivated", confirm="yes")
+    assert "621000000000003" in [b["imsi"] for _, b in received(stock)]
+
+
+def test_without_a_yes_nothing_is_sent(stock: Path) -> None:
+    result = run(stock, "--prefix", "62100", confirm="y")
+    assert result.returncode == 1 and "not confirmed" in result.stderr
+    assert received(stock) == [] and not (stock / "ssh-args.log").exists()
+
+
+def test_the_same_imsi_with_different_keys_is_left_out(stock: Path) -> None:
+    with (stock / "sims.csv").open("a") as f:
+        f.write(bulk_row(9, "621000000000001") + "\n")
+    result = run(stock, "--prefix", "62100", confirm="yes")
+    assert [b["imsi"] for _, b in received(stock)] == ["621000000000002"]
+    assert "(repeated with different keys)" in result.stderr
+
+
+def test_a_wrong_caller_key_stops_at_the_first_sim(stock: Path) -> None:
+    result = run(stock, "--prefix", "62100", confirm="yes", code="401")
+    assert result.returncode == 1
+    assert len(received(stock)) == 1
+    assert "no answer for the last 1 SIMs" in result.stderr
+
+
+def test_a_refused_sim_is_named_by_its_last_four_and_counted(stock: Path) -> None:
+    result = run(stock, "--prefix", "62100", confirm="yes", code="409")
+    assert result.returncode == 1
+    assert "…0001  REFUSED (409)" in result.stdout and "2 refused (409)" in result.stdout
+
+
+def test_a_bulk_run_shows_no_key_and_no_full_imsi(stock: Path) -> None:
+    result = run(stock, "--prefix", "62100", confirm="yes", code="409")
+    shown = result.stdout + result.stderr + (stock / "ssh-args.log").read_text()
+    for value in (TOKEN, "621000000000001", "621000000000002", "01" + "a" * 30, "02" + "b" * 30):
+        assert value not in shown
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--prefix", "6210"),  # too short
+        ("--prefix", "62100", "0455"),  # both ways at once
+        ("--include-deactivated", "0455"),  # only with --prefix
+        ("--prefix",),
+    ],
+)
+def test_bad_bulk_arguments_are_refused(stock: Path, args: tuple[str, ...]) -> None:
+    assert run(stock, *args, confirm="yes").returncode == 2
+    assert received(stock) == []
