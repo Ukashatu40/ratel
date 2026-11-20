@@ -51,7 +51,12 @@ a type (never a value). Fix the code or ask the network team, then run it again 
 scripts/sims/import-keys.sh 0455 0456      # the last four digits of each IMSI
 ```
 
-It reads only those rows of `docs/source/sims.csv` on the laptop, checks each (one row, 15-digit IMSI, 32-hex Ki and OPc) before
+**Every SIM of the stock at once:** `scripts/sims/import-keys.sh --prefix 62100` takes every row whose IMSI starts with
+`62100` and whose Status is `Active` (`--include-deactivated` adds the others), leaves out malformed and repeated rows and says how
+many, and asks you to type `yes` before sending. It prints progress every 500 SIMs, a line for each SIM refused, and a total. A run
+can be repeated safely: a SIM already there with the same keys answers 200 and nothing changes. An import creates no service.
+
+By last four digits, it reads only those rows of `docs/source/sims.csv` on the laptop, checks each (one row, 15-digit IMSI, 32-hex Ki and OPc) before
 sending anything, asks for the caller key hidden, and sends the keys over SSH on standard input to `POST /v1/sims` on core-cp. Nothing
 is written on the server, shown on screen or put on a command line. It prints one line per SIM: `imported (200)`, or why not. Disable
 the caller key afterwards (`admin_cli api-key disable --id lab-import-<n>`). The leak check of step 5 is not part of the script:
