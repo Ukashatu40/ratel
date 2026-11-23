@@ -10,7 +10,7 @@
 # Output: ./out/open5gs-hssd-ratel and its SHA-256, to copy to core-cp with deploy-hssd.sh
 set -euo pipefail
 
-VERSION=${1:-2.8.0~jammy5}
+PKG_VERSION=${1:-2.8.0~jammy5}
 HERE=$(cd "$(dirname "$0")" && pwd)
 PATCH=$HERE/0001-hss-move-msisdn-identities-to-registering-impi.patch
 PPA=https://ppa.launchpadcontent.net/open5gs/latest/ubuntu
@@ -18,8 +18,9 @@ WORK=$HERE/work
 OUT=$HERE/out
 
 [ -f "$PATCH" ] || { echo "patch not found: $PATCH" >&2; exit 1; }
-. /etc/os-release
-[ "$VERSION_CODENAME" = jammy ] || { echo "build on Ubuntu 22.04 (jammy), this is $VERSION_CODENAME" >&2; exit 1; }
+# Read the release in a subshell: /etc/os-release also sets VERSION and would overwrite ours.
+CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+[ "$CODENAME" = jammy ] || { echo "build on Ubuntu 22.04 (jammy), this is $CODENAME" >&2; exit 1; }
 
 echo "== build dependencies"
 sudo apt-get update -qq
@@ -28,7 +29,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dpkg-dev patchelf mes
 	libssl-dev libmongoc-dev libbson-dev libyaml-dev libnghttp2-dev libmicrohttpd-dev \
 	libcurl4-gnutls-dev libtins-dev libtalloc-dev libidn11-dev >/dev/null
 
-echo "== source package open5gs $VERSION from the Open5GS PPA"
+echo "== source package open5gs $PKG_VERSION from the Open5GS PPA"
 rm -rf "$WORK"
 mkdir -p "$WORK" "$OUT"
 cd "$WORK"
@@ -36,9 +37,9 @@ curl -4 -fsSL "$PPA/dists/jammy/main/source/Sources.gz" | gunzip >Sources
 # The stanza for exactly this version, and the files and checksums it lists.
 STANZA='BEGIN{RS=""; FS="\n"}
 {p=0; ok=0; for (i = 1; i <= NF; i++) { if ($i == "Package: open5gs") p=1; if ($i == "Version: " v) ok=1 }}'
-awk -v v="$VERSION" "$STANZA"' p && ok {print; exit}' Sources >stanza
+awk -v v="$PKG_VERSION" "$STANZA"' p && ok {print; exit}' Sources >stanza
 if [ ! -s stanza ]; then
-	echo "version $VERSION is no longer in the PPA. Versions it has:" >&2
+	echo "version $PKG_VERSION is no longer in the PPA. Versions it has:" >&2
 	awk -v v="" "$STANZA"' p {print}' Sources | grep '^Version:' >&2
 	exit 1
 fi
@@ -66,5 +67,5 @@ patchelf --remove-rpath "$BIN"
 strip "$BIN"
 sha256sum "$BIN" | tee "$BIN.sha256"
 echo
-echo "Built from open5gs $VERSION with $(basename "$PATCH")."
+echo "Built from open5gs $PKG_VERSION with $(basename "$PATCH")."
 echo "Copy $BIN and its .sha256 to core-cp next to deploy-hssd.sh."
