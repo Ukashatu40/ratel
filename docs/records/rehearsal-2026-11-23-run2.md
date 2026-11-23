@@ -10,7 +10,7 @@ Filled in by `scripts/demo/rehearse.sh`; the sheet and the rules are in [rehears
 | Commit demoed | cca4388 |
 | Before the stopwatch | day-before table: y; fresh voucher batch: y |
 | Releases | RatelLink `b561724` and the meter agent `1437beb` (no service code changed on `main` since); bss-app and the voice VM: TODO (not read on the day) |
-| Lines | A …0455 (sold live; its keys were in RatelLink since 2026-11-19); B …0453; C …0455; D …0454 (put at zero with the rehearsal feed on 2026-11-18) |
+| Lines | A …0455 (sold live; its keys were in RatelLink since 2026-11-19); B …0453 (out of data since 2026-11-20, so act 2 browsed at the slowed speed); C …0455; D …0454 (put at zero with the rehearsal feed on 2026-11-18) |
 | Phones | keypad …0452, telephone …0455, Android …0453, iPhone …0454 (its usual SIM …0451 taken out); …0019's phone off |
 
 | # | Who | Step | What you must see | Budget | Actual (from the start) | ✓ / R / F | Notes |
@@ -69,7 +69,7 @@ Filled in by `scripts/demo/rehearse.sh`; the sheet and the rules are in [rehears
 
 | Step | What | Why | Who, by when |
 | --- | --- | --- | --- |
-| 5.4 F | After the top-up, the line was active again (rating job: renewed 1, restored 1; Desk: active) but the iPhone measured about 2.5 Mbit/s, twice | Not the restore: RatelBSS asks RatelLink for the plan's speeds (Lab weekly, 20 Mbit/s down), and the Android on another full-speed line measured 1 Mbit/s or less at the same time. The network was slow that morning: radio or the site's internet link. TODO: the check on core-up after the run | the network team; before the demo |
+| 5.4 F | After the top-up, the line was active again (rating job: renewed 1, restored 1; Desk: active) but the iPhone measured about 2.5 Mbit/s, twice | Not the restore: RatelBSS asks RatelLink for the plan's speeds (Lab weekly, 20 Mbit/s down), and the Android on another full-speed line measured 1 Mbit/s or less at the same time. The Android's 1 Mbit/s is explained: its line (…0453) had been out of data since 2026-11-20 14:57 WAT (wallet ₦0, so no renewal), so it was slowed as designed. The site's link was not the limit: core-up pulled 14.3 Mbit/s and bss-app 13.6 Mbit/s from the internet right after. So the iPhone's 2.5 Mbit/s on a restored 20 Mbit/s line is between the phone and core-up (radio or core). Also: with about 14 Mbit/s for the whole site, "tens of Mbit/s" cannot be met; act 5's expectation is to be reworded once the network team has looked | the network team; before the demo |
 
 ## Other findings
 
