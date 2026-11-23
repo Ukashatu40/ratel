@@ -44,5 +44,5 @@ back to the new IMPI's server name:
 }
 ```
 
-We run this on 2.8.0 together with a backport of 57d1d5b0. Happy to open a PR against main with a
+We run this on 2.8.0 together with 100ee681 (#4633) and a backport of 57d1d5b0. Happy to open a PR against main with a
 test in `tests/volte`.

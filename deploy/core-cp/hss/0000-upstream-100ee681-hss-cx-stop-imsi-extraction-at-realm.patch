@@ -1,0 +1,33 @@
+From 100ee681e207afcb40713b41a7b7fd3e82619120 Mon Sep 17 00:00:00 2001
+From: Sukchan Lee <acetcom@gmail.com>
+Date: Fri, 26 Jun 2026 14:57:27 +0900
+Subject: [PATCH] hss/cx: Stop IMSI extraction at IMPI realm separator
+
+Cx User-Name may contain an IMSI-based IMPI in the form of <IMSI>@ims.mnc<MNC>.mcc<MCC>.3gppnetwork.org.
+
+Do not parse digits from the realm portion when converting the
+User-Name into a BCD subscriber identifier. Otherwise, digits in the
+MNC, MCC, and domain name can cause a valid IMPI to be rejected as an
+invalid or overlong IMSI.
+
+Issues: #4633
+---
+ src/hss/hss-cx-path.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/hss/hss-cx-path.c b/src/hss/hss-cx-path.c
+index 87333407..ae4056b3 100644
+--- a/src/hss/hss-cx-path.c
++++ b/src/hss/hss-cx-path.c
+@@ -45,7 +45,7 @@ static bool hss_cx_user_name_to_bcd(
+ 
+     bcd[0] = '\0';
+ 
+-    for (i = 0; user_name[i]; i++) {
++    for (i = 0; user_name[i] && user_name[i] != '@'; i++) {
+         if (user_name[i] >= '0' && user_name[i] <= '9') {
+             if (j + 1 >= bcd_len)
+                 return false;
+-- 
+2.43.0
+
