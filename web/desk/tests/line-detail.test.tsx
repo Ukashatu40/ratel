@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthUser } from "../src/lib/authContext";
 import LineDetailScreen from "../src/screens/line-detail/LineDetailScreen";
+import { OverviewTab } from "../src/screens/line-detail/OverviewTab";
+import type { LineDetail } from "../src/screens/line-detail/types";
 
 // Mock lines are numbered from 100. 100 is active, 128 awaits activation. Each care test uses its own line.
 const ACTIVE = "100";
@@ -102,5 +104,40 @@ describe("Line detail page (mock mode)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /^activate line$/i })).toBeEnabled(), { timeout: 5000 });
     await user.click(screen.getByRole("button", { name: /^activate line$/i }));
     expect(await screen.findByRole("heading", { name: /line activated/i }, { timeout: 5000 })).toBeInTheDocument();
+  });
+});
+
+describe("Overview when RatelBSS does not say when the plan started", () => {
+  const base: LineDetail = {
+    lineId: 7, planId: "1", imsi: "621000000000150", iccid: "8923400000000000150", msisdn: "2347000000150", state: "active",
+    customerId: "1", customerName: "Demo Customer Three", planName: "Lab weekly", planEndsEpoch: null,
+    allowanceTotalBytes: 2147483648, allowanceUsedBytes: null, speedUlMbps: 10, speedDlMbps: 20,
+    staticIp: null, provisioning: "unknown", networkCheck: "unknown",
+    dailyUsage: [{ date: "2026-11-23", bytes: 30000000 }],
+  };
+
+  it("says the figure is not available instead of showing 0% used", () => {
+    render(<OverviewTab line={base} />);
+    expect(screen.getByRole("img", { name: /not available yet/ })).toBeInTheDocument();
+    expect(screen.getByText("2.1 GB plan")).toBeInTheDocument();
+    expect(screen.getByText("Valid until: not available yet")).toBeInTheDocument();
+    expect(screen.queryByText(/0%/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Not started")).not.toBeInTheDocument();
+  });
+
+  it("shows a line that is out of data as used up", () => {
+    render(<OverviewTab line={{ ...base, state: "out_of_data" }} />);
+    expect(screen.getByRole("img", { name: /100% used/ })).toBeInTheDocument();
+    expect(screen.getByText("2.1 GB plan, used up")).toBeInTheDocument();
+  });
+
+  it("keeps \"Not started\" for a line that is not activated yet", () => {
+    render(<OverviewTab line={{ ...base, state: "awaiting_activation" }} />);
+    expect(screen.getByText("Not started")).toBeInTheDocument();
+  });
+
+  it("shows the used share when the plan's start is known", () => {
+    render(<OverviewTab line={{ ...base, planEndsEpoch: 1795000000, allowanceUsedBytes: 1073741824 }} />);
+    expect(screen.getByRole("img", { name: /50% used/ })).toBeInTheDocument();
   });
 });

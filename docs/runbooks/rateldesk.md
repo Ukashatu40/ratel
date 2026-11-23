@@ -81,7 +81,7 @@ After all three steps, the line appears in **Lines** with state `active`.
 3. Click the line to open the **Line Detail** page.
 4. The four tabs are:
 
-   - **Overview** — data used (ring chart, **an estimate from the usage records since the plan started**), data used per day (bar chart), the line profile (speeds; the static address, provisioning status and network check say "Not available yet"), and any outstanding issue (for example an out-of-data banner).
+   - **Overview** — data used (ring chart, **an estimate from the usage records since the plan started**; while RatelBSS does not record when the plan started, an active line shows "not available yet" and a line out of data shows 100% used), data used per day (bar chart), the line profile (speeds; the static address, provisioning status and network check say "Not available yet"), and any outstanding issue (for example an out-of-data banner).
    - **Usage** — the last 24 hours of data usage in 5-minute intervals (uploaded MB, downloaded MB, rated or not yet), newest first. **Show older** loads more.
    - **Calls** — the last 30 days of calls, newest first: when it started (WAT), the number (To or From), how long it rang, the talk time, and the result (Answered, Caller hung up before it was answered, Declined, Not answered, Could not be reached, Failed). "Show older" loads more. The list fills about a minute after each call ends. Call records are personal data: do not copy numbers out of the page.
    - **History** — every change made to this line, newest first, with who made it and why.
@@ -173,7 +173,7 @@ Only an admin sees the **Terminate** button. If you are an agent and a line must
   - `terminated` — someone terminated the line. This is final. Check History for who and why, then escalate to your supervisor if the customer disputes it.
 
 ### The customer says their data is slow
-- The line may be `out_of_data`. Open the line, look at the ring chart on **Overview**. If used = 100%, they have run out. Offer a top-up.
+- The line may be `out_of_data`. Open the line and look at its state badge (and the ring chart on **Overview**, which then shows 100% used). Offer a top-up.
 - If they still have allowance, check the **Usage** tab. If recent intervals are not "rated," the rating job hasn't processed them yet (it runs every 5 minutes). Ask them to try again in a few minutes.
 
 ### The customer says their balance does not match their ledger
