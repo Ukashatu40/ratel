@@ -1,0 +1,96 @@
+diff -ruN a/src/hss/hss-context.c b/src/hss/hss-context.c
+--- a/src/hss/hss-context.c
++++ b/src/hss/hss-context.c
+@@ -732,11 +732,60 @@
+     if (!impu) {
+         impu = impu_add(impi, public_identity);
+         ogs_assert(impu);
++    } else if (impu->impi != impi) {
++        /*
++         * The Public Identity is still linked to another IMPI. This happens
++         * when the same subscriber registers with a different private
++         * identity, for example after the SIM moves to a handset that builds
++         * the home domain with a different MNC length (mnc000 vs mnc002).
++         * Left alone, the new registration gets a profile without the MSISDN
++         * identities and nobody can reach the line by its number. Move the
++         * identity to the IMPI that is registering now, and forget the old
++         * S-CSCF so that lookups use the new registration's S-CSCF.
++         */
++        ogs_assert(impu->impi);
++        ogs_warn("Cx: move Public-Identity[%s] from IMPI[%s] to IMPI[%s]",
++                impu->id, impu->impi->id, impi->id);
++
++        ogs_list_remove(&impu->impi->impu_list, impu);
++        impu->impi = impi;
++        ogs_list_add(&impi->impu_list, impu);
++
++        if (impu->server_name) {
++            ogs_free(impu->server_name);
++            impu->server_name = NULL;
++        }
+     }
+ 
+     ogs_thread_mutex_unlock(&self.cx_lock);
+ }
+ 
++void hss_cx_associate_msisdn(
++        char *user_name, char *visited_network_identifier,
++        ogs_ims_data_t *ims_data)
++{
++    int i;
++
++    ogs_assert(user_name);
++    ogs_assert(visited_network_identifier);
++    ogs_assert(ims_data);
++
++    for (i = 0; i < ims_data->num_of_msisdn; i++) {
++        char *public_identity = NULL;
++
++        public_identity = ogs_msprintf("sip:%s@%s",
++                ims_data->msisdn[i].bcd, visited_network_identifier);
++        ogs_assert(public_identity);
++        hss_cx_associate_identity(user_name, public_identity);
++        ogs_free(public_identity);
++
++        public_identity = ogs_msprintf("tel:%s", ims_data->msisdn[i].bcd);
++        ogs_assert(public_identity);
++        hss_cx_associate_identity(user_name, public_identity);
++        ogs_free(public_identity);
++    }
++}
++
+ bool hss_cx_identity_is_associated(char *user_name, char *public_identity)
+ {
+     bool match_result = false;
+diff -ruN a/src/hss/hss-context.h b/src/hss/hss-context.h
+--- a/src/hss/hss-context.h
++++ b/src/hss/hss-context.h
+@@ -77,6 +77,9 @@
+ int hss_db_ims_data(char *imsi_bcd, ogs_ims_data_t *ims_data);
+ 
+ void hss_cx_associate_identity(char *user_name, char *public_identity);
++void hss_cx_associate_msisdn(
++        char *user_name, char *visited_network_identifier,
++        ogs_ims_data_t *ims_data);
+ bool hss_cx_identity_is_associated(char *user_name, char *public_identity);
+ 
+ void hss_cx_set_imsi_bcd(char *user_name,
+diff -ruN a/src/hss/hss-cx-path.c b/src/hss/hss-cx-path.c
+--- a/src/hss/hss-cx-path.c
++++ b/src/hss/hss-cx-path.c
+@@ -1346,6 +1346,15 @@
+                 goto out;
+             }
+ 
++            /*
++             * Backport of upstream 57d1d5b0: link the MSISDN identities on
++             * every registration and re-registration, also when the S-CSCF
++             * already has the profile. Otherwise, after an HSS restart, the
++             * HSS forgets them and LIR for the line's number finds no S-CSCF.
++             */
++            hss_cx_associate_msisdn(
++                    user_name, visited_network_identifier, &ims_data);
++
+             if (hdr->avp_value->i32 ==
+                     OGS_DIAM_CX_USER_DATA_ALREADY_AVAILABLE) {
+                 /* Nothing to do */
