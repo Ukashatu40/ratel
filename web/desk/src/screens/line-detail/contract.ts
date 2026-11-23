@@ -41,11 +41,11 @@ export const planStartOf = (line: WireLine, plan: WirePlan | undefined): number 
 
 // The line page from what the API gives: the line, its customer's name, its plan and its usage records.
 // The contract has no "allowance left", so "used" is the usage since the plan started (an estimate; TODO(contract)).
+// RatelBSS does not fill the line's expires_at yet (found 2026-11-23), so the start is often unknown: "used" is then null, not 0.
 // RatelLink's view of the line (static address, provisioning, network check) is not readable from RatelBSS yet.
 export function buildLineDetail(line: WireLine, customerName: string, plan: WirePlan | undefined, usage: WireUsageRecord[], now: number): LineDetail {
   const start = planStartOf(line, plan);
-  const since = start ?? 0;
-  const used = usage.filter((r) => r.period_start >= since).reduce((sum, r) => sum + r.bytes_up + r.bytes_down, 0);
+  const used = start === null ? null : usage.filter((r) => r.period_start >= start).reduce((sum, r) => sum + r.bytes_up + r.bytes_down, 0);
   const perDay = new Map<string, number>();
   usage.forEach((r) => perDay.set(watDate(r.period_start), (perDay.get(watDate(r.period_start)) ?? 0) + r.bytes_up + r.bytes_down));
   return {

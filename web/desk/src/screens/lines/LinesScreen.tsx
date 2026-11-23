@@ -93,7 +93,7 @@ export default function LinesScreen() {
                   <td>{l.iccid}</td>
                   <td>{l.planName}</td>
                   <td><StateBadge state={l.state} /></td>
-                  <td>{l.planEndsEpoch ? formatWAT(l.planEndsEpoch) : "Not started"}</td>
+                  <td>{l.planEndsEpoch ? formatWAT(l.planEndsEpoch) : l.state === "awaiting_activation" ? "Not started" : "Not available yet"}</td>
                   <td><RowMenu line={l} onAct={(kind, line) => setActing({ kind, line })} /></td>
                 </tr>
               ))}

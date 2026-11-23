@@ -6,9 +6,25 @@ import type { LineDetail } from "./types";
 const PROVISIONING: Record<LineDetail["provisioning"], [Tone, string]> = { active: ["green", "Active"], provisioned: ["amber", "Not in service"], barred: ["red", "Barred"], unknown: ["grey", "Not available yet"] };
 const NETWORK: Record<LineDetail["networkCheck"], [Tone, string]> = { matches: ["green", "Matches RatelLink"], mismatch: ["red", "Does not match"], unknown: ["grey", "Not checked"] };
 
-export function OverviewTab({ line }: { line: LineDetail }) {
+// How much of the allowance is used. When RatelBSS does not say (no plan start yet), out of data still means all of it, and an
+// active line shows that the figure is not available instead of a false 0%.
+function allowanceView(line: LineDetail): { fraction: number; label: string; sub: string; text: string } {
+  const total = formatGB1(line.allowanceTotalBytes);
+  if (line.allowanceUsedBytes === null) {
+    return line.state === "out_of_data"
+      ? { fraction: 1, label: "100%", sub: "used", text: `${total} plan, used up` }
+      : { fraction: 0, label: "–", sub: "not available yet", text: `${total} plan` };
+  }
   const fraction = line.allowanceTotalBytes ? line.allowanceUsedBytes / line.allowanceTotalBytes : 0;
-  const used = fraction >= 1;
+  return { fraction, label: `${Math.round(fraction * 100)}%`, sub: "used", text: `${formatGB1(line.allowanceUsedBytes)} of ${total}` };
+}
+
+const validityText = (planEndsEpoch: number | null, state: LineDetail["state"]): string =>
+  planEndsEpoch ? `Valid until ${formatWAT(planEndsEpoch)}` : state === "awaiting_activation" ? "Not started" : "Valid until: not available yet";
+
+export function OverviewTab({ line }: { line: LineDetail }) {
+  const allowance = allowanceView(line);
+  const used = allowance.fraction >= 1;
   const [pTone, pText] = PROVISIONING[line.provisioning];
   const [nTone, nText] = NETWORK[line.networkCheck];
   return (
@@ -19,9 +35,9 @@ export function OverviewTab({ line }: { line: LineDetail }) {
       <div className="ld-grid">
         <section className="card ld-ring">
           <div className="muted ld-left">Data allowance</div>
-          <RingChart fraction={fraction} label={`${Math.round(fraction * 100)}%`} sub="used" color={used ? "#e4002b" : "#00338d"} />
-          <b>{formatGB1(line.allowanceUsedBytes)} of {formatGB1(line.allowanceTotalBytes)}</b>
-          <div className="muted">{line.planEndsEpoch ? `Valid until ${formatWAT(line.planEndsEpoch)}` : "Not started"}</div>
+          <RingChart fraction={allowance.fraction} label={allowance.label} sub={allowance.sub} color={used ? "#e4002b" : "#00338d"} />
+          <b>{allowance.text}</b>
+          <div className="muted">{validityText(line.planEndsEpoch, line.state)}</div>
         </section>
         <section className="card">
           <h3>Data used per day (GB)</h3>

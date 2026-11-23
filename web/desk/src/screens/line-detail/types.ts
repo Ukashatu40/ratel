@@ -12,7 +12,7 @@ export interface LineDetail {
   planName: string;
   planEndsEpoch: number | null;       // Unix seconds, UTC
   allowanceTotalBytes: number;
-  allowanceUsedBytes: number;
+  allowanceUsedBytes: number | null; // null when RatelBSS does not say when the plan started (no expires_at yet: TODO(contract))
   speedUlMbps: number;
   speedDlMbps: number;
   staticIp: string | null;            // null until the line is activated

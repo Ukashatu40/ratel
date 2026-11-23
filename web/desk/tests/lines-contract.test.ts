@@ -117,8 +117,19 @@ describe("the line page", () => {
   it("reads no usage before the line is activated", async () => {
     answerByPath({ "/v1/lines/7": { ...lineActive, state: "awaiting_activation", expires_at: null } });
     const line = await detail.getLine("7");
-    expect(line.allowanceUsedBytes).toBe(0);
+    expect(line.allowanceUsedBytes).toBeNull();
     expect(calls().some((c) => c.url.pathname.endsWith("/usage"))).toBe(false);
+  });
+
+  // Found on the lab on 2026-11-23: RatelBSS does not fill expires_at, so every active line showed 0% used and an empty chart.
+  it("still draws the last seven days when the plan's start is unknown, and does not claim 0 used", async () => {
+    answerByPath({ "/v1/lines/7": { ...lineActive, expires_at: null } });
+    const line = await detail.getLine("7");
+    const usageCall = calls().find((c) => c.url.pathname === "/v1/lines/7/usage")!;
+    expect(Object.fromEntries(usageCall.url.searchParams)).toEqual({ from: String(NOW - 7 * 86400), to: String(NOW) });
+    expect(line.allowanceUsedBytes).toBeNull();
+    expect(line.planEndsEpoch).toBeNull();
+    expect(line.dailyUsage.reduce((n, d) => n + d.bytes, 0)).toBe(30010);
   });
 
   it("shows the last 24 hours of usage, newest first, with the cursor passed on", async () => {

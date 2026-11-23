@@ -34,8 +34,9 @@ export async function getLine(key: string): Promise<LineDetail> {
   ]);
   const plan = plans.plans.find((p) => p.plan_id === line.plan_id);
   const planStart = planStartOf(line, plan);
-  // Before activation there is no usage. After it: the plan's whole life, and at least the last seven days for the chart.
-  const usage = planStart === null ? [] : await allUsage(id, Math.min(planStart, now - 7 * DAY), now);
+  // Before activation there is no usage. After it: the plan's whole life when its start is known, and always the last seven days for the chart.
+  const weekAgo = now - 7 * DAY;
+  const usage = line.state === "awaiting_activation" ? [] : await allUsage(id, planStart === null ? weekAgo : Math.min(planStart, weekAgo), now);
   return buildLineDetail(line, customer.name, plan, usage, now);
 }
 
