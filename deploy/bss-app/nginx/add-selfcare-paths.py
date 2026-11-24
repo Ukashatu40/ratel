@@ -4,7 +4,7 @@
     sudo python3 add-selfcare-paths.py ratel-app.conf.example /etc/nginx/conf.d/ratel-app.conf
 
 Copies the template's self-care block (`location ~ ^/v1/pay/(airtime|bundles|lines/...)$`) into the
-live file, before the voucher redeem block, with the voice VM's address taken from the live
+live file, before the staff sign-in block, with the voice VM's address taken from the live
 `location = /v1/calls` (its first allow line), so nothing has to be typed. Nothing else changes.
 
 It refuses a file it does not recognise and does nothing if the block is there already. Make a
@@ -22,7 +22,7 @@ BLOCK = re.compile(
     r"    # The SMS short number 647 and USSD.*?\n    location ~ \^/v1/pay/\(airtime.*?\n    \}\n",
     re.S,
 )
-ANCHOR = "    # PUBLIC PATH: the RatelPay page redeems a prepaid card here."
+ANCHOR = "    # Staff sign-in: office and VPN only, and slow."
 CALLS = re.compile(r"    location = /v1/calls \{(.*?)\n    \}\n", re.S)
 
 
@@ -33,13 +33,13 @@ def patch(live: str, template: str) -> str:
     if block is None:
         raise ValueError("the template has no self-care block")
     if live.count(ANCHOR) != 1:
-        raise ValueError("the live file has no voucher redeem block to put it before")
+        raise ValueError("the live file has no staff sign-in block to put it before")
     calls = CALLS.search(live)
     allows = re.findall(r"allow ([^;]+);", calls.group(1)) if calls else []
     if not allows or "<" in allows[0]:
         raise ValueError("no voice VM address in the live `location = /v1/calls`")
     filled = block.group(0).replace("<address-of-voice-vm>", allows[0])
-    return live.replace(ANCHOR, filled + ANCHOR, 1)
+    return live.replace(ANCHOR, filled + "\n" + ANCHOR, 1)
 
 
 def main(argv: list[str] | None = None) -> int:
