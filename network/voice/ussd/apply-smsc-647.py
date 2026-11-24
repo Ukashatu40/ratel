@@ -7,7 +7,9 @@ Two changes, both marked "RATEL 647":
      the text hex encoded. The handset already got its RP-ACK before this point.
   2. event_route[xhttp:request]: the SMSC's HTTP entry point, which the 647 service uses to send
      its answers, now only accepts requests from the ussd container (it accepted anyone before and
-     nothing else in Ratelplus uses it), and sets the coding (dcs 0) that the queue insert needs.
+     nothing else in Ratelplus uses it), sets the coding (dcs 0) that the queue insert needs, and
+     takes the answer hex encoded (parameter hex), since the URL decoder refuses newlines.
+Run on a file that already has the first version (without hex), it adds only the hex decoding.
 
 Usage (in ~/docker_open5gs/smsc):
   python3 apply-smsc-647.py kamailio_smsc.cfg            dry run: shows the result, changes nothing
@@ -47,6 +49,14 @@ XHTTP_BLOCK = """	# RATEL 647 (2026-11-24): only the 647 service in the ussd con
 DCS_ANCHOR = "\t\t$avp(from_outbound) = 1;\n"
 DCS_LINE = "\t\t$avp(dcs) = 0; # RATEL 647: the queue insert needs a coding\n"
 
+HEX_MARK = "RATEL 647 hex"
+HEX_BLOCK = r"""		# RATEL 647 hex: answers from the 647 service come hex encoded, because the URL decoder
+		# above refuses control characters such as the newlines in the menu.
+		if ($(hu{url.querystring}{param.value,hex,&}{s.len}) > 0) {
+			$avp(text) = $(hu{url.querystring}{param.value,hex,&}{s.decode.hexa});
+		}
+"""
+
 
 def main() -> int:
     if len(sys.argv) < 2:
@@ -54,16 +64,22 @@ def main() -> int:
         return 2
     path, apply = sys.argv[1], "--apply" in sys.argv[2:]
     text = open(path).read()
-    if MARK in text:
+    if HEX_MARK in text:
         print("647 is already in this file, nothing changed")
         return 1
-    for anchor in (FROM_3GPP_ANCHOR, XHTTP_ANCHOR, DCS_ANCHOR):
-        if text.count(anchor) != 1:
-            print(f"expected exactly one line {anchor.strip()!r}, found {text.count(anchor)}; nothing changed")
+    if MARK in text:  # first version already applied: add only the hex decoding
+        if text.count(DCS_LINE) != 1:
+            print("found an earlier 647 change but not its coding line; nothing changed")
             return 1
-    new = text.replace(FROM_3GPP_ANCHOR, FROM_3GPP_ANCHOR + FROM_3GPP_BLOCK)
-    new = new.replace(XHTTP_ANCHOR, XHTTP_ANCHOR + XHTTP_BLOCK)
-    new = new.replace(DCS_ANCHOR, DCS_ANCHOR + DCS_LINE)
+        new = text.replace(DCS_LINE, DCS_LINE + HEX_BLOCK)
+    else:
+        for anchor in (FROM_3GPP_ANCHOR, XHTTP_ANCHOR, DCS_ANCHOR):
+            if text.count(anchor) != 1:
+                print(f"expected exactly one line {anchor.strip()!r}, found {text.count(anchor)}; nothing changed")
+                return 1
+        new = text.replace(FROM_3GPP_ANCHOR, FROM_3GPP_ANCHOR + FROM_3GPP_BLOCK)
+        new = new.replace(XHTTP_ANCHOR, XHTTP_ANCHOR + XHTTP_BLOCK)
+        new = new.replace(DCS_ANCHOR, DCS_ANCHOR + DCS_LINE + HEX_BLOCK)
     lines = new.splitlines()
     for i, line in enumerate(lines):
         if MARK in line and "#" in line.split(MARK)[0]:

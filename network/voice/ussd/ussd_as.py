@@ -436,7 +436,7 @@ class SmsService:
     """HTTP endpoint the SMSC calls for every text sent to 647, and the way answers go back.
 
     In:  GET /sms?from=<234...>&hex=<message text, UTF-8, hex encoded>   (from the SMSC only)
-    Out: GET <SMSC>/?msisdn=647&to=<234...>&text=<url-encoded answer>    (the SMSC queues and delivers)
+    Out: GET <SMSC>/?msisdn=647&to=<234...>&hex=<answer, UTF-8, hex encoded> (the SMSC queues it)
     The request is answered at once and the command runs in the background, so the SMSC never waits
     on the payments API.
     """
@@ -496,8 +496,9 @@ class SmsService:
         log.info("sms: answer to %s %s", msisdn, "queued at the SMSC" if ok else "NOT delivered to the SMSC")
 
     def send(self, msisdn: str, text: str) -> bool:
-        url = (f"{self.smsc_url}/?msisdn={SMS_SHORT}&to={msisdn}"
-               f"&text={urllib.parse.quote(text, safe='')}")
+        # Hex, not URL encoding: the SMSC's URL decoder refuses control characters such as the
+        # newlines in the menu. The SMSC decodes it with {s.decode.hexa} (apply-smsc-647.py).
+        url = f"{self.smsc_url}/?msisdn={SMS_SHORT}&to={msisdn}&hex={text.encode('utf-8').hex()}"
         req = urllib.request.Request(url, headers={"Content-Length": "0"})  # Kamailio wants it on TCP
         try:
             with urllib.request.urlopen(req, timeout=5) as r:

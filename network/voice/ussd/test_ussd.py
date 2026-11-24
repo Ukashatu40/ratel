@@ -187,8 +187,10 @@ class FakeSmsc(BaseHTTPRequestHandler):
 
     def do_GET(self):
         from urllib.parse import parse_qs, urlparse
-        q = parse_qs(urlparse(self.path).query)
-        FakeSmsc.sent.append({k: v[0] for k, v in q.items()})
+        q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+        # the real SMSC decodes the answer from the hex parameter ({s.decode.hexa})
+        q["text"] = bytes.fromhex(q.pop("hex", "")).decode()
+        FakeSmsc.sent.append(q)
         self.send_response(200)
         self.send_header("Content-Length", "2")
         self.end_headers()
