@@ -247,6 +247,12 @@ h3 {
     color: #6b5000
 }
 
+.alert--ok {
+    background: #e6f6ec;
+    border-color: #9fd8b3;
+    color: #0f5a2c
+}
+
 .btn--danger {
     background: var(--red);
     border-color: var(--red)

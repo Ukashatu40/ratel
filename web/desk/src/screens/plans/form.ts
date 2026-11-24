@@ -8,7 +8,7 @@ export interface FormState {
 }
 export type Errors = Partial<Record<keyof FormState, string>>;
 
-export const emptyForm = (): FormState => ({ name: "", price: "", validity: "", dataGb: "", ul: "", dl: "", exhaustion: "slow", slowUl: "0.5", slowDl: "1", channels: ["RatelDesk", "RatelPay"] });
+export const emptyForm = (): FormState => ({ name: "", price: "", validity: "", dataGb: "", ul: "", dl: "", exhaustion: "slow", slowUl: "0.5", slowDl: "1", channels: ["desk", "pay", "sms", "ussd"] });
 export const planToForm = (p: PlanFull): FormState => ({
   name: p.name, price: (p.priceKobo / 100).toFixed(2), validity: String(p.validityDays), dataGb: String(p.dataBytes / 1e9),
   ul: String(p.speedUlMbps), dl: String(p.speedDlMbps), exhaustion: p.onExhaustion, slowUl: String(p.slowUlMbps), slowDl: String(p.slowDlMbps), channels: p.channels,
