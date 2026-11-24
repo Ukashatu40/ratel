@@ -1165,6 +1165,200 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/catalogue:
+    get:
+      tags: [RatelBSS]
+      operationId: desk_get_catalogue
+      security:
+        - StaffSession: []
+      summary: Every plan and bundle (on sale and retired) and the airtime and call settings.
+      description: |
+        The catalogue an admin keeps in RatelDesk (docs/catalogue.md). Any signed-in staff member
+        may read it. `gateway` is the deployment's card payment limits, inside which the card
+        settings must stay. `channels` lists where an offer may be sold.
+      responses:
+        "200":
+          description: The catalogue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Catalogue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/catalogue/offers:
+    post:
+      tags: [RatelBSS]
+      operationId: desk_create_offer
+      security:
+        - StaffSession: []
+      summary: Publish a new plan or bundle, on sale at once. Admins only.
+      description: |
+        Checked with the same rules as a purchase (a plan needs speeds; a plan that slows when its
+        data is used up needs slow speeds). A sold offer is never edited: to change one, retire it
+        and publish a new one, so customers keep what they bought. The change is audited with the
+        reason given. `Idempotency-Key` is required: a repeat answers `200` with the first offer
+        (`replayed` true); a key used for a different change answers `409`.
+      parameters:
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewOffer"
+      responses:
+        "201":
+          description: Published.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfferCreated"
+        "200":
+          description: The offer this key already published.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfferCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/catalogue/offers/{kind}/{offer_id}/retire:
+    post:
+      tags: [RatelBSS]
+      operationId: desk_retire_offer
+      security:
+        - StaffSession: []
+      summary: Take a plan or bundle off sale. Admins only.
+      description: |
+        A retired offer is never listed or sold again; what customers already bought stands.
+        Retiring an offer that is already retired changes nothing (`retired` false). Audited with
+        the reason given.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [plan, bundle]
+        - name: offer_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogueReason"
+      responses:
+        "200":
+          description: Retired, or already retired.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [retired]
+                additionalProperties: false
+                properties:
+                  retired:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/catalogue/settings:
+    put:
+      tags: [RatelBSS]
+      operationId: desk_update_catalogue_settings
+      security:
+        - StaffSession: []
+      summary: Save the airtime limits and the call rates. Admins only.
+      description: |
+        The card limits must stay inside the deployment's gateway limits (`gateway` in
+        `desk_get_catalogue`). Airtime amounts are whole kobo, different, smallest first, and inside
+        the card limits. Call rates are kobo per minute, charged per second after a call ends.
+        Saving the same values changes nothing. Audited with the reason given.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogueSettingsChange"
+      responses:
+        "200":
+          description: The saved settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogueSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/catalogue/audit:
+    get:
+      tags: [RatelBSS]
+      operationId: desk_list_catalogue_audit
+      security:
+        - StaffSession: []
+      summary: Catalogue changes, newest first.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: before
+          in: query
+          required: false
+          description: Only changes older than this audit id (the next page).
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: One page of changes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogueAuditPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/ledger:
     get:
       tags: [RatelBSS]
@@ -1326,6 +1520,14 @@ paths:
         Called for RatelPay through the reverse proxy, which adds the key (see info.description).
       x-todo:
         - Exposing this path publicly at the proxy, and its rate limit, come with the RatelPay page (M-19).
+      parameters:
+        - name: channel
+          in: query
+          required: false
+          description: Only bundles sold on this channel (docs/catalogue.md).
+          schema:
+            type: string
+            enum: [desk, pay, sms, ussd]
       responses:
         "200":
           description: Bundles on sale.
@@ -1335,6 +1537,89 @@ paths:
                 $ref: "#/components/schemas/BundleList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/airtime:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_airtime_options
+      summary: The airtime amounts the SMS 647 and USSD menus offer, and the card payment limits.
+      description: |
+        Set by an admin in RatelDesk (docs/catalogue.md), kept inside the deployment's gateway
+        limits. Reached by the voice VM through the reverse proxy, which adds the key.
+      responses:
+        "200":
+          description: The airtime options.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AirtimeOptions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/lines/{msisdn}/balance:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_get_line_balance_by_number
+      summary: A line's airtime and the data it has left, by phone number, for SMS 647 and USSD.
+      description: |
+        The number is the one the network asserted for the sender (the SMS centre or the S-CSCF),
+        never one a customer typed. Not public: the reverse proxy lets only the voice VM reach this
+        path and adds the key (deploy/bss-app/nginx). `data_bytes_left` counts buckets valid now;
+        `data_valid_to` is the latest end among them, or null.
+      parameters:
+        - $ref: "#/components/parameters/PayMsisdn"
+      responses:
+        "200":
+          description: The balance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineBalance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/lines/{msisdn}/purchases:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_buy_bundle_by_number
+      summary: Buy a bundle from a line's airtime, by phone number, for SMS 647 and USSD.
+      description: |
+        The same purchase as RatelDesk's (`bss_buy_offer`): the wallet is debited, VAT is its own
+        entry, and the line gets an allowance bucket. The bundle must be on sale and list the
+        `channel` it is bought from. `Idempotency-Key` is required: a repeat returns the first
+        purchase (`replayed` true). A wallet that does not cover the price answers `409` with code
+        `insufficient_funds`. Not public: voice VM only, through the reverse proxy.
+      parameters:
+        - $ref: "#/components/parameters/PayMsisdn"
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuyBundleByNumber"
+      responses:
+        "200":
+          description: Bought, or the first purchase for this key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BundleBought"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
   /v1/pay/payments:
@@ -1482,6 +1767,14 @@ components:
         names the signed-in staff member (`staff:<id>`), never a name sent in the request.
         Roles: `agent` and `admin` (TODO(PRD, decision 11)).
   parameters:
+    PayMsisdn:
+      name: msisdn
+      in: path
+      required: true
+      description: The line's number in 234 form, as the network asserted it.
+      schema:
+        type: string
+        pattern: "^234[0-9]{10}$"
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1731,6 +2024,246 @@ components:
           example:
             error: {code: internal_error, message: "Internal error"}
   schemas:
+    AirtimeOptions:
+      type: object
+      required: [presets_kobo, card_min_kobo, card_max_kobo]
+      additionalProperties: false
+      properties:
+        presets_kobo:
+          type: array
+          items:
+            type: integer
+        card_min_kobo:
+          type: integer
+        card_max_kobo:
+          type: integer
+    LineBalance:
+      type: object
+      required: [balance_kobo, data_bytes_left, data_valid_to]
+      additionalProperties: false
+      properties:
+        balance_kobo:
+          type: integer
+        data_bytes_left:
+          type: integer
+          minimum: 0
+        data_valid_to:
+          type: [integer, "null"]
+          description: Epoch seconds, UTC.
+    BuyBundleByNumber:
+      type: object
+      required: [bundle_id, channel]
+      additionalProperties: false
+      properties:
+        bundle_id:
+          type: integer
+          minimum: 1
+        channel:
+          type: string
+          enum: [sms, ussd]
+    BundleBought:
+      type: object
+      required: [name, price_kobo, balance_kobo, valid_to, replayed]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        price_kobo:
+          type: integer
+        balance_kobo:
+          type: integer
+        valid_to:
+          type: [integer, "null"]
+        replayed:
+          type: boolean
+    Offer:
+      type: object
+      required: [kind, offer_id, name, price_kobo, data_bytes, validity_days, channels, state, speed_dl_mbps, speed_ul_mbps, on_exhaustion, slow_dl_mbps, slow_ul_mbps]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [plan, bundle]
+        offer_id:
+          type: integer
+        name:
+          type: string
+        price_kobo:
+          type: integer
+        data_bytes:
+          type: integer
+        validity_days:
+          type: integer
+        channels:
+          type: array
+          items:
+            type: string
+        state:
+          type: string
+        speed_dl_mbps:
+          type: [number, "null"]
+        speed_ul_mbps:
+          type: [number, "null"]
+        on_exhaustion:
+          type: [string, "null"]
+        slow_dl_mbps:
+          type: [number, "null"]
+        slow_ul_mbps:
+          type: [number, "null"]
+    CatalogueSettings:
+      type: object
+      required: [airtime_min_kobo, card_min_kobo, card_max_kobo, airtime_presets_kobo, voice_onnet_kobo_per_min, voice_offnet_kobo_per_min]
+      additionalProperties: false
+      properties:
+        airtime_min_kobo:
+          type: integer
+          minimum: 1
+        card_min_kobo:
+          type: integer
+          minimum: 1
+        card_max_kobo:
+          type: integer
+          minimum: 1
+        airtime_presets_kobo:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items:
+            type: integer
+        voice_onnet_kobo_per_min:
+          type: integer
+          minimum: 0
+        voice_offnet_kobo_per_min:
+          type: integer
+          minimum: 0
+    CatalogueSettingsChange:
+      allOf:
+        - $ref: "#/components/schemas/CatalogueSettings"
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+      unevaluatedProperties: false
+    Catalogue:
+      type: object
+      required: [offers, settings, gateway, channels]
+      additionalProperties: false
+      properties:
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Offer"
+        settings:
+          $ref: "#/components/schemas/CatalogueSettings"
+        gateway:
+          type: object
+          required: [min_kobo, max_kobo]
+          additionalProperties: false
+          properties:
+            min_kobo:
+              type: integer
+            max_kobo:
+              type: integer
+        channels:
+          type: array
+          items:
+            type: string
+    NewOffer:
+      type: object
+      required: [kind, name, price_kobo, data_bytes, validity_days, channels, reason]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [plan, bundle]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        price_kobo:
+          type: integer
+          minimum: 0
+        data_bytes:
+          type: integer
+          minimum: 1
+        validity_days:
+          type: integer
+          minimum: 1
+          maximum: 3650
+        channels:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [desk, pay, sms, ussd]
+        speed_dl_mbps:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        speed_ul_mbps:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        on_exhaustion:
+          type: [string, "null"]
+          enum: [slow, stop, null]
+        slow_dl_mbps:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        slow_ul_mbps:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+    OfferCreated:
+      type: object
+      required: [offer_id, replayed]
+      additionalProperties: false
+      properties:
+        offer_id:
+          type: integer
+        replayed:
+          type: boolean
+    CatalogueReason:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CatalogueAuditPage:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [audit_id, actor, action, offer_kind, offer_id, reason, detail, at]
+            additionalProperties: false
+            properties:
+              audit_id:
+                type: integer
+              actor:
+                type: string
+              action:
+                type: string
+              offer_kind:
+                type: [string, "null"]
+              offer_id:
+                type: [integer, "null"]
+              reason:
+                type: string
+              detail:
+                type: string
+              at:
+                type: [integer, "null"]
     StaffLoginRequest:
       type: object
       required: [email, password]
@@ -2671,7 +3204,7 @@ components:
         kind:
           type: string
           maxLength: 30
-          x-todo: The entry kinds are not fixed (PRODUCT_RULES.md). The code has top_up, purchase, vat and correction; RatelDesk's mock names others.
+          x-todo: The entry kinds are not fixed (PRODUCT_RULES.md). The code has top_up, purchase, vat, correction and call (a voice call paid from airtime); RatelDesk's mock names others.
         reference:
           type: string
           maxLength: 120

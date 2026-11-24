@@ -24,6 +24,7 @@ from app.bss_lines.models.lines import Bundle as BundleRow
 from app.bss_lines.models.lines import Line
 from app.bss_lines.models.lines import Plan as PlanRow
 from app.bss_money.domain.allowance import Bucket
+from app.bss_money.domain.catalogue import CatalogueSettings, channels_to_list
 from app.bss_money.domain.entries import EntryKind, Posting
 from app.bss_money.domain.plans import Bundle as BundleOffer
 from app.bss_money.domain.plans import OnExhaustion, Plan
@@ -32,19 +33,24 @@ from app.bss_money.domain.rating import RatingResult, UsageRecord
 from app.bss_money.domain.vouchers import VoucherState
 from app.bss_money.domain.wallets import WalletMismatch
 from app.bss_money.models.allowance import AllowanceBucket
+from app.bss_money.models.catalogue import CallCharge, CatalogueAudit, CatalogueSetting
 from app.bss_money.models.ledger import LedgerEntry, Wallet
 from app.bss_money.models.payments import Payment
 from app.bss_money.models.rating import UsageRating
 from app.bss_money.models.vouchers import Voucher, VoucherAttempt
 from app.bss_money.repositories.ports import (
+    AuditRow,
     BalanceOutOfRange,
+    CallToCharge,
     DuplicateEntry,
     DuplicateKey,
     LedgerRow,
     LineCallRow,
     LineUsageRow,
     MoneyMoved,
+    NewOffer,
     NewVoucher,
+    OfferView,
     RatedLine,
     StoredEntry,
     StoredPayment,
@@ -728,3 +734,245 @@ class SqlPaidPlanCheck:
                 )
             )
         )
+
+
+# The catalogue and call charging (docs/catalogue.md).
+
+ON_SALE = "on_sale"
+RETIRED = "retired"
+
+
+def _utc_or_none(moment: datetime | None) -> datetime | None:
+    return None if moment is None else _utc(moment)
+
+
+class SqlCatalogueRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def offers(self) -> list[OfferView]:
+        plans = self._session.scalars(select(PlanRow).order_by(PlanRow.plan_id))
+        bundles = self._session.scalars(select(BundleRow).order_by(BundleRow.bundle_id))
+        result = [
+            OfferView(
+                kind=OfferKind.PLAN,
+                offer_id=p.plan_id,
+                name=p.name,
+                price_kobo=p.price_kobo,
+                data_bytes=p.data_bytes,
+                validity_days=p.validity_days,
+                channels=channels_to_list(p.channels),
+                state=p.state,
+                speed_dl_mbps=p.speed_dl_mbps,
+                speed_ul_mbps=p.speed_ul_mbps,
+                on_exhaustion=p.on_exhaustion,
+                slow_dl_mbps=p.slow_dl_mbps,
+                slow_ul_mbps=p.slow_ul_mbps,
+            )
+            for p in plans
+        ]
+        result += [
+            OfferView(
+                kind=OfferKind.BUNDLE,
+                offer_id=b.bundle_id,
+                name=b.name,
+                price_kobo=b.price_kobo,
+                data_bytes=b.data_bytes,
+                validity_days=b.validity_days,
+                channels=channels_to_list(b.channels),
+                state=b.state,
+            )
+            for b in bundles
+        ]
+        return result
+
+    def add_offer(self, offer: NewOffer) -> int:
+        if offer.kind is OfferKind.PLAN:
+            if offer.speed_dl_mbps is None or offer.speed_ul_mbps is None:
+                raise ValueError("a plan needs its speeds")
+            if offer.on_exhaustion is None:
+                raise ValueError("a plan needs on_exhaustion")
+            plan = PlanRow(
+                name=offer.name,
+                price_kobo=offer.price_kobo,
+                validity_days=offer.validity_days,
+                data_bytes=offer.data_bytes,
+                speed_ul_mbps=offer.speed_ul_mbps,
+                speed_dl_mbps=offer.speed_dl_mbps,
+                slow_ul_mbps=offer.slow_ul_mbps,
+                slow_dl_mbps=offer.slow_dl_mbps,
+                channels=offer.channels,
+                on_exhaustion=offer.on_exhaustion,
+                state=ON_SALE,
+            )
+            self._session.add(plan)
+            self._session.flush()
+            return plan.plan_id
+        bundle = BundleRow(
+            name=offer.name,
+            price_kobo=offer.price_kobo,
+            validity_days=offer.validity_days,
+            data_bytes=offer.data_bytes,
+            channels=offer.channels,
+            state=ON_SALE,
+        )
+        self._session.add(bundle)
+        self._session.flush()
+        return bundle.bundle_id
+
+    def lock_offer_state(self, kind: OfferKind, offer_id: int) -> str | None:
+        row = self._row(kind, offer_id, lock=True)
+        return None if row is None else row.state
+
+    def retire(self, kind: OfferKind, offer_id: int) -> None:
+        row = self._row(kind, offer_id, lock=False)
+        if row is not None:
+            row.state = RETIRED
+            self._session.flush()
+
+    def _row(self, kind: OfferKind, offer_id: int, *, lock: bool) -> PlanRow | BundleRow | None:
+        if kind is OfferKind.PLAN:
+            plans = select(PlanRow).where(PlanRow.plan_id == offer_id)
+            return self._session.execute(
+                plans.with_for_update() if lock else plans
+            ).scalar_one_or_none()
+        bundles = select(BundleRow).where(BundleRow.bundle_id == offer_id)
+        return self._session.execute(
+            bundles.with_for_update() if lock else bundles
+        ).scalar_one_or_none()
+
+    def settings(self) -> CatalogueSettings | None:
+        row = self._session.get(CatalogueSetting, 1)
+        if row is None:
+            return None
+        return CatalogueSettings(
+            airtime_min_kobo=row.airtime_min_kobo,
+            card_min_kobo=row.card_min_kobo,
+            card_max_kobo=row.card_max_kobo,
+            airtime_presets_kobo=tuple(int(p) for p in row.airtime_presets.split(",") if p.strip()),
+            voice_onnet_kobo_per_min=row.voice_onnet_kobo_per_min,
+            voice_offnet_kobo_per_min=row.voice_offnet_kobo_per_min,
+        )
+
+    def save_settings(self, settings: CatalogueSettings) -> None:
+        row = self._session.get(CatalogueSetting, 1)
+        if row is None:
+            row = CatalogueSetting(id=1)
+            self._session.add(row)
+        row.airtime_min_kobo = settings.airtime_min_kobo
+        row.card_min_kobo = settings.card_min_kobo
+        row.card_max_kobo = settings.card_max_kobo
+        row.airtime_presets = ",".join(str(p) for p in settings.airtime_presets_kobo)
+        row.voice_onnet_kobo_per_min = settings.voice_onnet_kobo_per_min
+        row.voice_offnet_kobo_per_min = settings.voice_offnet_kobo_per_min
+        self._session.flush()
+
+    def audit_for_key(self, idempotency_key: str) -> AuditRow | None:
+        row = self._session.scalar(
+            select(CatalogueAudit).where(CatalogueAudit.idempotency_key == idempotency_key)
+        )
+        return None if row is None else _audit(row)
+
+    def add_audit(
+        self,
+        *,
+        actor: str,
+        action: str,
+        offer_kind: str | None,
+        offer_id: int | None,
+        idempotency_key: str | None,
+        reason: str,
+        detail: str,
+    ) -> int:
+        row = CatalogueAudit(
+            actor=actor,
+            action=action,
+            offer_kind=offer_kind,
+            offer_id=offer_id,
+            idempotency_key=idempotency_key,
+            reason=reason,
+            detail=detail[:500],
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row.id
+
+    def audit_page(self, limit: int, before_id: int | None) -> list[AuditRow]:
+        statement = select(CatalogueAudit)
+        if before_id is not None:
+            statement = statement.where(CatalogueAudit.id < before_id)
+        rows = self._session.scalars(statement.order_by(CatalogueAudit.id.desc()).limit(limit))
+        return [_audit(r) for r in rows]
+
+
+def _audit(row: CatalogueAudit) -> AuditRow:
+    return AuditRow(
+        audit_id=row.id,
+        actor=row.actor,
+        action=row.action,
+        offer_kind=row.offer_kind,
+        offer_id=row.offer_id,
+        reason=row.reason,
+        detail=row.detail,
+        created_at=_utc_or_none(row.created_at),
+    )
+
+
+class SqlCallChargeRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def uncharged_calls(self, limit: int) -> list[CallToCharge]:
+        charged = exists().where(CallCharge.call_record_id == CallRecordModel.id)
+        rows = self._session.scalars(
+            select(CallRecordModel).where(~charged).order_by(CallRecordModel.id).limit(limit)
+        )
+        return [
+            CallToCharge(
+                record_id=r.id,
+                from_msisdn=r.from_msisdn,
+                to_msisdn=r.to_msisdn,
+                answered_at=_utc_or_none(r.answered_at),
+                ended_at=_utc(r.ended_at),
+            )
+            for r in rows
+        ]
+
+    def lock_line_for_msisdn(self, msisdn: str) -> int | None:
+        return self._session.scalar(
+            select(Line.line_id)
+            .where(Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value)
+            .with_for_update()
+        )
+
+    def is_ratel_number(self, msisdn: str) -> bool:
+        found = self._session.scalar(
+            select(Line.line_id).where(
+                Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value
+            )
+        )
+        return found is not None
+
+    def save_charge(
+        self,
+        *,
+        record_id: int,
+        line_id: int | None,
+        seconds: int,
+        on_net: bool,
+        rate_kobo_per_min: int,
+        charged_kobo: int,
+        uncovered_kobo: int,
+    ) -> None:
+        self._session.add(
+            CallCharge(
+                call_record_id=record_id,
+                line_id=line_id,
+                seconds=seconds,
+                on_net=on_net,
+                rate_kobo_per_min=rate_kobo_per_min,
+                charged_kobo=charged_kobo,
+                uncovered_kobo=uncovered_kobo,
+            )
+        )
+        self._session.flush()

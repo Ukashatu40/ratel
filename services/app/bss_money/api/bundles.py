@@ -6,7 +6,9 @@ holds prices and sizes only: no line, customer or channel list. Buying a bundle 
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -41,7 +43,14 @@ def _out(bundle: Bundle) -> BundleOut:
 
 
 @router.get("/bundles", response_model=BundleList)
-def get_bundles(request: Request) -> JSONResponse:
+def get_bundles(
+    request: Request,
+    channel: Annotated[Literal["desk", "pay", "sms", "ussd"] | None, Query()] = None,
+) -> JSONResponse:
+    """Bundles on sale; with `channel`, only those sold on that channel (docs/catalogue.md)."""
     scope: CatalogScope = request.app.state.catalog_scope
-    body = BundleList(bundles=[_out(b) for b in bundles_on_sale(scope)])
+    on_sale = bundles_on_sale(scope)
+    if channel is not None:
+        on_sale = [b for b in on_sale if channel in b.channels]
+    body = BundleList(bundles=[_out(b) for b in on_sale])
     return JSONResponse(body.model_dump(), headers={"Cache-Control": "no-store"})

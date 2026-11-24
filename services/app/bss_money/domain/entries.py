@@ -30,6 +30,7 @@ class EntryKind(StrEnum):
     PURCHASE = "purchase"  # money out: a plan or a bundle bought from the wallet
     VAT = "vat"  # its own entry. TODO(finance): the rate (7.5% when the plan was written)
     CORRECTION = "correction"  # fixes an earlier entry by adding a new one
+    CALL = "call"  # money out: a voice call paid from airtime (VAT is its own entry, as above)
 
 
 class InvalidPosting(ValueError):

@@ -14,7 +14,9 @@ from app.bss_lines.api.lines import router as bss_lines_router
 from app.bss_lines.api.staff import router as staff_router
 from app.bss_lines.repositories.desk_sql import SqlDeskReadRepository
 from app.bss_money.api.bundles import router as bundles_router
+from app.bss_money.api.catalogue import router as catalogue_router
 from app.bss_money.api.desk import router as money_desk_router
+from app.bss_money.api.pay_lines import router as pay_lines_router
 from app.bss_money.api.payments import router as payments_router
 from app.bss_money.api.purchases import router as purchases_router
 from app.bss_money.api.vouchers import router as bss_money_router
@@ -28,14 +30,17 @@ from app.bss_money.repositories.ports import (
 )
 from app.bss_money.repositories.sql import (
     SqlBundleCatalog,
+    SqlCatalogueRepository,
     SqlLedgerRepository,
     SqlLineLookup,
     SqlMoneyReadRepository,
     SqlPaidPlanCheck,
     SqlPaymentRepository,
     SqlPurchaseRepository,
+    SqlRatingRepository,
     SqlVoucherRepository,
 )
+from app.bss_money.services.pay_lines import PayLineRepositories
 from app.config import Settings
 from app.db import make_engine, session_factory
 from app.meter_api.api import router as meter_api_router
@@ -111,6 +116,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield SqlBundleCatalog(session)
 
     app.state.catalog_scope = catalog_scope
+
+    @contextmanager
+    def catalogue_scope() -> Iterator[SqlCatalogueRepository]:
+        # One transaction per catalogue change: the offer or settings and the audit row go together.
+        with app.state.session_factory() as session, session.begin():
+            yield SqlCatalogueRepository(session)
+
+    app.state.catalogue_scope = catalogue_scope
+
+    @contextmanager
+    def pay_line_scope() -> Iterator[PayLineRepositories]:
+        with app.state.session_factory() as session, session.begin():
+            yield PayLineRepositories(
+                lines=SqlLineLookup(session),
+                ledger=SqlLedgerRepository(session),
+                buckets=SqlRatingRepository(session),
+            )
+
+    app.state.pay_line_scope = pay_line_scope
 
     @contextmanager
     def desk_read_scope() -> Iterator[DeskReads]:
@@ -190,5 +214,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(purchases_router)
     app.include_router(payments_router)
     app.include_router(bundles_router)
+    app.include_router(pay_lines_router)
+    app.include_router(catalogue_router)
     app.include_router(meter_api_router)
     return app

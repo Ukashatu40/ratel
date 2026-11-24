@@ -14,6 +14,7 @@ from typing import Protocol
 from app.bss_lines.domain.state_machine import LineState
 from app.bss_lines.repositories.desk_ports import DeskReadRepository
 from app.bss_money.domain.allowance import Bucket
+from app.bss_money.domain.catalogue import CatalogueSettings
 from app.bss_money.domain.entries import Posting
 from app.bss_money.domain.plans import Bundle, Plan
 from app.bss_money.domain.purchase import OfferKind
@@ -403,3 +404,145 @@ class DeskReads:
 
 DeskReadScope = Callable[[], AbstractContextManager[DeskReads]]
 """Opens one read-only transaction and yields the views."""
+
+
+# The catalogue and call charging (docs/catalogue.md).
+
+
+@dataclass(frozen=True)
+class OfferView:
+    """A plan or a bundle as the catalogue screen shows it, whatever its state."""
+
+    kind: OfferKind
+    offer_id: int
+    name: str
+    price_kobo: int
+    data_bytes: int
+    validity_days: int
+    channels: list[str]
+    state: str
+    # Plans only (None for a bundle).
+    speed_dl_mbps: float | None = None
+    speed_ul_mbps: float | None = None
+    on_exhaustion: str | None = None
+    slow_dl_mbps: float | None = None
+    slow_ul_mbps: float | None = None
+
+
+@dataclass(frozen=True)
+class NewOffer:
+    kind: OfferKind
+    name: str
+    price_kobo: int
+    data_bytes: int
+    validity_days: int
+    channels: str  # stored form, already checked
+    speed_dl_mbps: float | None = None
+    speed_ul_mbps: float | None = None
+    on_exhaustion: str | None = None
+    slow_dl_mbps: float | None = None
+    slow_ul_mbps: float | None = None
+
+
+@dataclass(frozen=True)
+class AuditRow:
+    audit_id: int
+    actor: str
+    action: str
+    offer_kind: str | None
+    offer_id: int | None
+    reason: str
+    detail: str
+    created_at: datetime | None
+
+
+class CatalogueRepository(Protocol):
+    """Works inside the caller's transaction and never commits."""
+
+    def offers(self) -> list[OfferView]:
+        """Every plan and bundle, on sale or retired, plans first, oldest first."""
+        ...
+
+    def add_offer(self, offer: NewOffer) -> int:
+        """Store a new offer, on sale. Returns its id."""
+        ...
+
+    def lock_offer_state(self, kind: OfferKind, offer_id: int) -> str | None:
+        """The offer's state, locked until the transaction ends, or None if there is no offer."""
+        ...
+
+    def retire(self, kind: OfferKind, offer_id: int) -> None: ...
+
+    def settings(self) -> CatalogueSettings | None:
+        """What an admin saved, or None if nothing was ever saved."""
+        ...
+
+    def save_settings(self, settings: CatalogueSettings) -> None: ...
+
+    def audit_for_key(self, idempotency_key: str) -> AuditRow | None: ...
+
+    def add_audit(
+        self,
+        *,
+        actor: str,
+        action: str,
+        offer_kind: str | None,
+        offer_id: int | None,
+        idempotency_key: str | None,
+        reason: str,
+        detail: str,
+    ) -> int: ...
+
+    def audit_page(self, limit: int, before_id: int | None) -> list[AuditRow]:
+        """Newest first."""
+        ...
+
+
+CatalogueScope = Callable[[], AbstractContextManager[CatalogueRepository]]
+
+
+@dataclass(frozen=True)
+class CallToCharge:
+    record_id: int
+    from_msisdn: str
+    to_msisdn: str
+    answered_at: datetime | None
+    ended_at: datetime
+
+
+class CallChargeRepository(Protocol):
+    """Works inside the caller's transaction and never commits."""
+
+    def uncharged_calls(self, limit: int) -> list[CallToCharge]:
+        """Call records with no charge row yet, oldest first."""
+        ...
+
+    def lock_line_for_msisdn(self, msisdn: str) -> int | None:
+        """The live (not terminated) line with this number, locked, or None."""
+        ...
+
+    def is_ratel_number(self, msisdn: str) -> bool:
+        """Whether the number belongs to a live Ratelplus line (an on-net call)."""
+        ...
+
+    def save_charge(
+        self,
+        *,
+        record_id: int,
+        line_id: int | None,
+        seconds: int,
+        on_net: bool,
+        rate_kobo_per_min: int,
+        charged_kobo: int,
+        uncovered_kobo: int,
+    ) -> None: ...
+
+
+@dataclass(frozen=True)
+class CallChargeRepositories:
+    calls: CallChargeRepository
+    ledger: LedgerRepository
+    catalogue: CatalogueRepository
+
+
+CallChargeScope = Callable[[], AbstractContextManager[CallChargeRepositories]]
