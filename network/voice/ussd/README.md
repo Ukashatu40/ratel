@@ -14,11 +14,17 @@ Text one of these to 647 (any case):
 
 ```
 MENU                       the list below
-BAL                        your balance
-BUY 500                    a Paystack link to buy N500 airtime (N100 to N50,000)
-BUNDLES                    the bundles on sale
+BAL                        airtime, and the data left with its end date
+BUY 500                    a Paystack link to buy N500 airtime (within the card limits set in RatelDesk)
+BUNDLES                    the bundles on sale on SMS, numbered, cheapest first
+BUNDLE 2                   buy bundle number 2 from the list, paid from airtime
 CARD <card number> <PIN>   recharge with a card (20 and 14 digits, spaces allowed)
 ```
+
+Bundles, prices, airtime amounts and limits come from the catalogue an admin keeps in RatelDesk
+(Plans & Bundles), through ratel-app's self-care API (`/v1/pay/airtime`, `/v1/pay/bundles?channel=`,
+`/v1/pay/lines/{msisdn}/balance` and `/purchases`). A bundle appears on SMS only when it lists the
+SMS channel, and on USSD only when it lists USSD.
 
 Every text is a full command and gets one answer of at most 160 characters. Card numbers and PINs
 are never logged, only the command word.
@@ -38,8 +44,8 @@ The service takes requests on port 8647 from the SMSC (172.22.0.33) only.
 ```
 *123#
 1. My balance
-2. Buy airtime        (N100, N200, N500, N1000: answers with a Paystack payment link)
-3. Buy a bundle       (lists the bundles on sale)
+2. Buy airtime        (the amounts set in RatelDesk: answers with a Paystack payment link)
+3. Buy a bundle       (numbered list of bundles sold on USSD; choose one to buy it from airtime)
 4. Recharge card      (card number, a star, PIN)
 *123*CARD*PIN#        recharge in one go
 ```
@@ -83,8 +89,9 @@ Put `RATEL_PAY_URL=<base URL>` in `ussd.env` and the key alone in `pay.key` (mod
 `run-ussd.sh`, then run it again. Neither file is committed. Without them every option answers
 "not available yet".
 
-Balance (`GET /v1/pay/lines/{msisdn}/balance`) and buying a bundle by number are not in ratel-app
-yet; they are step 3 of this work.
+Balance and buying a bundle by number need ratel-app with the catalogue release
+(`feat/catalogue-and-voice-charging`) and bss-app's nginx rule for the voice VM
+(`deploy/bss-app/nginx/add-selfcare-paths.py`).
 
 ## Switching it off
 

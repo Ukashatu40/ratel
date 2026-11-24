@@ -38,9 +38,15 @@ class FakePay(BaseHTTPRequestHandler):
     def do_GET(self):
         FakePay.calls.append(("GET", self.path, self.headers.get("Authorization")))
         if self.path.endswith("/balance"):
-            return self._send(200, {"balance_kobo": 123450})
-        if self.path == "/v1/pay/bundles":
-            return self._send(200, {"bundles": [{"bundle_id": 1, "name": "1GB", "price_kobo": 50000}]})
+            return self._send(200, {"balance_kobo": 123450, "data_bytes_left": 2_500_000_000,
+                                    "data_valid_to": 1795996800})  # 30 Nov 2026
+        if self.path in ("/v1/pay/bundles?channel=sms", "/v1/pay/bundles?channel=ussd"):
+            return self._send(200, {"bundles": [
+                {"bundle_id": 7, "name": "Weekly 3GB", "price_kobo": 60000},
+                {"bundle_id": 4, "name": "Daily 500MB", "price_kobo": 10000}]})
+        if self.path == "/v1/pay/airtime":
+            return self._send(200, {"presets_kobo": [10000, 20000, 50000, 100000],
+                                    "card_min_kobo": 10000, "card_max_kobo": 100000000})
         self._send(404, {})
 
     def do_POST(self):
@@ -50,6 +56,11 @@ class FakePay(BaseHTTPRequestHandler):
             return self._send(200, {"payment_id": "p1", "status": "pending",
                                     "amount_kobo": body["amount_kobo"],
                                     "checkout_url": "https://checkout.paystack.com/abc123"})
+        if self.path.endswith("/purchases"):
+            if body["bundle_id"] == 7 and body["channel"] == "sms":
+                return self._send(409, {"error": {"code": "insufficient_funds", "message": "short"}})
+            return self._send(200, {"name": "Daily 500MB", "price_kobo": 10000, "balance_kobo": 113450,
+                                    "valid_to": 1795564800, "replayed": False})  # 25 Nov 2026
         if self.path == "/v1/pay/vouchers/redeem":
             if body["pin"] == "11111111111111":
                 return self._send(400, {})
@@ -226,10 +237,13 @@ def sms_tests():
     me = "2348000000902"
     cases = [
         ("menu", lambda a: a.startswith("Ratelplus 647\nBAL")),
-        ("bal", lambda a: a == "Your balance is N1,234.50"),
+        ("bal", lambda a: a == "Airtime N1,234.50. Data 2.5GB until 30 Nov"),
         ("Buy 500", lambda a: a == "Pay N500 at https://checkout.paystack.com/abc123"),
         ("BUY 20", lambda a: a.startswith("The amount must be between")),
-        ("bundles", lambda a: a == "Bundles\n1GB N500.00"),
+        ("bundles", lambda a: a == "Bundles\n1 Daily 500MB N100\n2 Weekly 3GB N600\nReply BUNDLE and the number"),
+        ("bundle 1", lambda a: a == "Daily 500MB is active until 25 Nov. Airtime left N1,134.50"),
+        ("BUNDLE 2", lambda a: a.startswith("Not enough airtime")),
+        ("BUNDLE 9", lambda a: a.startswith("No bundle with that number")),
         ("CARD 1234 5678 9012 3456 7890 2222 2222 2222 22", lambda a: a.startswith("Recharge of N500.00 successful")),
         ("*12345678901234567890*11111111111111#", lambda a: a == "This card cannot be used."),
         ("card 123", lambda a: a.startswith("Send CARD")),
@@ -293,9 +307,9 @@ def main():
     print("== with the payments API")
     proc = run({"RATEL_PAY_URL": "http://127.0.0.1:18080", "RATEL_PAY_KEY_FILE": keyfile})
     cases = [
-        ("*123#", ["1"], "Your balance is N1,234.50"),
+        ("*123#", ["1"], "Airtime N1,234.50. Data 2.5GB until 30 Nov"),
         ("*123#", ["2", "3"], "Pay N500 at https://checkout.paystack.com/abc123"),
-        ("*123#", ["3"], "Bundles\n1GB N500.00"),
+        ("*123#", ["3", "1"], "Daily 500MB is active until 25 Nov. Airtime left N1,134.50"),
         ("*123#", ["4", "12345678901234567890*22222222222222"], "Recharge of N500.00 successful. New balance N1,734.50"),
         ("*123*12345678901234567890*11111111111111#", [], "This card cannot be used."),
         ("*123#", ["9"], "Invalid choice. Dial *123# to start again."),

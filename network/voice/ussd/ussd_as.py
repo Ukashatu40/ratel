@@ -243,7 +243,7 @@ def sdp_answer(offer: bytes | None, ip: str) -> bytes | None:
 # ---------------------------------------------------------------------------------------------
 
 MAIN_MENU = "Ratelplus\n1. My balance\n2. Buy airtime\n3. Buy a bundle\n4. Recharge card"
-AMOUNTS = [100, 200, 500, 1000]  # naira
+AMOUNTS = [100, 200, 500, 1000]  # naira, used only when the payments API is not configured
 
 
 @dataclass
@@ -275,17 +275,28 @@ class Menu:
                 return Reply(self.pay.balance_text(s.msisdn), True)
             if text == "2":
                 s.state = "airtime"
-                opts = "\n".join(f"{i}. N{a}" for i, a in enumerate(AMOUNTS, 1))
+                s.choices = [str(a) for a in self.pay.airtime_amounts()]
+                opts = "\n".join(f"{i}. N{a}" for i, a in enumerate(s.choices, 1))
                 return Reply("Buy airtime\n" + opts, False)
             if text == "3":
-                return Reply(self.pay.bundles_text(s.msisdn), True)
+                offers = self.pay.bundles("ussd")
+                if not offers:
+                    return Reply(self.pay.bundles_text("ussd"), True)
+                s.state = "bundle"
+                s.choices = [str(b["bundle_id"]) for b in offers]
+                return Reply(bundle_menu(offers), False)
             if text == "4":
                 s.state = "card"
                 return Reply("Enter the 20 digit card number, a star, then the 14 digit PIN", False)
             return Reply("Invalid choice. Dial *123# to start again.", True)
         if s.state == "airtime":
-            if text.isdigit() and 1 <= int(text) <= len(AMOUNTS):
-                return Reply(self.pay.payment_text(s.msisdn, AMOUNTS[int(text) - 1]), True)
+            if text.isdigit() and 1 <= int(text) <= len(s.choices):
+                return Reply(self.pay.payment_text(s.msisdn, int(s.choices[int(text) - 1])), True)
+            return Reply("Invalid choice. Dial *123# to start again.", True)
+        if s.state == "bundle":
+            if text.isdigit() and 1 <= int(text) <= len(s.choices):
+                bundle_id = int(s.choices[int(text) - 1])
+                return Reply(self.pay.buy_bundle_text(s.msisdn, bundle_id, "ussd", s.call_id), True)
             return Reply("Invalid choice. Dial *123# to start again.", True)
         if s.state == "card":
             m = re.fullmatch(r"([0-9]{20})\*([0-9]{14})", text.replace(" ", ""))
@@ -296,6 +307,12 @@ class Menu:
 
     def recharge(self, s: "Session", card: str, pin: str) -> Reply:
         return Reply(self.pay.recharge_text(s.msisdn, card, pin), True)
+
+
+def bundle_menu(offers: list[dict]) -> str:
+    """A numbered list of bundles, short enough for one USSD screen."""
+    lines = [f"{i}. {b['name']} {PayApi.naira(b['price_kobo'], whole=True)}" for i, b in enumerate(offers, 1)]
+    return "Buy a bundle\n" + "\n".join(lines)
 
 
 class PayApi:
@@ -336,30 +353,88 @@ class PayApi:
             return 0, {}
 
     @staticmethod
-    def naira(kobo: int) -> str:
+    def naira(kobo: int, whole: bool = False) -> str:
+        if whole and kobo % 100 == 0:
+            return f"N{kobo // 100:,}"
         return f"N{kobo / 100:,.2f}"
+
+    @staticmethod
+    def size(data_bytes: int) -> str:
+        if data_bytes >= 1_000_000_000:
+            return f"{data_bytes / 1_000_000_000:.3g}GB"
+        return f"{data_bytes / 1_000_000:.3g}MB"
+
+    def airtime_amounts(self) -> list[int]:
+        """The amounts (naira) an admin set for the menus, inside the card limits."""
+        if self.ready:
+            status, body = self._call("GET", "/v1/pay/airtime")
+            presets = body.get("presets_kobo") if status == 200 else None
+            if presets:
+                return [p // 100 for p in presets]
+        return list(AMOUNTS)
+
+    def airtime_limits(self) -> tuple[int, int]:
+        """(smallest, largest) card payment in naira."""
+        if self.ready:
+            status, body = self._call("GET", "/v1/pay/airtime")
+            if status == 200 and "card_min_kobo" in body:
+                return body["card_min_kobo"] // 100, body["card_max_kobo"] // 100
+        return 100, 50_000
+
+    def bundles(self, channel: str) -> list[dict]:
+        """Bundles on sale on this channel, cheapest first. Empty when unknown."""
+        if not self.ready:
+            return []
+        status, body = self._call("GET", f"/v1/pay/bundles?channel={channel}")
+        items = body.get("bundles", []) if status == 200 else []
+        return sorted(items, key=lambda b: (b.get("price_kobo", 0), b.get("bundle_id", 0)))[:6]
+
+    def buy_bundle_text(self, msisdn: str | None, bundle_id: int, channel: str, request_id: str) -> str:
+        if not (self.ready and msisdn):
+            return "Bundles are not available yet. Please try again later."
+        status, body = self._call(
+            "POST",
+            f"/v1/pay/lines/{msisdn}/purchases",
+            {"bundle_id": bundle_id, "channel": channel},
+            {"Idempotency-Key": f"{channel}-{request_id}-{bundle_id}"[:100]},
+        )
+        if status == 200:
+            until = ""
+            if body.get("valid_to"):
+                until = " until " + time.strftime("%d %b", time.gmtime(body["valid_to"]))
+            return (f"{body['name']} is active{until}. "
+                    f"Airtime left {self.naira(body['balance_kobo'])}")
+        error = (body.get("error") or {}) if isinstance(body, dict) else {}
+        if error.get("code") == "insufficient_funds":
+            return "Not enough airtime for this bundle. Top up with BUY and the amount, or a recharge card."
+        if status == 409:
+            return "That bundle is not available now. Send BUNDLES for the list."
+        return "Bundles are not available right now. Please try again later."
 
     def balance_text(self, msisdn: str | None) -> str:
         if not (self.ready and msisdn):
             return "Balance is not available yet. Please try again later."
         status, body = self._call("GET", f"/v1/pay/lines/{msisdn}/balance")
         if status == 200 and "balance_kobo" in body:
-            return f"Your balance is {self.naira(body['balance_kobo'])}"
+            text = f"Airtime {self.naira(body['balance_kobo'])}"
+            left = body.get("data_bytes_left") or 0
+            if left > 0:
+                text += f". Data {self.size(left)}"
+                if body.get("data_valid_to"):
+                    text += " until " + time.strftime("%d %b", time.gmtime(body["data_valid_to"]))
+            else:
+                text += ". No data bundle"
+            return text
         return "Balance is not available right now. Please try again later."
 
-    def bundles_text(self, msisdn: str | None) -> str:
+    def bundles_text(self, channel: str) -> str:
         if not self.ready:
             return "Bundles are not available yet. Please try again later."
-        status, body = self._call("GET", "/v1/pay/bundles")
-        items = body.get("bundles") or body.get("items") or [] if status == 200 else []
-        if not items:
+        offers = self.bundles(channel)
+        if not offers:
             return "Bundles are not available right now. Please try again later."
-        lines = []
-        for b in items[:5]:
-            name = b.get("name") or b.get("display_name") or f"Bundle {b.get('bundle_id')}"
-            price = b.get("price_kobo") or b.get("amount_kobo")
-            lines.append(f"{name} {self.naira(price)}" if price else name)
-        return "Bundles\n" + "\n".join(lines)
+        lines = [f"{i} {b['name']} {self.naira(b['price_kobo'], whole=True)}" for i, b in enumerate(offers, 1)]
+        return "Bundles\n" + "\n".join(lines) + "\nReply BUNDLE and the number"
 
     def payment_text(self, msisdn: str | None, naira: int) -> str:
         if not (self.ready and msisdn):
@@ -395,8 +470,7 @@ class PayApi:
 
 SMS_SHORT = "647"
 SMS_HELP = ("Ratelplus 647\nBAL - your balance\nBUY 500 - buy N500 airtime\n"
-            "BUNDLES - data bundles\nCARD cardnumber pin - recharge card")
-SMS_MIN_NAIRA, SMS_MAX_NAIRA = 100, 50000
+            "BUNDLES - list, BUNDLE 2 - buy\nCARD cardnumber pin - recharge card")
 MSISDN_RE = re.compile(r"^234[0-9]{10}$")
 
 
@@ -412,7 +486,7 @@ class SmsCommands:
         words = text.strip().split()
         return re.sub(r"[0-9]", "#", words[0].upper())[:12] if words else "(empty)"
 
-    def answer(self, msisdn: str, text: str) -> str:
+    def answer(self, msisdn: str, text: str, request_id: str = "") -> str:
         t = " ".join(text.upper().split())
         word, _, rest = t.partition(" ")
         if t in ("", "MENU", "HELP", "HI", "HELLO", "START", "?", "0"):
@@ -420,14 +494,21 @@ class SmsCommands:
         if t in ("BAL", "BALANCE", "1"):
             return self.pay.balance_text(msisdn)
         if t in ("BUNDLES", "BUNDLE", "DATA", "3"):
-            return self.pay.bundles_text(msisdn)
+            return self.pay.bundles_text("sms")
+        if word in ("BUNDLE", "DATA") and rest.strip().isdigit():
+            offers = self.pay.bundles("sms")
+            n = int(rest.strip())
+            if not 1 <= n <= len(offers):
+                return "No bundle with that number. Send BUNDLES for the list."
+            return self.pay.buy_bundle_text(msisdn, offers[n - 1]["bundle_id"], "sms", request_id)
         if word in ("BUY", "AIRTIME", "TOPUP"):
             digits = re.sub(r"[^0-9]", "", rest)
             if not digits:
                 return "Send BUY and the amount, for example BUY 500"
             naira = int(digits[:7])
-            if not SMS_MIN_NAIRA <= naira <= SMS_MAX_NAIRA:
-                return f"The amount must be between N{SMS_MIN_NAIRA:,} and N{SMS_MAX_NAIRA:,}."
+            low, high = self.pay.airtime_limits()
+            if not low <= naira <= high:
+                return f"The amount must be between N{low:,} and N{high:,}."
             return self.pay.payment_text(msisdn, naira)
         if word in ("CARD", "RECHARGE", "LOAD") or re.fullmatch(r"\*?[0-9]{20}\*[0-9]{14}#?", t):
             digits = re.sub(r"[^0-9]", "", t)
@@ -494,7 +575,7 @@ class SmsService:
 
     async def process(self, msisdn: str, text: str):
         log.info("sms: %s from %s", self.commands.keyword(text), msisdn)
-        answer = await asyncio.to_thread(self.commands.answer, msisdn, text)
+        answer = await asyncio.to_thread(self.commands.answer, msisdn, text, token(12))
         if len(answer) > 160:  # one SMS: the SMSC does not split long messages
             answer = answer[:157] + "..."
         ok = await asyncio.to_thread(self.send, msisdn, answer)
@@ -532,6 +613,7 @@ class Session:
     acked: bool = False
     cseq: int = 0
     state: str = "new"
+    choices: list[str] = field(default_factory=list)  # what the numbers in the last menu stand for
     pending: Reply | None = None  # what to send once the ACK has arrived
     last_seen: float = field(default_factory=time.monotonic)
     closed: bool = False
