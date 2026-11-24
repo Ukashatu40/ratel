@@ -5,6 +5,7 @@ Starts the service with a fake payments API, runs whole USSD sessions and checks
 """
 
 import json
+import tempfile
 import os
 import re
 import socket
@@ -15,6 +16,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+KEYFILE = os.path.join(tempfile.mkdtemp(prefix="ussd-test-"), "test.key")
 AS = ("127.0.0.1", 15060)
 BOUNDARY = "ratelboundary"
 
@@ -217,7 +219,7 @@ def sms_tests():
     failures = 0
     smsc = HTTPServer(("127.0.0.1", 17090), FakeSmsc)
     threading.Thread(target=smsc.serve_forever, daemon=True).start()
-    proc = run({"RATEL_PAY_URL": "http://127.0.0.1:18080", "RATEL_PAY_KEY_FILE": "/tmp/claude-0/ussd/test.key",
+    proc = run({"RATEL_PAY_URL": "http://127.0.0.1:18080", "RATEL_PAY_KEY_FILE": KEYFILE,
                 "SMS_PORT": "18647", "SMS_SMSC_URL": "http://127.0.0.1:17090", "SMS_ALLOWED": "127.0.0.1"})
     me = "2348000000902"
     cases = [
@@ -268,7 +270,7 @@ def sms_tests():
 def main():
     httpd = HTTPServer(("127.0.0.1", 18080), FakePay)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    keyfile = "/tmp/claude-0/ussd/test.key"
+    keyfile = KEYFILE
     open(keyfile, "w").write("test-key")
 
     failures = 0
