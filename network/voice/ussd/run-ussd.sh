@@ -9,8 +9,10 @@
 # Usage: ./run-ussd.sh            start or replace the container
 #        ./run-ussd.sh --stop     stop and remove it
 #
-# Payments API (optional, step 2): put the base URL in ussd.env as RATEL_PAY_URL=... and the key,
-# alone, in pay.key next to this script (chmod 600). Neither file is in the repository.
+# Payments API: put bss-app's base URL in ussd.env as RATEL_PAY_URL=https://... and copy bss-app's
+# certificate next to this script as bss-ca.pem (cp /etc/ratel-meter/trusted-certs.pem bss-ca.pem).
+# No key is needed: bss-app's nginx adds it on the public payment paths. A key, if ever needed,
+# goes alone in pay.key (chmod 600). None of these files is in the repository.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -32,12 +34,14 @@ ENVFILE=()
 [ -f "$HERE/ussd.env" ] && ENVFILE=(--env-file "$HERE/ussd.env")
 KEY=()
 [ -f "$HERE/pay.key" ] && KEY=(-v "$HERE/pay.key:/run/ussd/pay.key:ro" -e RATEL_PAY_KEY_FILE=/run/ussd/pay.key)
+CA=()  # bss-app's self-signed certificate, the same file the call agent trusts
+[ -f "$HERE/bss-ca.pem" ] && CA=(-v "$HERE/bss-ca.pem:/run/ussd/bss-ca.pem:ro" -e SSL_CERT_FILE=/run/ussd/bss-ca.pem)
 
 docker run -d --name "$NAME" --restart unless-stopped \
 	--network "$NET" --ip "$IP" \
 	-e USSD_PUBLIC_IP="$IP" -e USSD_PORT=5060 -e USSD_LOG_LEVEL=INFO \
 	-e SMS_PORT=8647 -e SMS_SMSC_URL=http://172.22.0.33:7090 -e SMS_ALLOWED=172.22.0.33 \
-	"${ENVFILE[@]}" "${KEY[@]}" \
+	"${ENVFILE[@]}" "${KEY[@]}" "${CA[@]}" \
 	-v "$HERE/ussd_as.py:/app/ussd_as.py:ro" \
 	--log-opt max-size=10m --log-opt max-file=3 \
 	"$IMAGE" python -I /app/ussd_as.py >/dev/null

@@ -22,7 +22,9 @@ Configuration, from the environment:
     USSD_PORT           default 5060
     USSD_LOG_LEVEL      default INFO
     RATEL_PAY_URL       base URL of ratel-app's payments API, for example https://bss-app/...
-    RATEL_PAY_KEY_FILE  file holding the payments API key (never put the key in the environment)
+    RATEL_PAY_KEY_FILE  optional file holding the payments API key (never put it in the environment);
+                        not needed through bss-app's nginx, which adds the key on the public paths
+    SSL_CERT_FILE       certificates to trust for RATEL_PAY_URL (bss-app's certificate is self-signed)
     SMS_PORT            TCP port for the 647 SMS service (off when unset)
     SMS_SMSC_URL        the SMSC's HTTP entry point (default http://172.22.0.33:7090)
     SMS_ALLOWED         comma-separated addresses allowed to post texts (default 172.22.0.33)
@@ -306,11 +308,14 @@ class PayApi:
 
     @property
     def ready(self) -> bool:
-        return bool(self.base and self.key)
+        # The key is optional: on the public paths (payments, voucher redeem) bss-app's nginx adds
+        # the payments key itself and replaces any Authorization header, as it does for RatelPay.
+        return bool(self.base)
 
     def _call(self, method: str, path: str, body: dict | None = None, extra: dict | None = None):
         req = urllib.request.Request(self.base + path, method=method)
-        req.add_header("Authorization", f"Bearer {self.key}")
+        if self.key:
+            req.add_header("Authorization", f"Bearer {self.key}")
         req.add_header("Accept", "application/json")
         for k, v in (extra or {}).items():
             req.add_header(k, v)
