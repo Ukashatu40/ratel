@@ -74,6 +74,22 @@ server {
         add_header Referrer-Policy "no-referrer" always;
     }
 
+    # The SMS short number 647 and USSD (the ussd container on the voice VM): self-care by the
+    # number the network asserted (docs/catalogue.md). Not public: the voice VM only, since a caller
+    # here could read any line's balance. The included file adds the payments key, as for RatelPay.
+    # A regex location, so it wins over the staff-only `location /v1/` prefix below.
+    location ~ ^/v1/pay/(airtime|bundles|lines/234[0-9]{10}/(balance|purchases))$ {
+        allow <address-of-voice-vm>;
+        deny  all;
+        limit_req zone=ratel_pay burst=20 nodelay;
+        limit_req_status 429;
+        client_max_body_size 1k;
+        include /etc/nginx/ratel-pay-key.conf;  # proxy_set_header Authorization "Bearer <key>";
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 20s;
+    }
     # PUBLIC PATH: the RatelPay page redeems a prepaid card here. An exact match, so nothing else
     # under /v1/pay is public. The page is a static file in a browser and cannot keep a key secret,
     # so it sends none: the included file adds the redemption key (PAY_API_KEY) and REPLACES any
