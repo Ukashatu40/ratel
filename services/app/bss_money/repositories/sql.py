@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.bss_lines.domain.state_machine import LineState
 from app.bss_lines.models.lines import Bundle as BundleRow
-from app.bss_lines.models.lines import Line, WelcomeSms
+from app.bss_lines.models.lines import CustomerSms, Line
 from app.bss_lines.models.lines import Plan as PlanRow
 from app.bss_money.domain.allowance import Bucket
 from app.bss_money.domain.catalogue import CatalogueSettings, channels_to_list
@@ -51,7 +51,7 @@ from app.bss_money.repositories.ports import (
     NewOffer,
     NewVoucher,
     OfferView,
-    PendingWelcome,
+    PendingSms,
     RatedLine,
     StoredEntry,
     StoredPayment,
@@ -362,22 +362,37 @@ class SqlLineLookup:
         )
 
 
-class SqlWelcomeSmsRepository:
+class SqlCustomerSmsRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def pending(self, limit: int) -> list[PendingWelcome]:
+    def add(self, *, line_id: int, kind: str, dedupe_key: str, text: str) -> None:
+        exists = self._session.scalar(
+            select(CustomerSms.sms_id).where(CustomerSms.dedupe_key == dedupe_key)
+        )
+        if exists is None:
+            self._session.add(
+                CustomerSms(line_id=line_id, kind=kind, dedupe_key=dedupe_key, text=text)
+            )
+            self._session.flush()
+
+    def pending(self, limit: int) -> list[PendingSms]:
         rows = self._session.execute(
-            select(WelcomeSms.line_id, Line.msisdn)
-            .join(Line, Line.line_id == WelcomeSms.line_id)
-            .where(WelcomeSms.sent_at.is_(None), Line.state == LineState.ACTIVE.value)
-            .order_by(WelcomeSms.created_at, WelcomeSms.line_id)
+            select(CustomerSms, Line.msisdn)
+            .join(Line, Line.line_id == CustomerSms.line_id)
+            .where(CustomerSms.sent_at.is_(None), Line.state.in_(_IN_SERVICE))
+            .order_by(CustomerSms.sms_id)
             .limit(limit)
         )
-        return [PendingWelcome(line_id=r.line_id, msisdn=r.msisdn) for r in rows]
+        return [
+            PendingSms(
+                sms_id=sms.sms_id, line_id=sms.line_id, msisdn=msisdn, kind=sms.kind, text=sms.text
+            )
+            for sms, msisdn in rows
+        ]
 
-    def mark_sent(self, line_id: int, at: datetime) -> datetime | None:
-        row = self._session.get(WelcomeSms, line_id, with_for_update=True)
+    def mark_sent(self, sms_id: int, at: datetime) -> datetime | None:
+        row = self._session.get(CustomerSms, sms_id, with_for_update=True)
         if row is None:
             return None
         if row.sent_at is None:

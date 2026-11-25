@@ -1622,16 +1622,17 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
-  /v1/pay/welcome-sms:
+  /v1/pay/customer-sms:
     get:
       tags: [RatelBSS]
-      operationId: bss_list_welcome_sms
-      summary: Welcome SMS not sent yet, with the text to send, for the voice VM.
+      operationId: bss_list_customer_sms
+      summary: SMS to customers not sent yet, with their text, for the voice VM.
       description: |
-        One per activated line, queued in the activation's transaction (docs/welcome-sms.md).
-        Only lines still active, oldest first. The voice VM sends each one when the number first
-        registers on the IMS, then marks it sent. Not public: voice VM only, through the reverse
-        proxy, which adds the key.
+        Queued by the app in the same transaction as what each reports: the welcome after an
+        activation, the summary after each charged call (docs/customer-sms.md). Only lines in
+        service, oldest first. The voice VM sends each from 647 once the number is registered on
+        the IMS, then marks it sent. Not public: voice VM only, through the reverse proxy, which
+        adds the key.
       parameters:
         - name: limit
           in: query
@@ -1643,28 +1644,28 @@ paths:
             default: 50
       responses:
         "200":
-          description: The welcome SMS due.
+          description: The SMS due.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WelcomeSmsList"
+                $ref: "#/components/schemas/CustomerSmsList"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
-  /v1/pay/welcome-sms/{line_id}/sent:
+  /v1/pay/customer-sms/{sms_id}/sent:
     post:
       tags: [RatelBSS]
-      operationId: bss_mark_welcome_sms_sent
-      summary: Record that a line's welcome SMS went to the SMS centre.
+      operationId: bss_mark_customer_sms_sent
+      summary: Record that an SMS to a customer went to the SMS centre.
       description: |
         The first call records the time; a repeat changes nothing and answers the same time, so
-        no `Idempotency-Key` is needed (one is accepted). `404` when the line has no welcome SMS.
+        no `Idempotency-Key` is needed (one is accepted). `404` when there is no such SMS.
         Not public: voice VM only, through the reverse proxy.
       parameters:
-        - name: line_id
+        - name: sms_id
           in: path
           required: true
           schema:
@@ -1678,7 +1679,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WelcomeSmsSent"
+                $ref: "#/components/schemas/CustomerSmsSent"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -2115,7 +2116,7 @@ components:
         data_valid_to:
           type: [integer, "null"]
           description: Epoch seconds, UTC.
-    WelcomeSmsList:
+    CustomerSmsList:
       type: object
       required: [items]
       additionalProperties: false
@@ -2123,26 +2124,31 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/WelcomeSms"
-    WelcomeSms:
+            $ref: "#/components/schemas/CustomerSms"
+    CustomerSms:
       type: object
-      required: [line_id, msisdn, text]
+      required: [sms_id, line_id, msisdn, kind, text]
       additionalProperties: false
       properties:
+        sms_id:
+          type: integer
         line_id:
           type: integer
         msisdn:
           type: string
           pattern: "^234[0-9]{10}$"
+        kind:
+          type: string
+          enum: [welcome, call]
         text:
           type: string
           maxLength: 160
-    WelcomeSmsSent:
+    CustomerSmsSent:
       type: object
-      required: [line_id, sent_at]
+      required: [sms_id, sent_at]
       additionalProperties: false
       properties:
-        line_id:
+        sms_id:
           type: integer
         sent_at:
           type: integer

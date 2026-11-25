@@ -17,7 +17,9 @@ rates) is kept by an admin in RatelDesk. Nobody changes prices in code or SQL.
   (`PAYMENT_MIN_KOBO`, `PAYMENT_MAX_KOBO`); the admin's card limits must stay inside them.
 - Voice calls are paid from airtime after they end, per second of answered time, at the on-net rate
   when the other party is a live Ratelplus line and the off-net rate otherwise. VAT is its own
-  ledger entry, as for purchases. The rating job (every five minutes) charges each call record once.
+  ledger entry, as for purchases. The call-charging job (`calls_cli`, every minute) charges each call
+  record once, and the caller gets an SMS with the duration, the cost and the balance after
+  (docs/customer-sms.md).
 - The wallet never goes below zero. A call the wallet cannot cover takes what is there and the rest
   is recorded as uncovered (`call_charge.uncovered_kobo`).
 - Charging starts at `CALL_CHARGING_FROM` (in `ratel-app.env`, a time with its UTC offset). Calls

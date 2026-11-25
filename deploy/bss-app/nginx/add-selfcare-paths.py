@@ -8,7 +8,7 @@ live file, before the staff sign-in block, with the voice VM's address taken fro
 `location = /v1/calls` (its first allow line), so nothing has to be typed. Nothing else changes.
 
 A live file that has an older self-care block gets it replaced by the template's (the paths grow,
-for example the welcome SMS queue), keeping the address. It refuses a file it does not recognise
+for example the customer SMS queue), keeping the address. It refuses a file it does not recognise
 and does nothing if the block is the same already. Make a copy of the live file first, then run
 `nginx -t` before reloading.
 """

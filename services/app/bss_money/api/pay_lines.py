@@ -4,7 +4,7 @@ Like the other RatelPay routes these carry the key the reverse proxy adds (`requ
 the proxy lets only the voice VM reach them (deploy/bss-app/nginx). They are not public: a caller
 who could reach them could read any line's balance.
 
-The welcome SMS queue (docs/welcome-sms.md) is here for the same reason: the voice VM sends them.
+The customer SMS queue (docs/customer-sms.md) is here for the same reason: the voice VM sends them.
 """
 
 from __future__ import annotations
@@ -59,18 +59,20 @@ class BoughtOut(BaseModel):
     replayed: bool
 
 
-class WelcomeOut(BaseModel):
+class CustomerSmsOut(BaseModel):
+    sms_id: int
     line_id: int
     msisdn: str
+    kind: str
     text: str
 
 
-class WelcomeListOut(BaseModel):
-    items: list[WelcomeOut]
+class CustomerSmsListOut(BaseModel):
+    items: list[CustomerSmsOut]
 
 
-class WelcomeSentOut(BaseModel):
-    line_id: int
+class CustomerSmsSentOut(BaseModel):
+    sms_id: int
     sent_at: int
 
 
@@ -153,29 +155,34 @@ def buy_bundle(request: Request, msisdn: Msisdn, body: BuyBundleIn, key: Require
     )
 
 
-@router.get("/welcome-sms", response_model=WelcomeListOut)
-def list_welcome_sms(
+@router.get("/customer-sms", response_model=CustomerSmsListOut)
+def list_customer_sms(
     request: Request, limit: Annotated[int, Query(ge=1, le=100)] = 50
-) -> WelcomeListOut:
-    """Welcome SMS not sent yet, for lines still active, oldest first, with the text to send."""
-    due = pay_lines.welcomes_due(request.app.state.pay_line_scope, limit)
-    return WelcomeListOut(
-        items=[WelcomeOut(line_id=w.line_id, msisdn=w.msisdn, text=w.text) for w in due]
+) -> CustomerSmsListOut:
+    """SMS to customers not sent yet (welcome, call summaries), oldest first, with their text."""
+    due = pay_lines.sms_due(request.app.state.pay_line_scope, limit)
+    return CustomerSmsListOut(
+        items=[
+            CustomerSmsOut(
+                sms_id=s.sms_id, line_id=s.line_id, msisdn=s.msisdn, kind=s.kind, text=s.text
+            )
+            for s in due
+        ]
     )
 
 
-@router.post("/welcome-sms/{line_id}/sent", response_model=WelcomeSentOut)
-def mark_welcome_sms_sent(
+@router.post("/customer-sms/{sms_id}/sent", response_model=CustomerSmsSentOut)
+def mark_customer_sms_sent(
     request: Request,
-    line_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    sms_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     key: OptionalKey = None,
-) -> WelcomeSentOut:
-    """Record that the line's welcome SMS went to the SMS centre. A repeat changes nothing."""
+) -> CustomerSmsSentOut:
+    """Record that the SMS went to the SMS centre. A repeat changes nothing."""
     del key  # marking sent is idempotent by itself; the key is accepted like every state change
     try:
-        sent_at = pay_lines.mark_welcome_sent(
-            request.app.state.pay_line_scope, line_id, now_utc(request)
+        sent_at = pay_lines.mark_sms_sent(
+            request.app.state.pay_line_scope, sms_id, now_utc(request)
         )
-    except pay_lines.NoWelcome:
-        raise ApiError(404, "not_found", "This line has no welcome SMS.") from None
-    return WelcomeSentOut(line_id=line_id, sent_at=to_epoch(sent_at))
+    except pay_lines.NoSuchSms:
+        raise ApiError(404, "not_found", "There is no such SMS.") from None
+    return CustomerSmsSentOut(sms_id=sms_id, sent_at=to_epoch(sent_at))

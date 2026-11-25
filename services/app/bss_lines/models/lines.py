@@ -135,18 +135,23 @@ class LineAudit(Base, TimestampMixin):
     reason: Mapped[str] = mapped_column(String(200))
 
 
-class WelcomeSms(Base, TimestampMixin):
-    """The welcome SMS a line gets once, after its activation (docs/welcome-sms.md).
+class CustomerSms(Base, TimestampMixin):
+    """An SMS to a customer, sent from 647 by the voice VM (docs/customer-sms.md).
 
-    Written in the same transaction as the activation, so an SMS problem can never fail one. The
-    voice VM sends it when the number first registers on the IMS, then marks it sent.
+    Written in the same transaction as what it reports (an activation, a charged call), so it can
+    never fail that and is never lost. `dedupe_key` makes each one happen once: `welcome:<line>`,
+    `call:<call record>`. The text is final when queued: a call summary carries the balance then.
     """
 
-    __tablename__ = "welcome_sms"
+    __tablename__ = "customer_sms"
 
+    sms_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     line_id: Mapped[int] = mapped_column(
-        ForeignKey("line.line_id", ondelete="RESTRICT"), primary_key=True, autoincrement=False
+        ForeignKey("line.line_id", ondelete="RESTRICT"), index=True
     )
+    kind: Mapped[str] = mapped_column(String(16))
+    dedupe_key: Mapped[str] = mapped_column(String(64), unique=True)
+    text: Mapped[str] = mapped_column(String(160))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

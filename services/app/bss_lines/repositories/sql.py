@@ -9,7 +9,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.bss_lines.models.lines import Line, LineAudit, Sim, WelcomeSms
+from app.bss_lines.domain.customer_sms import SmsKind, welcome_text
+from app.bss_lines.models.lines import CustomerSms, Line, LineAudit, Sim
 
 
 class SqlLinesRepository:
@@ -84,9 +85,18 @@ class SqlLinesRepository:
             )
         )
 
-    def add_welcome_sms(self, line_id: int) -> None:
-        if self._session.get(WelcomeSms, line_id) is None:
-            self._session.add(WelcomeSms(line_id=line_id))
+    def add_welcome_sms(self, line_id: int, msisdn: str) -> None:
+        key = f"welcome:{line_id}"
+        if self._session.scalar(select(CustomerSms.sms_id).where(CustomerSms.dedupe_key == key)):
+            return
+        self._session.add(
+            CustomerSms(
+                line_id=line_id,
+                kind=SmsKind.WELCOME.value,
+                dedupe_key=key,
+                text=welcome_text(msisdn),
+            )
+        )
 
     def commit(self) -> None:
         if self._request_commits:

@@ -60,3 +60,43 @@ def national_msisdn(number: str) -> str | None:
     if value.startswith("234") and len(value) == 13:
         return value
     return None
+
+
+def naira_text(kobo: int) -> str:
+    """12345 kobo as N123.45, with thousands separated: the form an SMS shows (no naira sign)."""
+    sign = "-" if kobo < 0 else ""
+    whole, part = divmod(abs(kobo), 100)
+    return f"{sign}N{whole:,}.{part:02d}"
+
+
+def duration_text(seconds: int) -> str:
+    """45s, 2m 15s, 1h 02m 03s."""
+    hours, rest = divmod(max(0, seconds), 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def dialled_text(number: str) -> str:
+    """The other party as a customer would write it: 0803... for a Nigerian number, else digits."""
+    national = national_msisdn(number)
+    if national is not None:
+        return "0" + national[3:]
+    digits = "".join(ch for ch in number if ch.isdigit())
+    return digits[:15] or "unknown"
+
+
+def call_summary_text(
+    *, dialled: str, seconds: int, cost_kobo: int, uncovered_kobo: int, balance_kobo: int
+) -> str:
+    """The SMS after a charged call (docs/customer-sms.md). At most 125 characters, plain ASCII."""
+    unpaid = f", {naira_text(uncovered_kobo)} unpaid" if uncovered_kobo > 0 else ""
+    advice = "Text BUY 500 to 647 to top up." if uncovered_kobo > 0 else "Text MENU to 647."
+    cost = naira_text(cost_kobo)
+    return (
+        f"Last call to {dialled_text(dialled)}: {duration_text(seconds)}, cost {cost}{unpaid}. "
+        f"Balance {naira_text(balance_kobo)}. {advice}"
+    )

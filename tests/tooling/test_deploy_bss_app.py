@@ -199,6 +199,7 @@ def test_the_payment_paths_are_limited_and_carry_the_proxy_key_and_the_webhook_i
 
 JOBS = {
     "ratel-rating": "app.bss_money.rating_cli",
+    "ratel-calls": "app.bss_money.calls_cli",
     "ratel-ledger-check": "app.bss_money.check_cli",
 }
 
@@ -226,20 +227,26 @@ def test_the_job_units_run_the_installed_code_as_the_service_user_with_the_same_
 
 def test_the_timers_start_their_service_and_catch_up_after_a_power_cut() -> None:
     rating = (DEPLOY / "ratel-rating.timer").read_text()
+    calls = (DEPLOY / "ratel-calls.timer").read_text()
     ledger = (DEPLOY / "ratel-ledger-check.timer").read_text()
     assert "Unit=ratel-rating.service" in rating and "Unit=ratel-ledger-check.service" in ledger
+    assert "Unit=ratel-calls.service" in calls
     assert "OnCalendar=*:02/5" in rating  # two minutes after each agent interval ends
+    assert "OnCalendar=*:*:30" in calls  # every minute: the SMS after a call comes within a minute
     assert "OnCalendar=daily" in ledger
-    for timer in (rating, ledger):
+    for timer in (rating, calls, ledger):
         assert "\nPersistent=true\n" in timer  # the servers lose power every night
         assert "WantedBy=timers.target" in timer
 
 
 def test_the_readme_installs_and_enables_the_timers() -> None:
     readme = (DEPLOY / "README.md").read_text()
-    for name in ("ratel-rating", "ratel-ledger-check"):
+    for name in ("ratel-rating", "ratel-calls", "ratel-ledger-check"):
         assert f"{name}.service" in readme and f"{name}.timer" in readme
-    assert "systemctl enable --now ratel-rating.timer ratel-ledger-check.timer" in readme
+    assert (
+        "systemctl enable --now ratel-rating.timer ratel-calls.timer ratel-ledger-check.timer"
+        in readme
+    )
 
 
 def test_the_public_page_serves_one_file_read_only_with_a_policy_that_loads_nothing_else() -> None:

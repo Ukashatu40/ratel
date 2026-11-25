@@ -1,5 +1,5 @@
-"""The rating job: data, then voice calls. Run every five minutes by a timer on bss-app
-(deploy/bss-app, M-27).
+"""The rating job: data. Run every five minutes by a timer on bss-app (deploy/bss-app, M-27).
+Voice calls are charged by their own job every minute (calls_cli).
 
     python -m app.bss_money.rating_cli
 
@@ -24,21 +24,17 @@ from app.bss_lines.repositories.sql import SqlLinesRepository
 from app.bss_lines.services.ratel_link_client import RatelLinkClient
 from app.bss_money.gateways.paystack import PaystackGateway
 from app.bss_money.repositories.ports import (
-    CallChargeRepositories,
     PaymentRepositories,
     PurchaseRepositories,
     RatingRepository,
 )
 from app.bss_money.repositories.sql import (
-    SqlCallChargeRepository,
-    SqlCatalogueRepository,
     SqlLedgerRepository,
     SqlLineLookup,
     SqlPaymentRepository,
     SqlPurchaseRepository,
     SqlRatingRepository,
 )
-from app.bss_money.services.call_charging import charge_calls
 from app.bss_money.services.line_control import LifecycleLineControl
 from app.bss_money.services.payments import settle_pending
 from app.bss_money.services.purchase import renew_plan_if_covered
@@ -86,15 +82,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 purchases=SqlPurchaseRepository(session), ledger=SqlLedgerRepository(session)
             )
 
-    @contextmanager
-    def call_scope() -> Iterator[CallChargeRepositories]:
-        with sessions() as session, session.begin():
-            yield CallChargeRepositories(
-                calls=SqlCallChargeRepository(session),
-                ledger=SqlLedgerRepository(session),
-                catalogue=SqlCatalogueRepository(session),
-            )
-
     now = datetime.now(UTC)
     paystack_key = settings.paystack_secret_key_value
     gateway = (
@@ -120,26 +107,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             settle=settle if gateway is not None else None,
             renew=renew if settings.rating_auto_renew else None,
         )
-        # Voice calls are paid from airtime after they end (services/call_charging.py). Charging
-        # first would let a call take money a top-up was about to turn into data; data first.
-        # Only once CALL_CHARGING_FROM is set, so calls from before launch are never charged.
-        calls_failed = 0
-        if settings.call_charging_from is None:
-            log_event(log, logging.INFO, "calls.charging_off")
-        else:
-            calls = charge_calls(
-                call_scope,
-                vat_rate_bps=settings.vat_rate_bps,
-                charge_from=settings.call_charging_from,
-            )
-            calls_failed = calls.failed
     except SQLAlchemyError as exc:
         # Type only: a driver message can carry the database host and user.
         log_event(log, logging.ERROR, "rating.failed", exc_type=type(exc).__name__)
         return 2
     finally:
         engine.dispose()
-    return 1 if run.failures or calls_failed else 0
+    return 1 if run.failures else 0
 
 
 if __name__ == "__main__":

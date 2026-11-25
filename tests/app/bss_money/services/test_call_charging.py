@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.bss_lines.models.lines import Customer, Line, Number, Plan, Sim
+from app.bss_lines.models.lines import Customer, CustomerSms, Line, Number, Plan, Sim
 from app.bss_money.domain.catalogue import DEFAULT_SETTINGS
 from app.bss_money.domain.entries import EntryKind, new_posting
 from app.bss_money.models.catalogue import CallCharge
@@ -20,6 +20,7 @@ from app.bss_money.repositories.ports import CallChargeRepositories
 from app.bss_money.repositories.sql import (
     SqlCallChargeRepository,
     SqlCatalogueRepository,
+    SqlCustomerSmsRepository,
     SqlLedgerRepository,
 )
 from app.bss_money.services.call_charging import charge_calls
@@ -98,6 +99,7 @@ def _scope(factory: sessionmaker[Session]):  # type: ignore[no-untyped-def]
                 calls=SqlCallChargeRepository(session),
                 ledger=SqlLedgerRepository(session),
                 catalogue=SqlCatalogueRepository(session),
+                sms=SqlCustomerSmsRepository(session),
             )
 
     return scope
@@ -230,3 +232,55 @@ def test_a_start_without_its_utc_offset_is_refused(factory: sessionmaker[Session
         charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=datetime(2026, 11, 25))  # noqa: DTZ001 (the point)
     with factory() as s:
         assert s.scalars(select(CallCharge)).first() is None
+
+
+def _sms(factory: sessionmaker[Session]) -> list[tuple[str, str]]:
+    with factory() as s:
+        return [
+            (r.dedupe_key, r.text)
+            for r in s.scalars(select(CustomerSms).order_by(CustomerSms.sms_id))
+        ]
+
+
+def test_each_charged_call_queues_one_sms_with_the_balance_after(
+    factory: sessionmaker[Session],
+) -> None:
+    _top_up(factory, 100_000)
+    _call(factory, "a", FRIEND, 60)  # on-net minute: N10
+    _call(factory, "b", OUTSIDE, 30)  # off-net half minute: N10
+    charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
+    charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)  # nothing more
+    assert _sms(factory) == [
+        (
+            "call:1",
+            "Last call to 08000010011: 1m 00s, cost N10.00. Balance N990.00. Text MENU to 647.",
+        ),
+        (
+            "call:2",
+            "Last call to 08031234567: 30s, cost N10.00. Balance N980.00. Text MENU to 647.",
+        ),
+    ]
+
+
+def test_a_call_the_wallet_could_not_cover_says_what_was_unpaid(
+    factory: sessionmaker[Session],
+) -> None:
+    _top_up(factory, 500)
+    _call(factory, "a", OUTSIDE, 60)
+    charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
+    assert _sms(factory) == [
+        (
+            "call:1",
+            "Last call to 08031234567: 1m 00s, cost N20.00, N15.00 unpaid. Balance N0.00. "
+            "Text BUY 500 to 647 to top up.",
+        )
+    ]
+
+
+def test_calls_that_cost_nothing_queue_no_sms(factory: sessionmaker[Session]) -> None:
+    _top_up(factory, 100_000)
+    _call(factory, "a", FRIEND, None)  # nobody answered
+    _call(factory, "b", CALLER, 120, caller=OUTSIDE)  # someone else's customer called us
+    _call(factory, "c", OUTSIDE, 60)
+    charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=T0 + timedelta(days=1))
+    assert _sms(factory) == []  # c ended before charging started
