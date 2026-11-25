@@ -188,11 +188,18 @@ def test_the_payment_paths_are_limited_and_carry_the_proxy_key_and_the_webhook_i
     assert "deny  all;" in body and "allow <paystack-address-1>;" in body
     assert "limit_req zone=ratel_webhook" in body
     assert "include /etc/nginx/ratel-pay-key.conf;" in body
-    assert text.count("include /etc/nginx/ratel-pay-key.conf;") == 4  # redeem, two payment, webhook
+    # redeem, two payment, webhook, and the voice VM's self-care block
+    assert text.count("include /etc/nginx/ratel-pay-key.conf;") == 5
+    care = re.search(r'location ~ "\^/v1/pay/\(airtime[^"]*" \{(.*?)\n    \}', text, re.S)
+    assert care is not None
+    allows = re.findall(r"allow ([^;]+);", care.group(1))
+    assert allows == ["<address-of-voice-vm>"]  # the voice VM only, then deny all
+    assert "deny  all;" in care.group(1) and "limit_req zone=ratel_pay" in care.group(1)
 
 
 JOBS = {
     "ratel-rating": "app.bss_money.rating_cli",
+    "ratel-calls": "app.bss_money.calls_cli",
     "ratel-ledger-check": "app.bss_money.check_cli",
 }
 
@@ -220,20 +227,26 @@ def test_the_job_units_run_the_installed_code_as_the_service_user_with_the_same_
 
 def test_the_timers_start_their_service_and_catch_up_after_a_power_cut() -> None:
     rating = (DEPLOY / "ratel-rating.timer").read_text()
+    calls = (DEPLOY / "ratel-calls.timer").read_text()
     ledger = (DEPLOY / "ratel-ledger-check.timer").read_text()
     assert "Unit=ratel-rating.service" in rating and "Unit=ratel-ledger-check.service" in ledger
+    assert "Unit=ratel-calls.service" in calls
     assert "OnCalendar=*:02/5" in rating  # two minutes after each agent interval ends
+    assert "OnCalendar=*:*:30" in calls  # every minute: the SMS after a call comes within a minute
     assert "OnCalendar=daily" in ledger
-    for timer in (rating, ledger):
+    for timer in (rating, calls, ledger):
         assert "\nPersistent=true\n" in timer  # the servers lose power every night
         assert "WantedBy=timers.target" in timer
 
 
 def test_the_readme_installs_and_enables_the_timers() -> None:
     readme = (DEPLOY / "README.md").read_text()
-    for name in ("ratel-rating", "ratel-ledger-check"):
+    for name in ("ratel-rating", "ratel-calls", "ratel-ledger-check"):
         assert f"{name}.service" in readme and f"{name}.timer" in readme
-    assert "systemctl enable --now ratel-rating.timer ratel-ledger-check.timer" in readme
+    assert (
+        "systemctl enable --now ratel-rating.timer ratel-calls.timer ratel-ledger-check.timer"
+        in readme
+    )
 
 
 def test_the_public_page_serves_one_file_read_only_with_a_policy_that_loads_nothing_else() -> None:
@@ -264,3 +277,17 @@ def test_the_desk_is_served_to_the_office_range_only_as_static_files() -> None:
     # The longer prefix wins in nginx, so the API, /healthz and /pay keep their own blocks.
     for name in ("/v1/", "= /healthz", "= /pay"):
         assert re.search(rf"location {re.escape(name)} \{{", text), name
+
+
+def test_every_regex_location_with_a_brace_is_quoted() -> None:
+    # nginx ends a token at `{`, so `location ~ ^/a{3}$ {` fails `nginx -t` ("missing closing
+    # parenthesis"). CI does not run nginx, so the templates are checked here.
+    for template in ROOT.glob("deploy/*/nginx/*.conf.example"):
+        for number, line in enumerate(template.read_text().splitlines(), start=1):
+            found = re.match(r"\s*location\s+~\*?\s+(.*)\s+\{\s*$", line)
+            if found is None:
+                continue
+            pattern = found.group(1)
+            if "{" in pattern or "}" in pattern:
+                quoted = pattern.startswith('"') and pattern.endswith('"')
+                assert quoted, f"{template.name}:{number}: quote a regex that holds a brace"

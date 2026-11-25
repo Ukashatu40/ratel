@@ -24,6 +24,7 @@ from starlette.concurrency import run_in_threadpool
 from app.bss_money.api.dependencies import require_pay_key
 from app.bss_money.domain.payments import PaymentGateway
 from app.bss_money.repositories.ports import PaymentScope
+from app.bss_money.services.catalogue import card_limits
 from app.bss_money.services.payments import (
     GatewayUnavailable,
     InvalidSignature,
@@ -80,6 +81,12 @@ def post_payment(
     settings = request.app.state.settings
     if gateway is None or not settings.payments_enabled:
         return _unavailable()
+    # The admin's card limits (RatelDesk catalogue), inside the deployment's gateway limits.
+    minimum, maximum = card_limits(
+        request.app.state.catalogue_scope,
+        floor_kobo=settings.payment_min_kobo,
+        ceiling_kobo=settings.payment_max_kobo,
+    )
     try:
         view = start_payment(
             scope,
@@ -89,8 +96,8 @@ def post_payment(
             idempotency_key=idempotency_key,
             callback_url=settings.payment_callback_url,
             payer_email=settings.payment_payer_email,
-            minimum=settings.payment_min_kobo,
-            maximum=settings.payment_max_kobo,
+            minimum=minimum,
+            maximum=maximum,
         )
     except PaymentRefused:
         return _json(400, error_body("payment_refused", "This payment cannot be started."))

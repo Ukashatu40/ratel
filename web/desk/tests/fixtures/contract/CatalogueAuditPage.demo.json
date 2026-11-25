@@ -1,0 +1,7 @@
+{
+  "items": [
+    {"audit_id": 3, "actor": "admin@example.test", "action": "retire_bundle", "offer_kind": "bundle", "offer_id": 2, "reason": "November price list", "detail": "was on_sale", "at": 1795560000},
+    {"audit_id": 2, "actor": "admin@example.test", "action": "update_settings", "offer_kind": null, "offer_id": null, "reason": "launch rates", "detail": "voice_onnet_kobo_per_min 1000 -> 800", "at": 1795559000},
+    {"audit_id": 1, "actor": "admin@example.test", "action": "create_bundle", "offer_kind": "bundle", "offer_id": 2, "reason": "launch", "detail": "Old 1GB, 700.00 naira, 1 GB, 7 days, desk", "at": 1795550000}
+  ]
+}

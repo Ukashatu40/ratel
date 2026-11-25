@@ -134,6 +134,25 @@ server {
         proxy_read_timeout 30s;
     }
 
+    # The SMS short number 555 and USSD (the ussd container on the voice VM): self-care by the
+    # number the network asserted (docs/catalogue.md). Not public: the voice VM only, since a caller
+    # here could read any line's balance. The included file adds the payments key, as for RatelPay.
+    # The customer SMS queue is here too: the voice VM sends them (docs/customer-sms.md).
+    # A regex location, so it wins over the staff-only `location /v1/` prefix below. In quotes,
+    # because nginx reads the `{` of `{10}` as the start of the block otherwise.
+    location ~ "^/v1/pay/(airtime|bundles|customer-sms(/[0-9]+/sent)?|lines/234[0-9]{10}/(balance|purchases))$" {
+        allow <address-of-voice-vm>;
+        deny  all;
+        limit_req zone=ratel_pay burst=20 nodelay;
+        limit_req_status 429;
+        client_max_body_size 1k;
+        include /etc/nginx/ratel-pay-key.conf;  # proxy_set_header Authorization "Bearer <key>";
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 20s;
+    }
+
     # Staff sign-in: office and VPN only, and slow. An exact match so nothing else gets this limit.
     location = /v1/auth/login {
         allow <office-and-vpn-range>;

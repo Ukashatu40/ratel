@@ -10,7 +10,7 @@ import { KIND_LABEL, KNOWN_KINDS, type LedgerTab } from "./types";
 import "./WalletScreen.css";
 
 const PAGE_SIZE = 10;
-const KIND_TONE: Record<string, Tone> = { top_up: "green", purchase: "blue", vat: "grey", correction: "amber" };
+const KIND_TONE: Record<string, Tone> = { top_up: "green", purchase: "blue", vat: "grey", correction: "amber", call: "blue" };
 // The tabs are "All", the kinds we know, and any other kind the API reports.
 const tabsFor = (counts: Record<string, number> | undefined): { key: LedgerTab; label: string }[] => {
   const extra = Object.keys(counts ?? {}).filter((k) => k !== "all" && !KNOWN_KINDS.includes(k));

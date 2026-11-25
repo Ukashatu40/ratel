@@ -135,6 +135,26 @@ class LineAudit(Base, TimestampMixin):
     reason: Mapped[str] = mapped_column(String(200))
 
 
+class CustomerSms(Base, TimestampMixin):
+    """An SMS to a customer, sent from 555 by the voice VM (docs/customer-sms.md).
+
+    Written in the same transaction as what it reports (an activation, a charged call), so it can
+    never fail that and is never lost. `dedupe_key` makes each one happen once: `welcome:<line>`,
+    `call:<call record>`. The text is final when queued: a call summary carries the balance then.
+    """
+
+    __tablename__ = "customer_sms"
+
+    sms_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    line_id: Mapped[int] = mapped_column(
+        ForeignKey("line.line_id", ondelete="RESTRICT"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))
+    dedupe_key: Mapped[str] = mapped_column(String(64), unique=True)
+    text: Mapped[str] = mapped_column(String(160))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class CustomerAudit(Base, TimestampMixin):
     """Every change to who a customer is on record as: registered, verified, rejected.
 

@@ -1,0 +1,17 @@
+# Runs ratel-calls.service every minute, so the SMS after a call comes within about a minute
+# (docs/customer-sms.md). Install as /etc/systemd/system/ratel-calls.timer, then:
+#   sudo systemctl enable --now ratel-calls.timer
+# Check it: systemctl list-timers ratel-calls.timer
+[Unit]
+Description=RatelBSS: charge finished calls every minute
+
+[Timer]
+# In the host's time (UTC), on the clock, 30 seconds into each minute. Persistent: a run missed while
+# the host was off happens as soon as it is back. systemd never starts a second run while one is going.
+OnCalendar=*:*:30
+Persistent=true
+AccuracySec=5s
+Unit=ratel-calls.service
+
+[Install]
+WantedBy=timers.target

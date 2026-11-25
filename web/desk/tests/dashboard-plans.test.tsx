@@ -1,6 +1,6 @@
 // The dashboard and plans screens against contract-shaped bodies (tests/fixtures/contract, checked against
 // contracts/openapi.yaml by tests/contract/test_desk_fixtures.py).
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
@@ -12,7 +12,9 @@ import { getPlans } from "../src/screens/plans/api";
 import DashboardScreen from "../src/screens/dashboard/DashboardScreen";
 import PlansScreen from "../src/screens/plans/PlansScreen";
 import dashboard from "./fixtures/contract/Dashboard.json";
-import planList from "./fixtures/contract/PlanList.json";
+import catalogue from "./fixtures/contract/Catalogue.demo.json";
+import auditPage from "./fixtures/contract/CatalogueAuditPage.demo.json";
+import { historyFromWire, type WireAuditPage } from "../src/screens/plans/contract";
 
 const fetchMock = vi.fn();
 const json = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -65,26 +67,51 @@ describe("dashboard screen", () => {
 });
 
 describe("plans", () => {
-  it("lists the plans on sale with their state", async () => {
+  const created = () => Promise.resolve(new Response(JSON.stringify({ offer_id: 5, replayed: false }), { status: 201, headers: { "Content-Type": "application/json" } }));
+
+  it("lists plans and bundles, on sale and retired, from the catalogue", async () => {
     realMode();
-    fetchMock.mockImplementation(() => json(planList));
+    fetchMock.mockImplementation(() => json(catalogue));
     const plans = await getPlans();
-    expect(fetchMock.mock.calls[0][0]).toBe("/v1/plans");
-    expect(plans.map((p) => [p.planId, p.status])).toEqual([["1", "on_sale"], ["2", "retired"]]);
-    expect(plans[0]).toMatchObject({ name: "Demo Weekly", priceKobo: 120000, channels: ["data"] });
+    expect(fetchMock.mock.calls[0][0]).toBe("/v1/catalogue");
+    expect(plans).toEqual([expect.objectContaining({ planId: "1", name: "Home 10 Mbps", onExhaustion: "slow", slowDlMbps: 2, channels: ["desk"], status: "on_sale" })]);
+    wrap(<PlansScreen />);
+    expect(await screen.findByText("Weekly 3GB", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByText("Old 1GB")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create bundle/i })).toBeEnabled();
+    expect(await screen.findByLabelText(/smallest top-up/i)).toHaveValue("20");
+    expect(screen.getByLabelText(/calls to other networks/i)).toHaveValue("20");
   });
 
-  it("is read-only against the real API: no create buttons, a plain note, and no bundle list", async () => {
+  it("publishes a bundle with the reason, the channels and an Idempotency-Key", async () => {
     realMode();
-    fetchMock.mockImplementation(() => json(planList));
-    wrap(<PlansScreen />, "/plans?open=plan:1");
-    expect(await screen.findByText("Demo Weekly", {}, { timeout: 5000 })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /create plan/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /create bundle/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/ops_cli/i)).toBeInTheDocument();
-    expect(screen.getByText(/cannot list bundles yet/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/kyc|retire/i)).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.every(([url]) => url === "/v1/plans")).toBe(true); // nothing invented was called
+    const user = userEvent.setup();
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => (init?.method === "POST" ? created() : json(catalogue)));
+    wrap(<PlansScreen />, "/plans?open=new:bundle");
+    await user.type(await screen.findByLabelText("Name", {}, { timeout: 5000 }), "Daily 500MB");
+    await user.type(screen.getByLabelText(/price/i), "100");
+    await user.type(screen.getByLabelText(/validity/i), "1");
+    await user.type(screen.getByLabelText(/data \(gb\)/i), "0.5");
+    expect(screen.getByText(/₦200 per GB/)).toBeInTheDocument();
+    await user.click(screen.getByLabelText("RatelPay page")); // off: desk, sms and ussd stay on
+    const submit = () => screen.getAllByRole("button", { name: /^create bundle$/i }).at(-1) as HTMLElement; // the drawer's, not the page's
+    await user.click(submit());
+    expect(screen.getByText(/say why/i)).toBeInTheDocument(); // no reason, nothing sent
+    await user.type(screen.getByLabelText(/reason for this change/i), "November price list");
+    await user.click(submit());
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(post?.[0]).toBe("/v1/catalogue/offers");
+    expect(JSON.parse(post?.[1].body)).toEqual({
+      kind: "bundle", name: "Daily 500MB", price_kobo: 10000, data_bytes: 500000000, validity_days: 1, channels: ["desk", "sms", "ussd"], reason: "November price list",
+    });
+    expect(post?.[1].headers["Idempotency-Key"]).toBeTruthy();
+  });
+
+  it("reads an offer's history from the catalogue audit trail", () => {
+    const history = historyFromWire(auditPage as WireAuditPage, "bundle", "2");
+    expect(history.map((h) => h.action)).toEqual(["Bundle published", "Bundle retired"]);
+    expect(history[1]).toMatchObject({ actor: "admin@example.test", detail: "November price list | was on_sale" });
   });
 
   it("can still create a plan on mock data", async () => {

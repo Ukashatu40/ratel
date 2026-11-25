@@ -5,7 +5,7 @@ import { formatWAT } from "../../lib/format";
 import { getOfferHistory, saveOffer } from "./api";
 import { ConfirmSaveDialog, RetireDialog } from "./Dialogs";
 import { build, type Errors, type FormState } from "./form";
-import { CHANNELS, type BundleInput, type Kind, type OfferStatus, type PlanInput } from "./types";
+import { CHANNELS, CHANNEL_LABEL, type BundleInput, type Kind, type OfferStatus, type PlanInput } from "./types";
 
 interface Props { kind: Kind; id: string | null; status: OfferStatus; initial: FormState; onClose: () => void }
 
@@ -19,6 +19,13 @@ function Field({ id, label, error, children, wide }: { id: string; label: string
   );
 }
 
+// What one GB costs, so prices can be compared across sizes while typing.
+function PerGb({ price, dataGb }: { price: string; dataGb: string }) {
+  const naira = Number(price), gb = Number(dataGb);
+  if (!(naira > 0) || !(gb > 0)) return null;
+  return <p className="muted plans-wide" style={{ margin: "-4px 0 4px" }}>That is ₦{(naira / gb).toLocaleString("en-NG", { maximumFractionDigits: 2 })} per GB.</p>;
+}
+
 // The create / edit drawer. Saving an existing plan or bundle first shows the "new purchases only" warning.
 export function OfferDrawer({ kind, id, status, initial, onClose }: Props) {
   const queryClient = useQueryClient();
@@ -28,13 +35,15 @@ export function OfferDrawer({ kind, id, status, initial, onClose }: Props) {
   const [errors, setErrors] = useState<Errors>({});
   const [confirm, setConfirm] = useState<PlanInput | BundleInput | null>(null);
   const [retiring, setRetiring] = useState(false);
+  const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState("");
   const [createKey] = useState(newIdempotencyKey); // one key for the create request, so a retry cannot create twice
   const readOnly = status === "retired";
   const word = kind === "plan" ? "plan" : "bundle";
 
   const history = useQuery({ queryKey: ["offer-history", kind, id], queryFn: () => getOfferHistory(kind, id as string), enabled: id !== null });
   const create = useMutation({
-    mutationFn: (value: PlanInput | BundleInput) => saveOffer(kind, null, value, createKey),
+    mutationFn: (value: PlanInput | BundleInput) => saveOffer(kind, null, value, createKey, reason.trim()),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: [kind === "plan" ? "plans" : "bundles"] }); onClose(); },
   });
 
@@ -52,7 +61,8 @@ export function OfferDrawer({ kind, id, status, initial, onClose }: Props) {
   const submit = () => {
     const { errors: found, value } = build(kind, form);
     setErrors(found);
-    if (!value) return;
+    setReasonError(reason.trim() ? "" : "Say why, for example: November price list");
+    if (!value || !reason.trim()) return;
     if (id === null) create.mutate(value); else setConfirm(value);
   };
 
@@ -78,11 +88,12 @@ export function OfferDrawer({ kind, id, status, initial, onClose }: Props) {
             <Field id="f-price" label="Price (₦)" error={errors.price}><input {...text("price")} inputMode="decimal" /></Field>
             <Field id="f-validity" label="Validity (days)" error={errors.validity}><input {...text("validity")} inputMode="numeric" /></Field>
             <Field id="f-dataGb" label="Data (GB)" error={errors.dataGb}><input {...text("dataGb")} inputMode="decimal" /></Field>
+            <PerGb price={form.price} dataGb={form.dataGb} />
             <div className="field">
               <label>Channels</label>
               <div className="plans-channels">
                 {CHANNELS.map((ch) => (
-                  <label key={ch}><input type="checkbox" checked={form.channels.includes(ch)} disabled={readOnly} onChange={() => toggle(ch)} /> {ch}</label>
+                  <label key={ch}><input type="checkbox" checked={form.channels.includes(ch)} disabled={readOnly} onChange={() => toggle(ch)} /> {CHANNEL_LABEL[ch]}</label>
                 ))}
               </div>
               {errors.channels && <span className="field__error">{errors.channels}</span>}
@@ -106,6 +117,11 @@ export function OfferDrawer({ kind, id, status, initial, onClose }: Props) {
               </>
             )}
           </div>
+          {!readOnly && (
+            <Field id="f-reason" label="Reason for this change (kept in the audit trail)" error={reasonError} wide>
+              <input id="f-reason" className="input" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="For example: November price list" />
+            </Field>
+          )}
           {create.isError && <div className="alert alert--danger" style={{ marginBottom: 12 }}>{create.error.message}</div>}
           {!readOnly && (
             <div className="plans-actions">
@@ -128,7 +144,7 @@ export function OfferDrawer({ kind, id, status, initial, onClose }: Props) {
         </>
       )}
 
-      {confirm && id !== null && <ConfirmSaveDialog kind={kind} id={id} name={initial.name} value={confirm} onClose={() => setConfirm(null)} onDone={() => { setConfirm(null); onClose(); }} />}
+      {confirm && id !== null && <ConfirmSaveDialog kind={kind} id={id} name={initial.name} value={confirm} reason={reason.trim()} onClose={() => setConfirm(null)} onDone={() => { setConfirm(null); onClose(); }} />}
       {retiring && id !== null && <RetireDialog kind={kind} id={id} name={initial.name} onClose={() => setRetiring(false)} onDone={() => { setRetiring(false); onClose(); }} />}
     </aside>
   );

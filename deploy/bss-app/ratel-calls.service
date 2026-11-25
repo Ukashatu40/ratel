@@ -1,0 +1,50 @@
+# The call-charging job: voice calls paid from airtime after they end, and the SMS that reports
+# each one (services/app/bss_money/services/call_charging.py, docs/customer-sms.md). Install as
+# /etc/systemd/system/ratel-calls.service (deploy/bss-app/README.md). It is started by
+# ratel-calls.timer, not enabled by itself. Off (exit 0, nothing done) until CALL_CHARGING_FROM is set.
+#
+# Exit 0: done. Exit 1: finished but a call failed (the next run tries it again, nothing is lost).
+# Exit 2: it could not run. See docs/runbooks/bss-app.md.
+[Unit]
+Description=RatelBSS: the call-charging job (calls paid from airtime, call SMS)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelbss
+Group=ratelbss
+WorkingDirectory=/opt/ratel-app/current
+# The same owner-only settings file as the app (database, CALL_CHARGING_FROM, VAT). Never in Git.
+EnvironmentFile=/etc/ratel-app/ratel-app.env
+Environment=PYTHONPATH=/opt/ratel-app/current/services
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/ratel-app/current/venv/bin/python -m app.bss_money.calls_cli
+# A run is seconds. Longer means something is stuck, and the next one should start fresh.
+TimeoutStartSec=50
+UMask=0077
+
+# Hardening: the same as the app. This job needs PostgreSQL and its own code.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ReadOnlyPaths=/opt/ratel-app /etc/ratel-app

@@ -1,4 +1,5 @@
-"""The rating job. Run every five minutes by a timer on bss-app (deploy/bss-app, M-27).
+"""The rating job: data. Run every five minutes by a timer on bss-app (deploy/bss-app, M-27).
+Voice calls are charged by their own job every minute (calls_cli).
 
     python -m app.bss_money.rating_cli
 

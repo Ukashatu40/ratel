@@ -2,7 +2,7 @@
 // top_up (a payment or a voucher), purchase (a plan or bundle), vat and correction. Anything else is shown as it comes.
 export type EntryKind = string;
 export type LedgerTab = string; // "all" or an entry kind
-export const KIND_LABEL: Record<string, string> = { top_up: "Top-ups", purchase: "Plan purchases", vat: "VAT", correction: "Corrections" };
+export const KIND_LABEL: Record<string, string> = { top_up: "Top-ups", purchase: "Plan purchases", vat: "VAT", correction: "Corrections", call: "Calls" };
 export const KNOWN_KINDS = Object.keys(KIND_LABEL);
 
 // One row of the append-only ledger. Money is whole kobo; credits are positive and debits negative.
