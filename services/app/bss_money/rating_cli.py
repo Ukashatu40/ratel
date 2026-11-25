@@ -122,14 +122,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         # Voice calls are paid from airtime after they end (services/call_charging.py). Charging
         # first would let a call take money a top-up was about to turn into data; data first.
-        calls = charge_calls(call_scope, vat_rate_bps=settings.vat_rate_bps)
+        # Only once CALL_CHARGING_FROM is set, so calls from before launch are never charged.
+        calls_failed = 0
+        if settings.call_charging_from is None:
+            log_event(log, logging.INFO, "calls.charging_off")
+        else:
+            calls = charge_calls(
+                call_scope,
+                vat_rate_bps=settings.vat_rate_bps,
+                charge_from=settings.call_charging_from,
+            )
+            calls_failed = calls.failed
     except SQLAlchemyError as exc:
         # Type only: a driver message can carry the database host and user.
         log_event(log, logging.ERROR, "rating.failed", exc_type=type(exc).__name__)
         return 2
     finally:
         engine.dispose()
-    return 1 if run.failures or calls.failed else 0
+    return 1 if run.failures or calls_failed else 0
 
 
 if __name__ == "__main__":

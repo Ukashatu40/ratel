@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AwareDatetime, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     # Whether the rating job buys a line's plan again when its wallet covers it, so a top-up brings
     # data back by itself. TODO(PRD): a product decision, so it is off until the deployment says so.
     rating_auto_renew: bool = False
+    # When voice calls start being paid from airtime (docs/catalogue.md), with its UTC offset, for
+    # example 2026-11-25T12:00:00+00:00. Calls that ended before it are marked done, at no cost.
+    # Unset: the rating job charges no call at all, so a deployment never charges by accident the
+    # test calls made before launch.
+    call_charging_from: AwareDatetime | None = None
+
+    @field_validator("call_charging_from", mode="before")
+    @classmethod
+    def _empty_start_means_off(cls, value: object) -> object:
+        """`CALL_CHARGING_FROM=` with nothing after it means unset: no call is charged."""
+        return None if isinstance(value, str) and not value.strip() else value
 
     @property
     def meter_api_key_value(self) -> str | None:

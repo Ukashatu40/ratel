@@ -20,6 +20,9 @@ rates) is kept by an admin in RatelDesk. Nobody changes prices in code or SQL.
   ledger entry, as for purchases. The rating job (every five minutes) charges each call record once.
 - The wallet never goes below zero. A call the wallet cannot cover takes what is there and the rest
   is recorded as uncovered (`call_charge.uncovered_kobo`).
+- Charging starts at `CALL_CHARGING_FROM` (in `ratel-app.env`, a time with its UTC offset). Calls
+  that ended before it are marked done at no cost (`call_charge` row with rate 0, charged 0,
+  uncovered 0): test and rehearsal calls were never priced. Unset, no call is charged at all.
 
 ## Starting catalogue (2026-11-24)
 
