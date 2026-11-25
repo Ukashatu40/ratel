@@ -33,6 +33,10 @@ Without RATEL_PAY_URL the menu still works and answers that the option is not av
 The same process also serves the SMS short number 647 (SmsService below), because USSD over IMS
 only works on some Android phones: iPhones need Apple's carrier bundle and feature phones dial the
 code as a call. Text messages reach every phone.
+
+`python -I ussd_as.py --send-sms 234XXXXXXXXXX` (text on standard input) sends one SMS from 647
+and exits: 0 when the SMSC took it. The welcome SMS sender (welcome_sms.py) runs it inside this
+container with `docker exec`, because the SMSC takes requests from this address only.
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ import random
 import re
 import ssl
 import string
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -890,5 +895,23 @@ async def main():
     await service.housekeeping()
 
 
+def send_sms_cli(args: list[str]) -> int:
+    """One SMS from 647 to args[0], the text read from standard input. 0 when the SMSC took it."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if len(args) != 1 or not re.fullmatch(r"234[0-9]{10}", args[0]):
+        log.error("send-sms: give one number in 234 form")
+        return 2
+    text = sys.stdin.read().strip()
+    if not text or len(text) > 160:
+        log.error("send-sms: the text must be 1 to 160 characters (one SMS)")
+        return 2
+    sms = SmsService(SmsCommands(PayApi(None, None)), os.environ.get("SMS_SMSC_URL", "http://172.22.0.33:7090"), set())
+    ok = sms.send(args[0], text)
+    log.info("send-sms: to %s %s", args[0], "queued at the SMSC" if ok else "NOT taken by the SMSC")
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--send-sms"]:
+        sys.exit(send_sms_cli(sys.argv[2:]))
     asyncio.run(main())

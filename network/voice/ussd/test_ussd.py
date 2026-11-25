@@ -276,6 +276,23 @@ def sms_tests():
         if "1234567890" in out or "22222222" in out:
             failures += 1
             print("FAIL: a card number or PIN reached the log")
+    print("== --send-sms (one SMS from 647, as the welcome sender uses it)")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(SERVICE_SETTINGS)}
+    env["SMS_SMSC_URL"] = "http://127.0.0.1:17090"
+    here = os.path.dirname(os.path.abspath(__file__))
+    cli = [sys.executable, "-I", os.path.join(here, "ussd_as.py"), "--send-sms"]
+    welcome = "Welcome to Ratelplus! Your number is 08000000903."
+    before = len(FakeSmsc.sent)
+    done = subprocess.run(cli + ["2348000000903"], input=welcome, env=env, capture_output=True, text=True, timeout=20)
+    got = FakeSmsc.sent[before:]
+    ok = done.returncode == 0 and got == [{"msisdn": "647", "to": "2348000000903", "text": welcome}]
+    print(f"   {'ok ' if ok else 'FAIL'} sends one SMS from 647 -> exit {done.returncode}, {got}")
+    failures += not ok
+    for args, text in [(["0800000903"], welcome), (["2348000000903"], ""), (["2348000000903"], "x" * 161), ([], welcome)]:
+        done = subprocess.run(cli + args, input=text, env=env, capture_output=True, text=True, timeout=20)
+        ok = done.returncode == 2 and len(FakeSmsc.sent) == before + 1
+        print(f"   {'ok ' if ok else 'FAIL'} refuses {args or 'no number'} / {len(text)} chars -> exit {done.returncode}")
+        failures += not ok
     smsc.shutdown()
     proc = run({"SMS_PORT": "18647", "SMS_SMSC_URL": "http://127.0.0.1:17090", "SMS_ALLOWED": "172.22.0.33"})
     try:

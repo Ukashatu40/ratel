@@ -81,6 +81,29 @@ UDP towards the S-CSCF, with the SIP retransmission timers. Standard library onl
 | `run-ussd.sh` | starts the container (`--stop` removes it) and checks both ports |
 | `scscf-ussd-rule.cfg` | the S-CSCF block, for `route[FINAL_ORIG]` in `kamailio_scscf.cfg` |
 | `apply-smsc-647.py` | adds 647 to `kamailio_smsc.cfg` (dry run by default, `--apply` writes with a backup) |
+| `welcome_sms.py` | sends the welcome SMS of new lines once they register (one pass) |
+| `test_welcome_sms.py` | its tests, with a fake bss-app and a fake `docker`: `python3 -I test_welcome_sms.py` |
+| `install-welcome-timer.sh` | installs the systemd timer that runs it every minute (`--stop` removes it) |
+
+## Welcome SMS
+
+Every line activated in RatelDesk gets one SMS from 647 with its number (docs/welcome-sms.md):
+
+```
+Welcome to Ratelplus! Your number is 0XXXXXXXXXX. Text MENU to 647 for balance, bundles and top-up.
+```
+
+bss-app queues it at activation. `welcome_sms.py` runs every minute on this VM (systemd timer
+`ratel-welcome-sms.timer`, installed by `./install-welcome-timer.sh`) and, for each welcome due:
+
+1. asks the S-CSCF whether the number is registered (`kamcmd ulscscf.showimpu tel:<number>`:
+   `state: registered` with a contact). Not yet: it waits for a later pass, because the SMSC drops
+   an SMS it cannot deliver after about a minute;
+2. sends it from 647 through this container (`ussd_as.py --send-sms`, the address the SMSC takes);
+3. tells bss-app it was sent. What was handed to the SMSC is kept in `welcome-sent.txt` first, so
+   a failure to tell bss-app never sends a second SMS.
+
+Logs: `journalctl -u ratel-welcome-sms.service`. Off: `./install-welcome-timer.sh --stop`.
 
 ## Payments
 
