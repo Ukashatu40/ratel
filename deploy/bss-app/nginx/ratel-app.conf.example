@@ -134,7 +134,7 @@ server {
         proxy_read_timeout 30s;
     }
 
-    # The SMS short number 647 and USSD (the ussd container on the voice VM): self-care by the
+    # The SMS short number 555 and USSD (the ussd container on the voice VM): self-care by the
     # number the network asserted (docs/catalogue.md). Not public: the voice VM only, since a caller
     # here could read any line's balance. The included file adds the payments key, as for RatelPay.
     # The customer SMS queue is here too: the voice VM sends them (docs/customer-sms.md).

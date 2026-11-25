@@ -1,4 +1,4 @@
-"""Self-care by phone number for SMS 647 and USSD, over HTTP on SQLite (docs/catalogue.md)."""
+"""Self-care by phone number for SMS 555 and USSD, over HTTP on SQLite (docs/catalogue.md)."""
 
 from __future__ import annotations
 
@@ -153,7 +153,7 @@ def test_bundles_can_be_listed_for_one_channel(client: TestClient) -> None:
 
 WELCOME = (
     "Welcome to Ratelplus! Your number is 08000010010. "
-    "Text MENU to 647 for balance, bundles and top-up."
+    "Text MENU to 555 for balance, bundles and top-up."
 )
 
 

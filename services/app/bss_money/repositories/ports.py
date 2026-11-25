@@ -175,7 +175,7 @@ class PendingSms:
 
 
 class CustomerSmsRepository(Protocol):
-    """SMS to customers, sent from 647 by the voice VM (`customer_sms`, docs/customer-sms.md)."""
+    """SMS to customers, sent from 555 by the voice VM (`customer_sms`, docs/customer-sms.md)."""
 
     def add(self, *, line_id: int, kind: str, dedupe_key: str, text: str) -> None:
         """Queue one, once per `dedupe_key`: a second add with the same key changes nothing."""

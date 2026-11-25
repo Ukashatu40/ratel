@@ -11,7 +11,7 @@ def test_the_welcome_names_the_number_as_customers_dial_it_and_fits_one_sms() ->
     text = welcome_text("2348000010010")
     assert text == (
         "Welcome to Ratelplus! Your number is 08000010010. "
-        "Text MENU to 647 for balance, bundles and top-up."
+        "Text MENU to 555 for balance, bundles and top-up."
     )
     assert len(text) <= SMS_LIMIT and text.isascii()
 

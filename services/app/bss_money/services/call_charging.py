@@ -12,7 +12,7 @@ all, and the row's key (the call record) makes a second charge impossible.
 - Calls that ended before charging started (CALL_CHARGING_FROM) are marked done and cost nothing:
   their row has rate 0, charged 0 and uncovered 0. Nobody was quoted a price for them.
 - Every call that cost something queues an SMS to the caller in the same transaction: duration,
-  cost, what was unpaid and the balance after (docs/customer-sms.md). Sent from 647 by the voice VM.
+  cost, what was unpaid and the balance after (docs/customer-sms.md). Sent from 555 by the voice VM.
 """
 
 from __future__ import annotations

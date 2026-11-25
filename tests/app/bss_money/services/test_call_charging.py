@@ -253,11 +253,11 @@ def test_each_charged_call_queues_one_sms_with_the_balance_after(
     assert _sms(factory) == [
         (
             "call:1",
-            "Last call to 08000010011: 1m 00s, cost N10.00. Balance N990.00. Text MENU to 647.",
+            "Last call to 08000010011: 1m 00s, cost N10.00. Balance N990.00. Text MENU to 555.",
         ),
         (
             "call:2",
-            "Last call to 08031234567: 30s, cost N10.00. Balance N980.00. Text MENU to 647.",
+            "Last call to 08031234567: 30s, cost N10.00. Balance N980.00. Text MENU to 555.",
         ),
     ]
 
@@ -272,7 +272,7 @@ def test_a_call_the_wallet_could_not_cover_says_what_was_unpaid(
         (
             "call:1",
             "Last call to 08031234567: 1m 00s, cost N20.00, N15.00 unpaid. Balance N0.00. "
-            "Text BUY 500 to 647 to top up.",
+            "Text BUY 500 to 555 to top up.",
         )
     ]
 

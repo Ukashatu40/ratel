@@ -1543,7 +1543,7 @@ paths:
     get:
       tags: [RatelBSS]
       operationId: bss_get_airtime_options
-      summary: The airtime amounts the SMS 647 and USSD menus offer, and the card payment limits.
+      summary: The airtime amounts the SMS 555 and USSD menus offer, and the card payment limits.
       description: |
         Set by an admin in RatelDesk (docs/catalogue.md), kept inside the deployment's gateway
         limits. Reached by the voice VM through the reverse proxy, which adds the key.
@@ -1562,7 +1562,7 @@ paths:
     get:
       tags: [RatelBSS]
       operationId: bss_get_line_balance_by_number
-      summary: A line's airtime and the data it has left, by phone number, for SMS 647 and USSD.
+      summary: A line's airtime and the data it has left, by phone number, for SMS 555 and USSD.
       description: |
         The number is the one the network asserted for the sender (the SMS centre or the S-CSCF),
         never one a customer typed. Not public: the reverse proxy lets only the voice VM reach this
@@ -1589,7 +1589,7 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_buy_bundle_by_number
-      summary: Buy a bundle from a line's airtime, by phone number, for SMS 647 and USSD.
+      summary: Buy a bundle from a line's airtime, by phone number, for SMS 555 and USSD.
       description: |
         The same purchase as RatelDesk's (`bss_buy_offer`): the wallet is debited, VAT is its own
         entry, and the line gets an allowance bucket. The bundle must be on sale and list the
@@ -1630,7 +1630,7 @@ paths:
       description: |
         Queued by the app in the same transaction as what each reports: the welcome after an
         activation, the summary after each charged call (docs/customer-sms.md). Only lines in
-        service, oldest first. The voice VM sends each from 647 once the number is registered on
+        service, oldest first. The voice VM sends each from 555 once the number is registered on
         the IMS, then marks it sent. Not public: voice VM only, through the reverse proxy, which
         adds the key.
       parameters:

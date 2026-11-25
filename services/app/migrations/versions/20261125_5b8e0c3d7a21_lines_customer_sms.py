@@ -4,7 +4,7 @@ Revision ID: 5b8e0c3d7a21
 Revises: c4a7f2e91b35
 Create Date: 2026-11-25 04:00:00+00:00
 
-SMS the app sends to customers from 647, through the voice VM (docs/customer-sms.md, decided by
+SMS the app sends to customers from 555, through the voice VM (docs/customer-sms.md, decided by
 the project lead on 2026-11-25):
 
 - `customer_sms`: one row per SMS, queued in the same transaction as what it reports: the welcome

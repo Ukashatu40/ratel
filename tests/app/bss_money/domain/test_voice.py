@@ -61,7 +61,7 @@ def test_the_call_summary_fits_one_plain_sms() -> None:
         dialled="2348031234567", seconds=135, cost_kobo=2_250, uncovered_kobo=0, balance_kobo=47_750
     )
     assert (
-        text == "Last call to 08031234567: 2m 15s, cost N22.50. Balance N477.50. Text MENU to 647."
+        text == "Last call to 08031234567: 2m 15s, cost N22.50. Balance N477.50. Text MENU to 555."
     )
     worst = call_summary_text(
         dialled="+44 20 7946 0000 1234",
@@ -70,7 +70,7 @@ def test_the_call_summary_fits_one_plain_sms() -> None:
         uncovered_kobo=999_999_999,
         balance_kobo=0,
     )
-    assert worst.endswith("unpaid. Balance N0.00. Text BUY 500 to 647 to top up.")
+    assert worst.endswith("unpaid. Balance N0.00. Text BUY 500 to 555 to top up.")
     assert len(worst) <= 160 and worst.isascii()
 
 

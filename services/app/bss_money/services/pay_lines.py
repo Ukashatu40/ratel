@@ -1,4 +1,4 @@
-"""What the SMS short number 647 and USSD may do for a line, by its phone number.
+"""What the SMS short number 555 and USSD may do for a line, by its phone number.
 
 Reached only through the reverse proxy, which lets the voice VM in on exact paths and adds the
 payments key (deploy/bss-app/nginx). The number comes from the network (the SMS centre or the

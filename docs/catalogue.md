@@ -11,7 +11,7 @@ rates) is kept by an admin in RatelDesk. Nobody changes prices in code or SQL.
 - A plan or bundle that has been sold is never edited. To change one, retire it and publish a new
   one. Customers keep the terms they bought.
 - An offer lists the channels it is sold on: `desk`, `pay` (the RatelPay page), `sms` (short number
-  647) and `ussd`.
+  555) and `ussd`.
 - Airtime: the smallest top-up is 20 naira where no payment processor sets a floor. Card payments
   keep the gateway's floor (100 naira at Paystack) and the deployment's limits
   (`PAYMENT_MIN_KOBO`, `PAYMENT_MAX_KOBO`); the admin's card limits must stay inside them.
@@ -51,6 +51,6 @@ Entered by an admin in RatelDesk, not seeded by code. To be checked against our 
 | ---- | ---- |
 | Rules | `services/app/bss_money/domain/catalogue.py`, `domain/voice.py` |
 | Catalogue API (RatelDesk) | `GET /v1/catalogue`, `POST /v1/catalogue/offers`, `POST /v1/catalogue/offers/{kind}/{id}/retire`, `PUT /v1/catalogue/settings`, `GET /v1/catalogue/audit` |
-| Self-care by number (SMS 647, USSD) | `GET /v1/pay/airtime`, `GET /v1/pay/lines/{msisdn}/balance`, `POST /v1/pay/lines/{msisdn}/purchases`, `GET /v1/pay/bundles?channel=` |
+| Self-care by number (SMS 555, USSD) | `GET /v1/pay/airtime`, `GET /v1/pay/lines/{msisdn}/balance`, `POST /v1/pay/lines/{msisdn}/purchases`, `GET /v1/pay/bundles?channel=` |
 | Call charging | `services/app/bss_money/services/call_charging.py`, run by `rating_cli` |
 | Proxy rule for the voice VM | `deploy/bss-app/nginx/add-selfcare-paths.py` |

@@ -75,7 +75,7 @@ def test_a_call_is_charged_and_its_sms_queued(
     assert sms.kind == "call" and sms.dedupe_key == f"call:{charge.call_record_id}"
     assert (
         sms.text
-        == "Last call to 08031234567: 1m 00s, cost N20.00. Balance N480.00. Text MENU to 647."
+        == "Last call to 08031234567: 1m 00s, cost N20.00. Balance N480.00. Text MENU to 555."
     )
 
 

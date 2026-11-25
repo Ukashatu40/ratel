@@ -36,5 +36,5 @@ def check_text(text: str) -> str:
 def welcome_text(msisdn: str) -> str:
     return check_text(
         f"Welcome to Ratelplus! Your number is {national_number(msisdn)}. "
-        "Text MENU to 647 for balance, bundles and top-up."
+        "Text MENU to 555 for balance, bundles and top-up."
     )

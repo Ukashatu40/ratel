@@ -94,7 +94,7 @@ def call_summary_text(
 ) -> str:
     """The SMS after a charged call (docs/customer-sms.md). At most 125 characters, plain ASCII."""
     unpaid = f", {naira_text(uncovered_kobo)} unpaid" if uncovered_kobo > 0 else ""
-    advice = "Text BUY 500 to 647 to top up." if uncovered_kobo > 0 else "Text MENU to 647."
+    advice = "Text BUY 500 to 555 to top up." if uncovered_kobo > 0 else "Text MENU to 555."
     cost = naira_text(cost_kobo)
     return (
         f"Last call to {dialled_text(dialled)}: {duration_text(seconds)}, cost {cost}{unpaid}. "

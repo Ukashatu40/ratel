@@ -1,4 +1,4 @@
-"""Self-care by phone number, for the SMS short number 647 and USSD (docs/catalogue.md).
+"""Self-care by phone number, for the SMS short number 555 and USSD (docs/catalogue.md).
 
 Like the other RatelPay routes these carry the key the reverse proxy adds (`require_pay_key`), and
 the proxy lets only the voice VM reach them (deploy/bss-app/nginx). They are not public: a caller

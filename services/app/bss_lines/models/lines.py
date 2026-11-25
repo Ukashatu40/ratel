@@ -136,7 +136,7 @@ class LineAudit(Base, TimestampMixin):
 
 
 class CustomerSms(Base, TimestampMixin):
-    """An SMS to a customer, sent from 647 by the voice VM (docs/customer-sms.md).
+    """An SMS to a customer, sent from 555 by the voice VM (docs/customer-sms.md).
 
     Written in the same transaction as what it reports (an activation, a charged call), so it can
     never fail that and is never lost. `dedupe_key` makes each one happen once: `welcome:<line>`,

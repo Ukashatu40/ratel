@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the SMS 647 and USSD self-care paths to a live nginx config (docs/catalogue.md).
+"""Add the SMS 555 and USSD self-care paths to a live nginx config (docs/catalogue.md).
 
     sudo python3 add-selfcare-paths.py ratel-app.conf.example /etc/nginx/conf.d/ratel-app.conf
 
@@ -21,7 +21,8 @@ import sys
 from pathlib import Path
 
 BLOCK = re.compile(
-    r'    # The SMS short number 647 and USSD.*?\n    location ~ "\^/v1/pay/\(airtime.*?\n    \}\n',
+    r"    # The SMS short number [0-9]+ and USSD.*?\n"
+    r'    location ~ "\^/v1/pay/\(airtime.*?\n    \}\n',
     re.S,
 )
 ANCHOR = "    # Staff sign-in: office and VPN only, and slow."
