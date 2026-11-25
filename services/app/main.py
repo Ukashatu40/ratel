@@ -31,6 +31,7 @@ from app.bss_money.repositories.ports import (
 from app.bss_money.repositories.sql import (
     SqlBundleCatalog,
     SqlCatalogueRepository,
+    SqlCustomerSmsRepository,
     SqlLedgerRepository,
     SqlLineLookup,
     SqlMoneyReadRepository,
@@ -132,6 +133,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 lines=SqlLineLookup(session),
                 ledger=SqlLedgerRepository(session),
                 buckets=SqlRatingRepository(session),
+                sms=SqlCustomerSmsRepository(session),
             )
 
     app.state.pay_line_scope = pay_line_scope

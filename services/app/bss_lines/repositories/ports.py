@@ -51,6 +51,10 @@ class LinesRepository(Protocol):
         """Append an audit entry for a state change."""
         ...
 
+    def add_welcome_sms(self, line_id: int, msisdn: str) -> None:
+        """Queue the line's welcome SMS, once: a second call for the same line changes nothing."""
+        ...
+
     def commit(self) -> None:
         """Commit the current transaction."""
         ...

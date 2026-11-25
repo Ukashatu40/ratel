@@ -1,15 +1,17 @@
-"""Self-care by phone number, for the SMS short number 647 and USSD (docs/catalogue.md).
+"""Self-care by phone number, for the SMS short number 555 and USSD (docs/catalogue.md).
 
 Like the other RatelPay routes these carry the key the reverse proxy adds (`require_pay_key`), and
 the proxy lets only the voice VM reach them (deploy/bss-app/nginx). They are not public: a caller
 who could reach them could read any line's balance.
+
+The customer SMS queue (docs/customer-sms.md) is here for the same reason: the voice VM sends them.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Path, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.bss_lines.api.deps import now_utc
@@ -27,6 +29,7 @@ router = APIRouter(prefix="/v1/pay", dependencies=[Depends(require_pay_key)])
 
 Msisdn = Annotated[str, Path(pattern=r"^234[0-9]{10}$")]
 RequiredKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=100)]
+OptionalKey = Annotated[str | None, Header(alias="Idempotency-Key", min_length=1, max_length=100)]
 
 
 class AirtimeOut(BaseModel):
@@ -54,6 +57,23 @@ class BoughtOut(BaseModel):
     balance_kobo: int
     valid_to: int | None
     replayed: bool
+
+
+class CustomerSmsOut(BaseModel):
+    sms_id: int
+    line_id: int
+    msisdn: str
+    kind: str
+    text: str
+
+
+class CustomerSmsListOut(BaseModel):
+    items: list[CustomerSmsOut]
+
+
+class CustomerSmsSentOut(BaseModel):
+    sms_id: int
+    sent_at: int
 
 
 def _unknown() -> ApiError:
@@ -133,3 +153,36 @@ def buy_bundle(request: Request, msisdn: Msisdn, body: BuyBundleIn, key: Require
         valid_to=None if result.valid_to is None else to_epoch(result.valid_to),
         replayed=result.replayed,
     )
+
+
+@router.get("/customer-sms", response_model=CustomerSmsListOut)
+def list_customer_sms(
+    request: Request, limit: Annotated[int, Query(ge=1, le=100)] = 50
+) -> CustomerSmsListOut:
+    """SMS to customers not sent yet (welcome, call summaries), oldest first, with their text."""
+    due = pay_lines.sms_due(request.app.state.pay_line_scope, limit)
+    return CustomerSmsListOut(
+        items=[
+            CustomerSmsOut(
+                sms_id=s.sms_id, line_id=s.line_id, msisdn=s.msisdn, kind=s.kind, text=s.text
+            )
+            for s in due
+        ]
+    )
+
+
+@router.post("/customer-sms/{sms_id}/sent", response_model=CustomerSmsSentOut)
+def mark_customer_sms_sent(
+    request: Request,
+    sms_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    key: OptionalKey = None,
+) -> CustomerSmsSentOut:
+    """Record that the SMS went to the SMS centre. A repeat changes nothing."""
+    del key  # marking sent is idempotent by itself; the key is accepted like every state change
+    try:
+        sent_at = pay_lines.mark_sms_sent(
+            request.app.state.pay_line_scope, sms_id, now_utc(request)
+        )
+    except pay_lines.NoSuchSms:
+        raise ApiError(404, "not_found", "There is no such SMS.") from None
+    return CustomerSmsSentOut(sms_id=sms_id, sent_at=to_epoch(sent_at))

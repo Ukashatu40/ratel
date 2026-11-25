@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.bss_lines.domain.state_machine import LineState
-from app.bss_lines.models.lines import Customer, Line, LineAudit, Number, Plan, Sim
+from app.bss_lines.models.lines import Customer, CustomerSms, Line, LineAudit, Number, Plan, Sim
 from app.bss_lines.repositories.idempotency import (
     IdempotencyConflictError,
     InMemoryIdempotencyStore,
@@ -266,3 +266,40 @@ def test_activation_refused_when_ratellink_errors(
         _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k")
     session.refresh(line)
     assert line.state == LineState.AWAITING_ACTIVATION.value
+
+
+def test_activation_queues_one_welcome_sms_in_the_same_transaction(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    line = _make_line(session)
+    client = FakeRatelLinkClient()
+    _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k")
+    _activate(repo, client, store, line.line_id, actor="a", idempotency_key="k")  # a replay
+    rows = session.query(CustomerSms).all()
+    assert [(r.line_id, r.kind, r.dedupe_key, r.sent_at) for r in rows] == [
+        (line.line_id, "welcome", f"welcome:{line.line_id}", None)
+    ]
+    assert rows[0].text.startswith("Welcome to Ratelplus! Your number is 0")
+
+
+def test_a_refused_or_failed_activation_queues_no_welcome_sms(
+    session: Session, repo: SqlLinesRepository, store: InMemoryIdempotencyStore
+) -> None:
+    from app.bss_lines.services.ratel_link_client import RatelLinkError
+
+    unpaid = _make_line(session)
+    with pytest.raises(ActivationError):
+        _activate(
+            repo,
+            FakeRatelLinkClient(),
+            store,
+            unpaid.line_id,
+            actor="a",
+            idempotency_key="k1",
+            paid=False,
+        )
+    failing = FakeRatelLinkClient(fail_on_activate=RatelLinkError("boom", status=503))
+    with pytest.raises(RatelLinkError):
+        _activate(repo, failing, store, unpaid.line_id, actor="a", idempotency_key="k2")
+    session.rollback()
+    assert session.query(CustomerSms).count() == 0

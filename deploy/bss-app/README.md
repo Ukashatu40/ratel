@@ -26,6 +26,7 @@ Owner: Software team (project lead). TODO: confirm host details and how deployme
 | `ratel-app.service` | The app. Runs as the unprivileged user `ratelbss`, no capabilities, listens on `127.0.0.1:8000` |
 | `ratel-app.env.example` | The app's settings, with placeholders |
 | `ratel-rating.service`, `.timer` | The rating job every five minutes (usage, out of data, restore, and renewal if turned on) |
+| `ratel-calls.service`, `.timer` | Call charging every minute: calls paid from airtime and the SMS after each one (off until `CALL_CHARGING_FROM` is set) |
 | `ratel-ledger-check.service`, `.timer` | The nightly check that every wallet equals its ledger |
 | `ratel-pgbackup.sh`, `ratel-pgbackup.service`, `.timer` | The nightly dump of the PostgreSQL database, kept on the VM (see "Backups") |
 | `postgres-roles.sql` | The two database roles: an owner for migrations, and a runtime role that cannot change the schema |
@@ -72,6 +73,7 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    REL=ratel-app-$(git rev-parse --short HEAD)
    scp /tmp/$REL.tar.gz deploy/bss-app/install-release.sh deploy/bss-app/ratel-app.service \
      deploy/bss-app/ratel-rating.service deploy/bss-app/ratel-rating.timer \
+     deploy/bss-app/ratel-calls.service deploy/bss-app/ratel-calls.timer \
      deploy/bss-app/ratel-ledger-check.service deploy/bss-app/ratel-ledger-check.timer \
      deploy/bss-app/ratel-app.env.example deploy/bss-app/nginx/ratel-app.conf.example \
      deploy/bss-app/nginx/ratel-pay-key.conf.example <bss-app>:/tmp/
@@ -141,13 +143,13 @@ needed), PostgreSQL 16 (the version CI tests against) and Redis 7. On another OS
    on the host it is served from, so it needs no setting. Open `https://<host>/` from inside the range and sign in with a
    staff account (`staff_cli create`). From outside the range the answer is 403, which is right.
 
-9. **The timers** (after the app answers `healthz` and the migrations are done). Copy the four files, check them, and
+9. **The timers** (after the app answers `healthz` and the migrations are done). Copy the six files, check them, and
    enable the timers (not the services, which the timers start):
    ```bash
-   sudo cp /tmp/ratel-rating.service /tmp/ratel-rating.timer /tmp/ratel-ledger-check.service \
-     /tmp/ratel-ledger-check.timer /etc/systemd/system/ && sudo systemctl daemon-reload
-   sudo systemd-analyze verify /etc/systemd/system/ratel-rating.{service,timer} /etc/systemd/system/ratel-ledger-check.{service,timer}
-   sudo systemctl enable --now ratel-rating.timer ratel-ledger-check.timer
+   sudo cp /tmp/ratel-rating.service /tmp/ratel-rating.timer /tmp/ratel-calls.service /tmp/ratel-calls.timer \
+     /tmp/ratel-ledger-check.service /tmp/ratel-ledger-check.timer /etc/systemd/system/ && sudo systemctl daemon-reload
+   sudo systemd-analyze verify /etc/systemd/system/ratel-{rating,calls,ledger-check}.{service,timer}
+   sudo systemctl enable --now ratel-rating.timer ratel-calls.timer ratel-ledger-check.timer
    systemctl list-timers 'ratel-*'
    sudo systemctl start ratel-rating.service; systemctl status ratel-rating.service --no-pager | head -8
    ```

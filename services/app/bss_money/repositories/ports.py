@@ -166,6 +166,31 @@ class LineLookup(Protocol):
 
 
 @dataclass(frozen=True)
+class PendingSms:
+    sms_id: int
+    line_id: int
+    msisdn: str
+    kind: str
+    text: str
+
+
+class CustomerSmsRepository(Protocol):
+    """SMS to customers, sent from 555 by the voice VM (`customer_sms`, docs/customer-sms.md)."""
+
+    def add(self, *, line_id: int, kind: str, dedupe_key: str, text: str) -> None:
+        """Queue one, once per `dedupe_key`: a second add with the same key changes nothing."""
+        ...
+
+    def pending(self, limit: int) -> list[PendingSms]:
+        """Unsent SMS of lines in service (active, out of data, expired), oldest first."""
+        ...
+
+    def mark_sent(self, sms_id: int, at: datetime) -> datetime | None:
+        """Record it sent (the first time only) and return when; None if there is no such SMS."""
+        ...
+
+
+@dataclass(frozen=True)
 class RedemptionRepositories:
     """Everything one redemption touches, all on the same transaction."""
 
@@ -543,6 +568,7 @@ class CallChargeRepositories:
     calls: CallChargeRepository
     ledger: LedgerRepository
     catalogue: CatalogueRepository
+    sms: CustomerSmsRepository
 
 
 CallChargeScope = Callable[[], AbstractContextManager[CallChargeRepositories]]

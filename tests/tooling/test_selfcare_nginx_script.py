@@ -1,4 +1,4 @@
-"""The script that adds the SMS 647 and USSD self-care block to a live nginx config."""
+"""The script that adds the SMS 555 and USSD self-care block to a live nginx config."""
 
 from __future__ import annotations
 
@@ -72,3 +72,26 @@ def test_running_it_twice_changes_nothing() -> None:
 def test_a_file_it_does_not_know_is_refused() -> None:
     with pytest.raises(ValueError):
         tool.patch("server {\n}\n", TEMPLATE)
+
+
+def test_an_older_self_care_block_is_replaced_with_the_voice_address_from_calls() -> None:
+    current = _filled(TEMPLATE)
+    older = current.replace("|customer-sms(/[0-9]+/sent)?", "", 1)
+    assert older != current
+    older = older.replace(
+        f"allow {VOICE};\n        deny  all;\n        limit_req zone=ratel_pay",
+        "allow 192.0.2.99;\n        deny  all;\n        limit_req zone=ratel_pay",
+    )
+    new = tool.patch(older, TEMPLATE)
+    block = tool.BLOCK.search(new)
+    assert block is not None and "customer-sms" in block.group(0)
+    # the address comes from `location = /v1/calls`, the voice VM's other path
+    assert re.findall(r"allow ([^;]+);", block.group(0)) == [VOICE]
+    assert new.replace(block.group(0), "") == older.replace(tool.BLOCK.search(older).group(0), "")  # type: ignore[union-attr]
+
+
+def test_a_live_block_written_for_the_old_short_number_647_is_replaced() -> None:
+    current = _filled(TEMPLATE)
+    old = current.replace("short number 555 and USSD", "short number 647 and USSD")
+    assert old != current
+    assert tool.patch(old, TEMPLATE) == current

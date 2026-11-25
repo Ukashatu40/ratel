@@ -1543,7 +1543,7 @@ paths:
     get:
       tags: [RatelBSS]
       operationId: bss_get_airtime_options
-      summary: The airtime amounts the SMS 647 and USSD menus offer, and the card payment limits.
+      summary: The airtime amounts the SMS 555 and USSD menus offer, and the card payment limits.
       description: |
         Set by an admin in RatelDesk (docs/catalogue.md), kept inside the deployment's gateway
         limits. Reached by the voice VM through the reverse proxy, which adds the key.
@@ -1562,7 +1562,7 @@ paths:
     get:
       tags: [RatelBSS]
       operationId: bss_get_line_balance_by_number
-      summary: A line's airtime and the data it has left, by phone number, for SMS 647 and USSD.
+      summary: A line's airtime and the data it has left, by phone number, for SMS 555 and USSD.
       description: |
         The number is the one the network asserted for the sender (the SMS centre or the S-CSCF),
         never one a customer typed. Not public: the reverse proxy lets only the voice VM reach this
@@ -1589,7 +1589,7 @@ paths:
     post:
       tags: [RatelBSS]
       operationId: bss_buy_bundle_by_number
-      summary: Buy a bundle from a line's airtime, by phone number, for SMS 647 and USSD.
+      summary: Buy a bundle from a line's airtime, by phone number, for SMS 555 and USSD.
       description: |
         The same purchase as RatelDesk's (`bss_buy_offer`): the wallet is debited, VAT is its own
         entry, and the line gets an allowance bucket. The bundle must be on sale and list the
@@ -1618,6 +1618,72 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/customer-sms:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_customer_sms
+      summary: SMS to customers not sent yet, with their text, for the voice VM.
+      description: |
+        Queued by the app in the same transaction as what each reports: the welcome after an
+        activation, the summary after each charged call (docs/customer-sms.md). Only lines in
+        service, oldest first. The voice VM sends each from 555 once the number is registered on
+        the IMS, then marks it sent. Not public: voice VM only, through the reverse proxy, which
+        adds the key.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: The SMS due.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerSmsList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/customer-sms/{sms_id}/sent:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_mark_customer_sms_sent
+      summary: Record that an SMS to a customer went to the SMS centre.
+      description: |
+        The first call records the time; a repeat changes nothing and answers the same time, so
+        no `Idempotency-Key` is needed (one is accepted). `404` when there is no such SMS.
+        Not public: voice VM only, through the reverse proxy.
+      parameters:
+        - name: sms_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 2147483647
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Recorded, or recorded before.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerSmsSent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
         default:
@@ -2049,6 +2115,43 @@ components:
           minimum: 0
         data_valid_to:
           type: [integer, "null"]
+          description: Epoch seconds, UTC.
+    CustomerSmsList:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerSms"
+    CustomerSms:
+      type: object
+      required: [sms_id, line_id, msisdn, kind, text]
+      additionalProperties: false
+      properties:
+        sms_id:
+          type: integer
+        line_id:
+          type: integer
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        kind:
+          type: string
+          enum: [welcome, call]
+        text:
+          type: string
+          maxLength: 160
+    CustomerSmsSent:
+      type: object
+      required: [sms_id, sent_at]
+      additionalProperties: false
+      properties:
+        sms_id:
+          type: integer
+        sent_at:
+          type: integer
           description: Epoch seconds, UTC.
     BuyBundleByNumber:
       type: object

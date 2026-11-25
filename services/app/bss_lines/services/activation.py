@@ -140,6 +140,9 @@ def activate_line(
         actor=actor,
         reason="customer activation",
     )
+    # The welcome SMS goes out when the number first registers (docs/customer-sms.md). Queued in
+    # this transaction, so an SMS problem never fails an activation and an activation gets one.
+    lines.add_welcome_sms(line.line_id, line.msisdn)
     lines.commit()
 
     result = ActivationResult(line.line_id, transition.from_state, transition.to_state)

@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     rating_auto_renew: bool = False
     # When voice calls start being paid from airtime (docs/catalogue.md), with its UTC offset, for
     # example 2026-11-25T12:00:00+00:00. Calls that ended before it are marked done, at no cost.
-    # Unset: the rating job charges no call at all, so a deployment never charges by accident the
-    # test calls made before launch.
+    # Unset: the call-charging job charges no call at all, so a deployment never charges by accident
+    # the test calls made before launch.
     call_charging_from: AwareDatetime | None = None
 
     @field_validator("call_charging_from", mode="before")

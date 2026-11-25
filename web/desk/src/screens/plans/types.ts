@@ -4,7 +4,7 @@ export type Kind = "plan" | "bundle";
 export type OfferStatus = "on_sale" | "retired";
 // Where an offer is sold (docs/catalogue.md). The API's names, with the words staff read.
 export const CHANNELS = ["desk", "pay", "sms", "ussd"] as const;
-export const CHANNEL_LABEL: Record<string, string> = { desk: "RatelDesk", pay: "RatelPay page", sms: "SMS 647", ussd: "USSD *123#" };
+export const CHANNEL_LABEL: Record<string, string> = { desk: "RatelDesk", pay: "RatelPay page", sms: "SMS 555", ussd: "USSD *123#" };
 
 export interface PlanFull extends Plan { channels: string[]; status: OfferStatus }
 export interface Bundle { bundleId: string; name: string; priceKobo: number; validityDays: number; dataBytes: number; channels: string[]; status: OfferStatus }

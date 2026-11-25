@@ -1,4 +1,4 @@
-"""What the SMS short number 647 and USSD may do for a line, by its phone number.
+"""What the SMS short number 555 and USSD may do for a line, by its phone number.
 
 Reached only through the reverse proxy, which lets the voice VM in on exact paths and adds the
 payments key (deploy/bss-app/nginx). The number comes from the network (the SMS centre or the
@@ -7,6 +7,7 @@ S-CSCF asserts who sent it), never from what a customer typed.
 - The balance: airtime, and the data left in buckets valid now.
 - Buying a bundle from airtime: the same purchase as at RatelDesk (services/purchase.py), for a
   bundle that lists the channel it is bought from.
+- The customer SMS queue (docs/customer-sms.md): what is due, with its text, and marking one sent.
 """
 
 from __future__ import annotations
@@ -18,7 +19,12 @@ from datetime import datetime
 from typing import Protocol
 
 from app.bss_money.domain.allowance import Bucket
-from app.bss_money.repositories.ports import LedgerRepository, LineLookup
+from app.bss_money.repositories.ports import (
+    CustomerSmsRepository,
+    LedgerRepository,
+    LineLookup,
+    PendingSms,
+)
 
 
 class BucketReader(Protocol):
@@ -30,6 +36,7 @@ class PayLineRepositories:
     lines: LineLookup
     ledger: LedgerRepository
     buckets: BucketReader
+    sms: CustomerSmsRepository
 
 
 PayLineScope = Callable[[], AbstractContextManager[PayLineRepositories]]
@@ -69,3 +76,21 @@ def balance(scope: PayLineScope, msisdn: str, now: datetime) -> LineBalance:
             left += remaining
             valid_to = bucket.valid_to if valid_to is None else max(valid_to, bucket.valid_to)
     return LineBalance(balance_kobo=wallet, data_bytes_left=left, data_valid_to=valid_to)
+
+
+class NoSuchSms(Exception):
+    pass
+
+
+def sms_due(scope: PayLineScope, limit: int) -> list[PendingSms]:
+    with scope() as repositories:
+        return repositories.sms.pending(limit)
+
+
+def mark_sms_sent(scope: PayLineScope, sms_id: int, now: datetime) -> datetime:
+    """When it was sent. The first call records it; a repeat answers the same time."""
+    with scope() as repositories:
+        sent_at = repositories.sms.mark_sent(sms_id, now)
+    if sent_at is None:
+        raise NoSuchSms("no such SMS")
+    return sent_at

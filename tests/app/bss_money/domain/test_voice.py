@@ -52,3 +52,44 @@ def test_negative_values_are_refused() -> None:
 )
 def test_numbers_are_read_in_the_234_form(number: str, national: str | None) -> None:
     assert national_msisdn(number) == national
+
+
+def test_the_call_summary_fits_one_plain_sms() -> None:
+    from app.bss_money.domain.voice import call_summary_text
+
+    text = call_summary_text(
+        dialled="2348031234567", seconds=135, cost_kobo=2_250, uncovered_kobo=0, balance_kobo=47_750
+    )
+    assert (
+        text == "Last call to 08031234567: 2m 15s, cost N22.50. Balance N477.50. Text MENU to 555."
+    )
+    worst = call_summary_text(
+        dialled="+44 20 7946 0000 1234",
+        seconds=10 * 3600 + 59 * 60 + 59,
+        cost_kobo=999_999_999,
+        uncovered_kobo=999_999_999,
+        balance_kobo=0,
+    )
+    assert worst.endswith("unpaid. Balance N0.00. Text BUY 500 to 555 to top up.")
+    assert len(worst) <= 160 and worst.isascii()
+
+
+def test_money_and_time_read_as_customers_expect() -> None:
+    from app.bss_money.domain.voice import dialled_text, duration_text, naira_text
+
+    assert [naira_text(k) for k in (0, 5, 2_000, 123_456_789)] == [
+        "N0.00",
+        "N0.05",
+        "N20.00",
+        "N1,234,567.89",
+    ]
+    assert [duration_text(s) for s in (0, 45, 60, 135, 3_723)] == [
+        "0s",
+        "45s",
+        "1m 00s",
+        "2m 15s",
+        "1h 02m 03s",
+    ]
+    assert dialled_text("08031234567") == "08031234567"
+    assert dialled_text("2348031234567") == "08031234567"
+    assert dialled_text("") == "unknown"

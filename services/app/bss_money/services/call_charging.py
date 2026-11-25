@@ -1,6 +1,6 @@
 """Charging voice calls to airtime, after they end (docs/catalogue.md).
 
-Run by the rating job (rating_cli) every few minutes. Each call record is handled once, in its own
+Run every minute by its own job (calls_cli). Each call record is handled once, in its own
 transaction: the `call_charge` row, the call's ledger entry and its VAT entry go together or not at
 all, and the row's key (the call record) makes a second charge impossible.
 
@@ -11,6 +11,8 @@ all, and the row's key (the call record) makes a second charge impossible.
   is recorded as uncovered. Calls are not cut off at zero yet (needs online charging in the IMS).
 - Calls that ended before charging started (CALL_CHARGING_FROM) are marked done and cost nothing:
   their row has rate 0, charged 0 and uncovered 0. Nobody was quoted a price for them.
+- Every call that cost something queues an SMS to the caller in the same transaction: duration,
+  cost, what was unpaid and the balance after (docs/customer-sms.md). Sent from 555 by the voice VM.
 """
 
 from __future__ import annotations
@@ -19,9 +21,15 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.bss_lines.domain.customer_sms import SmsKind
 from app.bss_money.domain.entries import EntryKind, new_posting
 from app.bss_money.domain.purchase import split_vat
-from app.bss_money.domain.voice import answered_seconds, call_cost, national_msisdn
+from app.bss_money.domain.voice import (
+    answered_seconds,
+    call_cost,
+    call_summary_text,
+    national_msisdn,
+)
 from app.bss_money.repositories.ports import CallChargeScope, CallToCharge
 from app.bss_money.services.catalogue import settings_or_default
 from common.logging import log_event
@@ -138,4 +146,17 @@ def _charge_one(scope: CallChargeScope, call: CallToCharge, vat_rate_bps: int) -
             charged_kobo=taken,
             uncovered_kobo=short,
         )
+        if line_id is not None and cost.cost_kobo > 0:
+            repositories.sms.add(
+                line_id=line_id,
+                kind=SmsKind.CALL.value,
+                dedupe_key=f"call:{call.record_id}",
+                text=call_summary_text(
+                    dialled=call.to_msisdn,
+                    seconds=cost.seconds,
+                    cost_kobo=cost.cost_kobo,
+                    uncovered_kobo=short,
+                    balance_kobo=max(repositories.ledger.balance(line_id) or 0, 0),
+                ),
+            )
     return taken, short
