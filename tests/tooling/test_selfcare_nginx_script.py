@@ -53,7 +53,7 @@ def _without_block(text: str) -> str:
 
 def test_a_live_file_without_the_block_gets_exactly_the_template_block() -> None:
     old = _filled(_without_block(TEMPLATE))
-    assert "location ~ ^/v1/pay/(airtime" not in old
+    assert "/v1/pay/(airtime" not in old
     assert tool.patch(old, TEMPLATE) == _filled(TEMPLATE)
 
 

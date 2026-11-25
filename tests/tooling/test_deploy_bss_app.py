@@ -190,7 +190,7 @@ def test_the_payment_paths_are_limited_and_carry_the_proxy_key_and_the_webhook_i
     assert "include /etc/nginx/ratel-pay-key.conf;" in body
     # redeem, two payment, webhook, and the voice VM's self-care block
     assert text.count("include /etc/nginx/ratel-pay-key.conf;") == 5
-    care = re.search(r"location ~ \^/v1/pay/\(airtime[^{]*\{(.*?)\n    \}", text, re.S)
+    care = re.search(r'location ~ "\^/v1/pay/\(airtime[^"]*" \{(.*?)\n    \}', text, re.S)
     assert care is not None
     allows = re.findall(r"allow ([^;]+);", care.group(1))
     assert allows == ["<address-of-voice-vm>"]  # the voice VM only, then deny all
@@ -270,3 +270,17 @@ def test_the_desk_is_served_to_the_office_range_only_as_static_files() -> None:
     # The longer prefix wins in nginx, so the API, /healthz and /pay keep their own blocks.
     for name in ("/v1/", "= /healthz", "= /pay"):
         assert re.search(rf"location {re.escape(name)} \{{", text), name
+
+
+def test_every_regex_location_with_a_brace_is_quoted() -> None:
+    # nginx ends a token at `{`, so `location ~ ^/a{3}$ {` fails `nginx -t` ("missing closing
+    # parenthesis"). CI does not run nginx, so the templates are checked here.
+    for template in ROOT.glob("deploy/*/nginx/*.conf.example"):
+        for number, line in enumerate(template.read_text().splitlines(), start=1):
+            found = re.match(r"\s*location\s+~\*?\s+(.*)\s+\{\s*$", line)
+            if found is None:
+                continue
+            pattern = found.group(1)
+            if "{" in pattern or "}" in pattern:
+                quoted = pattern.startswith('"') and pattern.endswith('"')
+                assert quoted, f"{template.name}:{number}: quote a regex that holds a brace"

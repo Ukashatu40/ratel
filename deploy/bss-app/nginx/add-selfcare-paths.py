@@ -3,7 +3,7 @@
 
     sudo python3 add-selfcare-paths.py ratel-app.conf.example /etc/nginx/conf.d/ratel-app.conf
 
-Copies the template's self-care block (`location ~ ^/v1/pay/(airtime|bundles|lines/...)$`) into the
+Copies the template's self-care block (`location ~ "^/v1/pay/(airtime|...)$"`) into the
 live file, before the staff sign-in block, with the voice VM's address taken from the live
 `location = /v1/calls` (its first allow line), so nothing has to be typed. Nothing else changes.
 
@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 BLOCK = re.compile(
-    r"    # The SMS short number 647 and USSD.*?\n    location ~ \^/v1/pay/\(airtime.*?\n    \}\n",
+    r'    # The SMS short number 647 and USSD.*?\n    location ~ "\^/v1/pay/\(airtime.*?\n    \}\n',
     re.S,
 )
 ANCHOR = "    # Staff sign-in: office and VPN only, and slow."
@@ -27,7 +27,7 @@ CALLS = re.compile(r"    location = /v1/calls \{(.*?)\n    \}\n", re.S)
 
 
 def patch(live: str, template: str) -> str:
-    if "location ~ ^/v1/pay/(airtime" in live:
+    if "/v1/pay/(airtime" in live:
         return live
     block = BLOCK.search(template)
     if block is None:
