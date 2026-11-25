@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.bss_lines.models.lines import Bundle, Customer, Line, Number, Plan, Sim
+from app.bss_lines.models.lines import Bundle, Customer, Line, Number, Plan, Sim, WelcomeSms
 from app.bss_money.domain.entries import EntryKind, new_posting
 from app.bss_money.repositories.sql import SqlLedgerRepository
 from app.config import Settings
@@ -149,3 +149,53 @@ def test_bundles_can_be_listed_for_one_channel(client: TestClient) -> None:
         for b in client.get("/v1/pay/bundles?channel=ussd", headers=AUTH).json()["bundles"]
     ]
     assert names == ["Daily 500MB"]
+
+
+def _queue_welcome(client: TestClient, state: str = "active") -> None:
+    app = client.app
+    with app.state.session_factory() as s, s.begin():  # type: ignore[attr-defined]
+        s.get(Line, 1).state = state  # type: ignore[union-attr]
+        s.add(WelcomeSms(line_id=1))
+
+
+def test_the_welcome_sms_due_come_with_their_text(client: TestClient) -> None:
+    assert client.get("/v1/pay/welcome-sms", headers=AUTH).json() == {"items": []}
+    _queue_welcome(client)
+    r = client.get("/v1/pay/welcome-sms", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json() == {
+        "items": [
+            {
+                "line_id": 1,
+                "msisdn": MSISDN,
+                "text": "Welcome to Ratelplus! Your number is 08000010010. "
+                "Text MENU to 647 for balance, bundles and top-up.",
+            }
+        ]
+    }
+
+
+def test_marking_a_welcome_sent_takes_it_off_the_list_and_a_repeat_changes_nothing(
+    client: TestClient,
+) -> None:
+    _queue_welcome(client)
+    first = client.post("/v1/pay/welcome-sms/1/sent", headers=AUTH)
+    assert first.status_code == 200 and first.json()["line_id"] == 1
+    again = client.post("/v1/pay/welcome-sms/1/sent", headers={**AUTH, "Idempotency-Key": "k"})
+    assert again.status_code == 200 and again.json() == first.json()
+    assert client.get("/v1/pay/welcome-sms", headers=AUTH).json() == {"items": []}
+
+
+def test_a_line_that_is_no_longer_active_gets_no_welcome(client: TestClient) -> None:
+    _queue_welcome(client, state="suspended")
+    assert client.get("/v1/pay/welcome-sms", headers=AUTH).json() == {"items": []}
+
+
+def test_marking_a_line_without_a_welcome_is_404(client: TestClient) -> None:
+    assert client.post("/v1/pay/welcome-sms/1/sent", headers=AUTH).status_code == 404
+    assert client.post("/v1/pay/welcome-sms/99/sent", headers=AUTH).status_code == 404
+
+
+def test_the_welcome_queue_needs_the_key(client: TestClient) -> None:
+    assert client.get("/v1/pay/welcome-sms").status_code == 401
+    assert client.post("/v1/pay/welcome-sms/1/sent").status_code == 401

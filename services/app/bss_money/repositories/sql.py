@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.bss_lines.domain.state_machine import LineState
 from app.bss_lines.models.lines import Bundle as BundleRow
-from app.bss_lines.models.lines import Line
+from app.bss_lines.models.lines import Line, WelcomeSms
 from app.bss_lines.models.lines import Plan as PlanRow
 from app.bss_money.domain.allowance import Bucket
 from app.bss_money.domain.catalogue import CatalogueSettings, channels_to_list
@@ -51,6 +51,7 @@ from app.bss_money.repositories.ports import (
     NewOffer,
     NewVoucher,
     OfferView,
+    PendingWelcome,
     RatedLine,
     StoredEntry,
     StoredPayment,
@@ -359,6 +360,30 @@ class SqlLineLookup:
                 Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value
             )
         )
+
+
+class SqlWelcomeSmsRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def pending(self, limit: int) -> list[PendingWelcome]:
+        rows = self._session.execute(
+            select(WelcomeSms.line_id, Line.msisdn)
+            .join(Line, Line.line_id == WelcomeSms.line_id)
+            .where(WelcomeSms.sent_at.is_(None), Line.state == LineState.ACTIVE.value)
+            .order_by(WelcomeSms.created_at, WelcomeSms.line_id)
+            .limit(limit)
+        )
+        return [PendingWelcome(line_id=r.line_id, msisdn=r.msisdn) for r in rows]
+
+    def mark_sent(self, line_id: int, at: datetime) -> datetime | None:
+        row = self._session.get(WelcomeSms, line_id, with_for_update=True)
+        if row is None:
+            return None
+        if row.sent_at is None:
+            row.sent_at = at
+            self._session.flush()
+        return _utc(row.sent_at)
 
 
 def _stored_payment(row: Payment) -> StoredPayment:

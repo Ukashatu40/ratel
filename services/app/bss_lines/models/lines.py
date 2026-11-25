@@ -135,6 +135,21 @@ class LineAudit(Base, TimestampMixin):
     reason: Mapped[str] = mapped_column(String(200))
 
 
+class WelcomeSms(Base, TimestampMixin):
+    """The welcome SMS a line gets once, after its activation (docs/welcome-sms.md).
+
+    Written in the same transaction as the activation, so an SMS problem can never fail one. The
+    voice VM sends it when the number first registers on the IMS, then marks it sent.
+    """
+
+    __tablename__ = "welcome_sms"
+
+    line_id: Mapped[int] = mapped_column(
+        ForeignKey("line.line_id", ondelete="RESTRICT"), primary_key=True, autoincrement=False
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class CustomerAudit(Base, TimestampMixin):
     """Every change to who a customer is on record as: registered, verified, rejected.
 

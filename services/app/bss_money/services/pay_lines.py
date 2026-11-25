@@ -7,6 +7,7 @@ S-CSCF asserts who sent it), never from what a customer typed.
 - The balance: airtime, and the data left in buckets valid now.
 - Buying a bundle from airtime: the same purchase as at RatelDesk (services/purchase.py), for a
   bundle that lists the channel it is bought from.
+- The welcome SMS queue (docs/welcome-sms.md): what is due, with its text, and marking one sent.
 """
 
 from __future__ import annotations
@@ -17,8 +18,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from app.bss_lines.domain.welcome import welcome_text
 from app.bss_money.domain.allowance import Bucket
-from app.bss_money.repositories.ports import LedgerRepository, LineLookup
+from app.bss_money.repositories.ports import LedgerRepository, LineLookup, WelcomeSmsRepository
 
 
 class BucketReader(Protocol):
@@ -30,6 +32,7 @@ class PayLineRepositories:
     lines: LineLookup
     ledger: LedgerRepository
     buckets: BucketReader
+    welcomes: WelcomeSmsRepository
 
 
 PayLineScope = Callable[[], AbstractContextManager[PayLineRepositories]]
@@ -69,3 +72,29 @@ def balance(scope: PayLineScope, msisdn: str, now: datetime) -> LineBalance:
             left += remaining
             valid_to = bucket.valid_to if valid_to is None else max(valid_to, bucket.valid_to)
     return LineBalance(balance_kobo=wallet, data_bytes_left=left, data_valid_to=valid_to)
+
+
+@dataclass(frozen=True)
+class WelcomeDue:
+    line_id: int
+    msisdn: str
+    text: str
+
+
+class NoWelcome(Exception):
+    pass
+
+
+def welcomes_due(scope: PayLineScope, limit: int) -> list[WelcomeDue]:
+    with scope() as repositories:
+        pending = repositories.welcomes.pending(limit)
+    return [WelcomeDue(p.line_id, p.msisdn, welcome_text(p.msisdn)) for p in pending]
+
+
+def mark_welcome_sent(scope: PayLineScope, line_id: int, now: datetime) -> datetime:
+    """When it was sent. The first call records it; a repeat answers the same time."""
+    with scope() as repositories:
+        sent_at = repositories.welcomes.mark_sent(line_id, now)
+    if sent_at is None:
+        raise NoWelcome("this line has no welcome SMS")
+    return sent_at

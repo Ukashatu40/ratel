@@ -9,7 +9,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.bss_lines.models.lines import Line, LineAudit, Sim
+from app.bss_lines.models.lines import Line, LineAudit, Sim, WelcomeSms
 
 
 class SqlLinesRepository:
@@ -83,6 +83,10 @@ class SqlLinesRepository:
                 reason=reason,
             )
         )
+
+    def add_welcome_sms(self, line_id: int) -> None:
+        if self._session.get(WelcomeSms, line_id) is None:
+            self._session.add(WelcomeSms(line_id=line_id))
 
     def commit(self) -> None:
         if self._request_commits:

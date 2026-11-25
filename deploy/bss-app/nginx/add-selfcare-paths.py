@@ -7,8 +7,10 @@ Copies the template's self-care block (`location ~ "^/v1/pay/(airtime|...)$"`) i
 live file, before the staff sign-in block, with the voice VM's address taken from the live
 `location = /v1/calls` (its first allow line), so nothing has to be typed. Nothing else changes.
 
-It refuses a file it does not recognise and does nothing if the block is there already. Make a
-copy of the live file first, then run `nginx -t` before reloading.
+A live file that has an older self-care block gets it replaced by the template's (the paths grow,
+for example the welcome SMS queue), keeping the address. It refuses a file it does not recognise
+and does nothing if the block is the same already. Make a copy of the live file first, then run
+`nginx -t` before reloading.
 """
 
 from __future__ import annotations
@@ -26,19 +28,26 @@ ANCHOR = "    # Staff sign-in: office and VPN only, and slow."
 CALLS = re.compile(r"    location = /v1/calls \{(.*?)\n    \}\n", re.S)
 
 
-def patch(live: str, template: str) -> str:
-    if "/v1/pay/(airtime" in live:
-        return live
-    block = BLOCK.search(template)
-    if block is None:
-        raise ValueError("the template has no self-care block")
-    if live.count(ANCHOR) != 1:
-        raise ValueError("the live file has no staff sign-in block to put it before")
+def _voice_address(live: str) -> str:
     calls = CALLS.search(live)
     allows = re.findall(r"allow ([^;]+);", calls.group(1)) if calls else []
     if not allows or "<" in allows[0]:
         raise ValueError("no voice VM address in the live `location = /v1/calls`")
-    filled = block.group(0).replace("<address-of-voice-vm>", allows[0])
+    return allows[0]
+
+
+def patch(live: str, template: str) -> str:
+    block = BLOCK.search(template)
+    if block is None:
+        raise ValueError("the template has no self-care block")
+    filled = block.group(0).replace("<address-of-voice-vm>", _voice_address(live))
+    current = BLOCK.search(live)
+    if current is not None:
+        return live.replace(current.group(0), filled, 1)
+    if "/v1/pay/(airtime" in live:
+        raise ValueError("the live file has a self-care block this does not recognise")
+    if live.count(ANCHOR) != 1:
+        raise ValueError("the live file has no staff sign-in block to put it before")
     return live.replace(ANCHOR, filled + "\n" + ANCHOR, 1)
 
 
@@ -57,7 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         print("the self-care block is there already; nothing changed")  # noqa: T201
         return 0
     args.live.write_text(out)
-    print(f"added the self-care block to {args.live}; now run: nginx -t && systemctl reload nginx")  # noqa: T201
+    done = "updated" if BLOCK.search(live) else "added"
+    print(f"{done} the self-care block in {args.live}; now run: nginx -t && systemctl reload nginx")  # noqa: T201
     return 0
 
 

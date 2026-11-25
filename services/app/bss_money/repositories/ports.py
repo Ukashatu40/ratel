@@ -166,6 +166,24 @@ class LineLookup(Protocol):
 
 
 @dataclass(frozen=True)
+class PendingWelcome:
+    line_id: int
+    msisdn: str
+
+
+class WelcomeSmsRepository(Protocol):
+    """The welcome SMS queue that activation fills (bss_lines, docs/welcome-sms.md)."""
+
+    def pending(self, limit: int) -> list[PendingWelcome]:
+        """Unsent welcomes of lines that are still active, oldest first."""
+        ...
+
+    def mark_sent(self, line_id: int, at: datetime) -> datetime | None:
+        """Record it sent (the first time only) and return when; None if the line has none."""
+        ...
+
+
+@dataclass(frozen=True)
 class RedemptionRepositories:
     """Everything one redemption touches, all on the same transaction."""
 

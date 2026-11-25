@@ -1622,6 +1622,71 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/welcome-sms:
+    get:
+      tags: [RatelBSS]
+      operationId: bss_list_welcome_sms
+      summary: Welcome SMS not sent yet, with the text to send, for the voice VM.
+      description: |
+        One per activated line, queued in the activation's transaction (docs/welcome-sms.md).
+        Only lines still active, oldest first. The voice VM sends each one when the number first
+        registers on the IMS, then marks it sent. Not public: voice VM only, through the reverse
+        proxy, which adds the key.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: The welcome SMS due.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WelcomeSmsList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/welcome-sms/{line_id}/sent:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_mark_welcome_sms_sent
+      summary: Record that a line's welcome SMS went to the SMS centre.
+      description: |
+        The first call records the time; a repeat changes nothing and answers the same time, so
+        no `Idempotency-Key` is needed (one is accepted). `404` when the line has no welcome SMS.
+        Not public: voice VM only, through the reverse proxy.
+      parameters:
+        - name: line_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 2147483647
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Recorded, or recorded before.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WelcomeSmsSent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/pay/payments:
     post:
       tags: [RatelBSS]
@@ -2049,6 +2114,38 @@ components:
           minimum: 0
         data_valid_to:
           type: [integer, "null"]
+          description: Epoch seconds, UTC.
+    WelcomeSmsList:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WelcomeSms"
+    WelcomeSms:
+      type: object
+      required: [line_id, msisdn, text]
+      additionalProperties: false
+      properties:
+        line_id:
+          type: integer
+        msisdn:
+          type: string
+          pattern: "^234[0-9]{10}$"
+        text:
+          type: string
+          maxLength: 160
+    WelcomeSmsSent:
+      type: object
+      required: [line_id, sent_at]
+      additionalProperties: false
+      properties:
+        line_id:
+          type: integer
+        sent_at:
+          type: integer
           description: Epoch seconds, UTC.
     BuyBundleByNumber:
       type: object
