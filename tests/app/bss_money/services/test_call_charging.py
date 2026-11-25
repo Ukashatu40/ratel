@@ -32,6 +32,7 @@ CALLER = "2348000010010"
 FRIEND = "2348000010011"  # also a Ratelplus line: on-net
 OUTSIDE = "2348031234567"  # another network: off-net
 VAT_BPS = 750
+LAUNCH = T0 - timedelta(hours=1)  # charging went live before every call in these tests
 
 
 @pytest.fixture
@@ -144,7 +145,7 @@ def test_on_net_and_off_net_calls_are_charged_per_second_with_vat_as_its_own_ent
     _top_up(factory, 100_000)
     _call(factory, "a", FRIEND, 60)  # on-net minute: 10 naira
     _call(factory, "b", OUTSIDE, 30)  # off-net half minute: 10 naira
-    run = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS)
+    run = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
 
     assert (run.handled, run.charged, run.kobo, run.failed) == (2, 2, 2_000, 0)
     assert _balance(factory) == 98_000
@@ -164,8 +165,8 @@ def test_on_net_and_off_net_calls_are_charged_per_second_with_vat_as_its_own_ent
 def test_a_call_is_charged_once_however_often_the_job_runs(factory: sessionmaker[Session]) -> None:
     _top_up(factory, 100_000)
     _call(factory, "a", OUTSIDE, 60)
-    charge_calls(_scope(factory), vat_rate_bps=VAT_BPS)
-    again = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS)
+    charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
+    again = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
     assert again.handled == 0
     assert _balance(factory) == 98_000
 
@@ -175,7 +176,7 @@ def test_the_wallet_stops_at_zero_and_the_rest_is_recorded_as_uncovered(
 ) -> None:
     _top_up(factory, 500)
     _call(factory, "a", OUTSIDE, 60)  # 20 naira, only 5 in the wallet
-    run = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS)
+    run = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
     assert (run.kobo, run.uncovered_kobo) == (500, 1_500)
     assert _balance(factory) == 0
     with factory() as s:
@@ -189,9 +190,43 @@ def test_unanswered_calls_and_calls_from_other_networks_cost_nothing_and_are_mar
     _top_up(factory, 100_000)
     _call(factory, "a", FRIEND, None)  # nobody answered
     _call(factory, "b", CALLER, 120, caller=OUTSIDE)  # someone else's customer called us
-    run = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS)
+    run = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
     assert (run.handled, run.charged, run.kobo) == (2, 0, 0)
     assert _balance(factory) == 100_000
     with factory() as s:
         lines = {c.call_record_id: c.line_id for c in s.scalars(select(CallCharge))}
     assert lines == {1: 1, 2: None}
+
+
+def test_calls_that_ended_before_charging_started_are_marked_done_and_cost_nothing(
+    factory: sessionmaker[Session],
+) -> None:
+    _top_up(factory, 100_000)
+    _call(factory, "old", OUTSIDE, 60)  # ends at T0 + 60 s, before the start below
+    _call(factory, "new", OUTSIDE, 60)
+    with factory() as s, s.begin():
+        new = s.scalars(select(CallRecordModel).where(CallRecordModel.call_id == "new")).one()
+        new.started_at = new.answered_at = T0 + timedelta(hours=2)
+        new.ended_at = T0 + timedelta(hours=2, seconds=60)
+    run = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=T0 + timedelta(hours=1))
+
+    assert (run.handled, run.before_start, run.charged, run.kobo) == (2, 1, 1, 2_000)
+    assert _balance(factory) == 98_000
+    assert {ref for _, _, ref in _entries(factory)} == {"call:2"}
+    with factory() as s:
+        old = s.get(CallCharge, 1)
+    assert old is not None
+    assert (old.line_id, old.seconds, old.rate_kobo_per_min) == (1, 60, 0)
+    assert (old.charged_kobo, old.uncovered_kobo) == (0, 0)
+    # Marked done: a later run with an earlier start does not charge it after all.
+    again = charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=T0 - timedelta(days=1))
+    assert again.handled == 0
+    assert _balance(factory) == 98_000
+
+
+def test_a_start_without_its_utc_offset_is_refused(factory: sessionmaker[Session]) -> None:
+    _call(factory, "a", OUTSIDE, 60)
+    with pytest.raises(ValueError):
+        charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=datetime(2026, 11, 25))  # noqa: DTZ001 (the point)
+    with factory() as s:
+        assert s.scalars(select(CallCharge)).first() is None

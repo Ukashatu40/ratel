@@ -9,12 +9,15 @@ all, and the row's key (the call record) makes a second charge impossible.
   the off-net rate otherwise (the rates an admin set in RatelDesk).
 - The wallet never goes below zero: a wallet that cannot cover a call pays what it has and the rest
   is recorded as uncovered. Calls are not cut off at zero yet (needs online charging in the IMS).
+- Calls that ended before charging started (CALL_CHARGING_FROM) are marked done and cost nothing:
+  their row has rate 0, charged 0 and uncovered 0. Nobody was quoted a price for them.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
 from app.bss_money.domain.entries import EntryKind, new_posting
 from app.bss_money.domain.purchase import split_vat
@@ -33,16 +36,28 @@ class CallChargeRun:
     kobo: int  # money taken, VAT included
     uncovered_kobo: int
     failed: int
+    before_start: int = 0  # calls that ended before charging started: marked done, cost nothing
 
 
 def charge_calls(
-    scope: CallChargeScope, *, vat_rate_bps: int, batch_size: int = 500
+    scope: CallChargeScope,
+    *,
+    vat_rate_bps: int,
+    charge_from: datetime,
+    batch_size: int = 500,
 ) -> CallChargeRun:
+    if charge_from.tzinfo is None:
+        raise ValueError("charge_from must carry its UTC offset")
     with scope() as repositories:
         calls = repositories.calls.uncharged_calls(batch_size)
-    handled = charged = kobo = uncovered = failed = 0
+    handled = charged = kobo = uncovered = failed = before = 0
     for call in calls:
         try:
+            if call.ended_at < charge_from:
+                _mark_before_start(scope, call)
+                handled += 1
+                before += 1
+                continue
             taken, short = _charge_one(scope, call, vat_rate_bps)
         except Exception as exc:  # one bad record must not stop the others; the next run retries it
             failed += 1
@@ -58,18 +73,36 @@ def charge_calls(
         charged += taken > 0
         kobo += taken
         uncovered += short
-    run = CallChargeRun(handled, charged, kobo, uncovered, failed)
+    run = CallChargeRun(handled, charged, kobo, uncovered, failed, before)
     log_event(
         log,
         logging.INFO,
         "calls.charge_run",
         handled=handled,
+        before_start=before,
         charged=charged,
         kobo=kobo,
         uncovered_kobo=uncovered,
         failed=failed,
     )
     return run
+
+
+def _mark_before_start(scope: CallChargeScope, call: CallToCharge) -> None:
+    """Record a call from before charging started as done, at no cost, so it is never charged."""
+    with scope() as repositories:
+        caller = national_msisdn(call.from_msisdn)
+        line_id = repositories.calls.lock_line_for_msisdn(caller) if caller else None
+        callee = national_msisdn(call.to_msisdn)
+        repositories.calls.save_charge(
+            record_id=call.record_id,
+            line_id=line_id,
+            seconds=answered_seconds(call.answered_at, call.ended_at),
+            on_net=callee is not None and repositories.calls.is_ratel_number(callee),
+            rate_kobo_per_min=0,
+            charged_kobo=0,
+            uncovered_kobo=0,
+        )
 
 
 def _charge_one(scope: CallChargeScope, call: CallToCharge, vat_rate_bps: int) -> tuple[int, int]:
