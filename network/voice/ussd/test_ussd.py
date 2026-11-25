@@ -180,8 +180,13 @@ def session(code, answers, ignore_first_ok=False):
     return texts
 
 
+# Settings of the service itself. A shell that loaded ussd.env must not change what a test sees.
+SERVICE_SETTINGS = ("RATEL_PAY_", "USSD_", "SMS_", "SSL_CERT_")
+
+
 def run(env_extra):
-    env = {**os.environ, "USSD_PUBLIC_IP": "127.0.0.1", "USSD_PORT": "15060",
+    inherited = {k: v for k, v in os.environ.items() if not k.startswith(SERVICE_SETTINGS)}
+    env = {**inherited, "USSD_PUBLIC_IP": "127.0.0.1", "USSD_PORT": "15060",
            "USSD_BIND_IP": "127.0.0.1", "USSD_LOG_LEVEL": "INFO", **env_extra}
     proc = subprocess.Popen([sys.executable, "-I", os.path.join(HERE, "ussd_as.py")], env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
