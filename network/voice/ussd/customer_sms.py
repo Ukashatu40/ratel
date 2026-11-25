@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
-"""Welcome SMS sender: one pass, run every minute by ratel-welcome-sms.timer (docs/welcome-sms.md).
+"""Customer SMS sender: one pass, run every minute by ratel-customer-sms.timer (docs/customer-sms.md).
 
-1. Ask bss-app which welcome SMS are due (GET /v1/pay/welcome-sms, through bss-app's nginx, which
-   lets only this VM in and adds the payments key).
+The welcome after an activation and the summary after each charged call, queued by bss-app.
+
+1. Ask bss-app which SMS are due (GET /v1/pay/customer-sms, through bss-app's nginx, which lets
+   only this VM in and adds the payments key).
 2. For each, ask the S-CSCF whether the number is registered on the IMS
    (`docker exec scscf kamcmd ulscscf.showimpu tel:<number>`). Not registered: leave it for a
    later pass. The SMS centre gives up on an unreachable phone after about a minute, so sending
    before the phone is on the network would lose the SMS.
 3. Send it from 647 through the ussd container (`ussd_as.py --send-sms`), the only address the
    SMS centre takes requests from.
-4. Tell bss-app it was sent (POST /v1/pay/welcome-sms/<line>/sent).
+4. Tell bss-app it was sent (POST /v1/pay/customer-sms/<sms_id>/sent).
 
-A welcome handed to the SMS centre is written to the state file before bss-app is told, so a
+An SMS handed to the SMS centre is written to the state file before bss-app is told, so a
 failure to tell bss-app never sends a second SMS: the next pass only tells bss-app again.
 
 Settings, from the environment or from ussd.env next to this file:
     RATEL_PAY_URL          bss-app's address, as for the ussd service
-    WELCOME_CA_FILE        certificates to trust for it (default: bss-ca.pem next to this file)
-    WELCOME_STATE_FILE     the state file (default: welcome-sent.txt next to this file)
-    WELCOME_SCSCF          the S-CSCF container (default scscf)
-    WELCOME_USSD           the ussd container (default ussd)
-Standard library only. `python3 -I welcome_sms.py` runs one pass; exit 0 unless something failed.
+    SMS_CA_FILE            certificates to trust for it (default: bss-ca.pem next to this file)
+    SMS_STATE_FILE         the state file (default: customer-sms-sent.txt next to this file)
+    SMS_SCSCF              the S-CSCF container (default scscf)
+    SMS_USSD               the ussd container (default ussd)
+Standard library only. `python3 -I customer_sms.py` runs one pass; exit 0 unless something failed.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MSISDN = re.compile(r"^234[0-9]{10}$")
-log = logging.getLogger("welcome-sms")
+log = logging.getLogger("customer-sms")
 
 
 def settings() -> dict[str, str]:
@@ -50,13 +52,13 @@ def settings() -> dict[str, str]:
             if line and not line.startswith("#") and "=" in line:
                 key, value = line.split("=", 1)
                 values[key.strip()] = value.strip().strip('"').strip("'")
-    for key in ("RATEL_PAY_URL", "WELCOME_CA_FILE", "WELCOME_STATE_FILE", "WELCOME_SCSCF", "WELCOME_USSD"):
+    for key in ("RATEL_PAY_URL", "SMS_CA_FILE", "SMS_STATE_FILE", "SMS_SCSCF", "SMS_USSD"):
         if os.environ.get(key):
             values[key] = os.environ[key]
-    values.setdefault("WELCOME_CA_FILE", str(HERE / "bss-ca.pem"))
-    values.setdefault("WELCOME_STATE_FILE", str(HERE / "welcome-sent.txt"))
-    values.setdefault("WELCOME_SCSCF", "scscf")
-    values.setdefault("WELCOME_USSD", "ussd")
+    values.setdefault("SMS_CA_FILE", str(HERE / "bss-ca.pem"))
+    values.setdefault("SMS_STATE_FILE", str(HERE / "customer-sms-sent.txt"))
+    values.setdefault("SMS_SCSCF", "scscf")
+    values.setdefault("SMS_USSD", "ussd")
     return values
 
 
@@ -74,11 +76,11 @@ def is_registered(showimpu: str) -> bool:
 class Sender:
     def __init__(self, conf: dict[str, str], run=subprocess.run):  # run: injected by the tests
         self.base = conf["RATEL_PAY_URL"].rstrip("/")
-        ca = conf["WELCOME_CA_FILE"]
+        ca = conf["SMS_CA_FILE"]
         self.tls = ssl.create_default_context(cafile=ca if Path(ca).exists() else None)
-        self.state = Path(conf["WELCOME_STATE_FILE"])
-        self.scscf = conf["WELCOME_SCSCF"]
-        self.ussd = conf["WELCOME_USSD"]
+        self.state = Path(conf["SMS_STATE_FILE"])
+        self.scscf = conf["SMS_SCSCF"]
+        self.ussd = conf["SMS_USSD"]
         self.run = run
 
     def _api(self, method: str, path: str) -> dict:
@@ -93,9 +95,9 @@ class Sender:
             return set()
         return {int(x) for x in self.state.read_text().split() if x.isdigit()}
 
-    def _remember(self, line_id: int) -> None:
+    def _remember(self, sms_id: int) -> None:
         with self.state.open("a") as f:
-            f.write(f"{line_id}\n")
+            f.write(f"{sms_id}\n")
             f.flush()
             os.fsync(f.fileno())
 
@@ -112,33 +114,34 @@ class Sender:
     def one_pass(self) -> int:
         """Handle what is due. Returns the number of failures."""
         try:
-            due = self._api("GET", "/v1/pay/welcome-sms?limit=50")["items"]
+            due = self._api("GET", "/v1/pay/customer-sms?limit=50")["items"]
         except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
-            log.warning("bss-app did not answer the welcome list: %s", type(e).__name__)
+            log.warning("bss-app did not answer the SMS list: %s", type(e).__name__)
             return 1
         handed = self._handed_over()
         failures = sent = waiting = 0
         for item in due:
-            line_id, msisdn, text = int(item["line_id"]), str(item["msisdn"]), str(item["text"])
+            sms_id, msisdn, text = int(item["sms_id"]), str(item["msisdn"]), str(item["text"])
+            kind = str(item.get("kind", "?"))
             if not MSISDN.match(msisdn) or not text or len(text) > 160:
-                log.warning("line %s: bss-app sent a welcome this cannot send", line_id)
+                log.warning("sms %s: bss-app sent an SMS this cannot send", sms_id)
                 failures += 1
                 continue
             try:
-                if line_id not in handed:
+                if sms_id not in handed:
                     if not self.registered(msisdn):
                         waiting += 1
                         continue
                     if not self.send(msisdn, text):
-                        log.warning("line %s: the SMS centre did not take the welcome", line_id)
+                        log.warning("sms %s: the SMS centre did not take it", sms_id)
                         failures += 1
                         continue
-                    self._remember(line_id)
+                    self._remember(sms_id)
                     sent += 1
-                    log.info("line %s: welcome sent to %s", line_id, msisdn)
-                self._api("POST", f"/v1/pay/welcome-sms/{line_id}/sent")
+                    log.info("sms %s: %s sent to %s", sms_id, kind, msisdn)
+                self._api("POST", f"/v1/pay/customer-sms/{sms_id}/sent")
             except (urllib.error.URLError, OSError, subprocess.SubprocessError, ValueError) as e:
-                log.warning("line %s: %s, will retry on the next pass", line_id, type(e).__name__)
+                log.warning("sms %s: %s, will retry on the next pass", sms_id, type(e).__name__)
                 failures += 1
         if due:
             log.info("pass: %d due, %d sent, %d not registered yet, %d failed", len(due), sent, waiting, failures)

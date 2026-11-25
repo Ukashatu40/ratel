@@ -35,7 +35,7 @@ only works on some Android phones: iPhones need Apple's carrier bundle and featu
 code as a call. Text messages reach every phone.
 
 `python -I ussd_as.py --send-sms 234XXXXXXXXXX` (text on standard input) sends one SMS from 647
-and exits: 0 when the SMSC took it. The welcome SMS sender (welcome_sms.py) runs it inside this
+and exits: 0 when the SMSC took it. The customer SMS sender (customer_sms.py) runs it inside this
 container with `docker exec`, because the SMSC takes requests from this address only.
 """
 
