@@ -43,6 +43,9 @@ class Permission(StrEnum):
     ACTIVATE_LINE = "activate_line"
     SUSPEND_LINE = "suspend_line"
     TERMINATE_LINE = "terminate_line"
+    MANAGE_CATALOGUE = (
+        "manage_catalogue"  # plans, bundles, airtime and call rates (docs/catalogue.md)
+    )
 
 
 # TODO(PRD): who may do what. Customer care sells and looks after lines; only an admin vouches for
@@ -59,7 +62,8 @@ _AGENT = frozenset(
 )
 PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.AGENT: _AGENT,
-    Role.ADMIN: _AGENT | {Permission.VERIFY_KYC, Permission.TERMINATE_LINE},
+    Role.ADMIN: _AGENT
+    | {Permission.VERIFY_KYC, Permission.TERMINATE_LINE, Permission.MANAGE_CATALOGUE},
 }
 
 

@@ -1,15 +1,15 @@
 import { ApiError } from "../../lib/api";
 import { formatNaira } from "../../lib/format";
 import { mockPlans } from "../sell-sim/mock";
-import type { Bundle, BundleInput, Kind, OfferHistoryEntry, PlanFull, PlanInput } from "./types";
+import type { Bundle, BundleInput, CatalogueSettings, Kind, OfferHistoryEntry, PlanFull, PlanInput, SettingsView } from "./types";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nowSec = () => Math.floor(Date.now() / 1000);
-const BOTH = ["RatelDesk", "RatelPay"];
+const BOTH = ["desk", "pay", "sms", "ussd"];
 
 const plans: PlanFull[] = [
   ...mockPlans.map((p) => ({ ...p, channels: BOTH, status: "on_sale" as const })),
-  { planId: "p4", name: "Promo 1GB", priceKobo: 50_000, validityDays: 3, dataBytes: 1_000_000_000, speedUlMbps: 5, speedDlMbps: 10, onExhaustion: "stop", slowUlMbps: 0, slowDlMbps: 0, channels: ["RatelDesk"], status: "retired" },
+  { planId: "p4", name: "Promo 1GB", priceKobo: 50_000, validityDays: 3, dataBytes: 1_000_000_000, speedUlMbps: 5, speedDlMbps: 10, onExhaustion: "stop", slowUlMbps: 0, slowDlMbps: 0, channels: ["desk"], status: "retired" },
 ];
 const bundles: Bundle[] = [
   { bundleId: "b1", name: "Top-up 1GB", priceKobo: 70_000, validityDays: 7, dataBytes: 1_000_000_000, channels: BOTH, status: "on_sale" },
@@ -96,3 +96,8 @@ export async function mockOfferHistory(kind: Kind, id: string): Promise<OfferHis
   await wait(150);
   return [...(hist.get(`${kind}:${id}`) ?? [])].sort((a, b) => b.at - a.at);
 }
+
+// Airtime limits and call rates (docs/catalogue.md): the API's defaults.
+let settings: CatalogueSettings = { airtimeMinKobo: 2_000, cardMinKobo: 10_000, cardMaxKobo: 100_000_000, presetsKobo: [10_000, 20_000, 50_000, 100_000], onnetKoboPerMin: 1_000, offnetKoboPerMin: 2_000 };
+export async function mockGetSettings(): Promise<SettingsView> { await wait(150); return { settings: { ...settings }, gateway: { minKobo: 10_000, maxKobo: 100_000_000 } }; }
+export async function mockSaveSettings(next: CatalogueSettings): Promise<void> { await wait(150); settings = { ...next }; }

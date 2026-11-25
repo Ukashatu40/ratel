@@ -188,7 +188,13 @@ def test_the_payment_paths_are_limited_and_carry_the_proxy_key_and_the_webhook_i
     assert "deny  all;" in body and "allow <paystack-address-1>;" in body
     assert "limit_req zone=ratel_webhook" in body
     assert "include /etc/nginx/ratel-pay-key.conf;" in body
-    assert text.count("include /etc/nginx/ratel-pay-key.conf;") == 4  # redeem, two payment, webhook
+    # redeem, two payment, webhook, and the voice VM's self-care block
+    assert text.count("include /etc/nginx/ratel-pay-key.conf;") == 5
+    care = re.search(r"location ~ \^/v1/pay/\(airtime[^{]*\{(.*?)\n    \}", text, re.S)
+    assert care is not None
+    allows = re.findall(r"allow ([^;]+);", care.group(1))
+    assert allows == ["<address-of-voice-vm>"]  # the voice VM only, then deny all
+    assert "deny  all;" in care.group(1) and "limit_req zone=ratel_pay" in care.group(1)
 
 
 JOBS = {

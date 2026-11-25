@@ -1,0 +1,10 @@
+{
+  "offers": [
+    {"kind": "plan", "offer_id": 1, "name": "Home 10 Mbps", "price_kobo": 1500000, "data_bytes": 150000000000, "validity_days": 30, "channels": ["desk"], "state": "on_sale", "speed_dl_mbps": 10, "speed_ul_mbps": 5, "on_exhaustion": "slow", "slow_dl_mbps": 2, "slow_ul_mbps": 1},
+    {"kind": "bundle", "offer_id": 1, "name": "Weekly 3GB", "price_kobo": 60000, "data_bytes": 3000000000, "validity_days": 7, "channels": ["desk", "sms", "ussd"], "state": "on_sale", "speed_dl_mbps": null, "speed_ul_mbps": null, "on_exhaustion": null, "slow_dl_mbps": null, "slow_ul_mbps": null},
+    {"kind": "bundle", "offer_id": 2, "name": "Old 1GB", "price_kobo": 70000, "data_bytes": 1000000000, "validity_days": 7, "channels": ["desk"], "state": "retired", "speed_dl_mbps": null, "speed_ul_mbps": null, "on_exhaustion": null, "slow_dl_mbps": null, "slow_ul_mbps": null}
+  ],
+  "settings": {"airtime_min_kobo": 2000, "card_min_kobo": 10000, "card_max_kobo": 100000000, "airtime_presets_kobo": [10000, 20000, 50000, 100000], "voice_onnet_kobo_per_min": 1000, "voice_offnet_kobo_per_min": 2000},
+  "gateway": {"min_kobo": 10000, "max_kobo": 100000000},
+  "channels": ["desk", "pay", "sms", "ussd"]
+}

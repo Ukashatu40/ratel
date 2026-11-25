@@ -79,7 +79,7 @@ describe("the screen against the real API", () => {
     const link = (await screen.findAllByRole("link", { name: /\+234 700 000 0150/ }, { timeout: 5000 }))[0];
     expect(link).toHaveAttribute("href", "/lines/7");
     const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
-    expect(tabs).toEqual(["All (3)", "Top-ups (1)", "Plan purchases (1)", "VAT (1)", "Corrections (0)"]);
+    expect(tabs).toEqual(["All (3)", "Top-ups (1)", "Plan purchases (1)", "VAT (1)", "Corrections (0)", "Calls (0)"]);
     expect(screen.queryByText(/this week/i)).not.toBeInTheDocument();
   });
 
@@ -103,6 +103,6 @@ describe("the screen on mock data", () => {
   it("lists the API's kinds and a wallet that matches its ledger", async () => {
     renderWallet("/finance/wallet?line=100");
     expect(await screen.findByText(/matches the ledger/i, {}, { timeout: 5000 })).toBeInTheDocument();
-    expect(screen.getAllByRole("tab").map((t) => t.textContent?.replace(/\s*\(\d+\)$/, ""))).toEqual(["All", "Top-ups", "Plan purchases", "VAT", "Corrections"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent?.replace(/\s*\(\d+\)$/, ""))).toEqual(["All", "Top-ups", "Plan purchases", "VAT", "Corrections", "Calls"]);
   });
 });

@@ -5,6 +5,7 @@ import { formatGB, formatNaira } from "../../lib/format";
 import { bundlesListed, getBundles, getPlans, offersEditable } from "./api";
 import { bundleToForm, emptyForm, planToForm } from "./form";
 import { OfferDrawer } from "./OfferDrawer";
+import { SettingsCard } from "./SettingsCard";
 import type { Kind, OfferStatus } from "./types";
 import "./PlansScreen.css";
 
@@ -20,7 +21,7 @@ function parseOpen(v: string | null): { kind: Kind; id: string | null } | null {
 
 export default function PlansScreen() {
   const [params, setParams] = useSearchParams();
-  const editable = offersEditable(); // read-only until the API can create, edit and retire (see api.ts)
+  const editable = offersEditable(); // the API refuses changes from anyone but an admin (see api.ts)
   const open = editable ? parseOpen(params.get("open")) : null;
   const plans = useQuery({ queryKey: ["plans"], queryFn: getPlans });
   const bundles = useQuery({ queryKey: ["bundles"], queryFn: getBundles });
@@ -42,7 +43,7 @@ export default function PlansScreen() {
       <div className="plans__title">
         <div>
           <h1>Plans &amp; Bundles</h1>
-          <p className="muted">What Ratelplus sells today.</p>
+          <p className="muted">What Ratelplus sells today. Only an admin can change it; every change is kept in the audit trail.</p>
         </div>
         {editable && (
           <div className="plans__buttons">
@@ -51,11 +52,6 @@ export default function PlansScreen() {
           </div>
         )}
       </div>
-      {!editable && (
-        <div className="alert alert--warn" style={{ marginBottom: 16 }}>
-          Plans are listed here for reading. Creating, changing and retiring plans and bundles is done with the <b>ops_cli</b> command on bss-app for now.
-        </div>
-      )}
 
       <section className="card plans__card">
         <h3>Plans</h3>
@@ -80,25 +76,26 @@ export default function PlansScreen() {
 
       <section className="card plans__card">
         <h3>Bundles <span className="muted plans__hint">extra data on top of a plan</span></h3>
-        {!bundlesListed() ? <p className="muted">The Desk cannot list bundles yet: the API has no staff operation for them. TODO(contract).</p> : null}
         {bundlesListed() && (<>
         {bundles.isError ? <div className="plans__message">Could not load bundles. <button type="button" className="btn btn--sm" onClick={() => bundles.refetch()}>Try again</button></div> : (
           <table className="data-table">
-            <thead><tr><th>Bundle</th><th>Price</th><th>Validity</th><th>Data</th><th>Status</th></tr></thead>
+            <thead><tr><th>Bundle</th><th>Price</th><th>Validity</th><th>Data</th><th>Per GB</th><th>Status</th></tr></thead>
             <tbody>
-              {bundles.isPending && <tr><td colSpan={5} className="muted">Loading...</td></tr>}
+              {bundles.isPending && <tr><td colSpan={6} className="muted">Loading...</td></tr>}
               {bundles.data?.map((b) => (
                 <tr key={b.bundleId} className={open?.id === b.bundleId ? "plans-row--on" : ""} onClick={() => setOpen(`bundle:${b.bundleId}`)}>
                   <td><button type="button" className="plans-name" onClick={(e) => { e.stopPropagation(); setOpen(`bundle:${b.bundleId}`); }}>{b.name}</button></td>
-                  <td>{formatNaira(b.priceKobo)}</td><td>{b.validityDays} days</td><td>{formatGB(b.dataBytes)}</td><td><StatusBadge status={b.status} /></td>
+                  <td>{formatNaira(b.priceKobo)}</td><td>{b.validityDays} day{b.validityDays === 1 ? "" : "s"}</td><td>{formatGB(b.dataBytes)}</td><td>{formatNaira(Math.round(b.priceKobo / (b.dataBytes / 1e9)))}</td><td><StatusBadge status={b.status} /></td>
                 </tr>
               ))}
-              {bundles.data?.length === 0 && <tr><td colSpan={5} className="muted">No bundles yet. Use "Create bundle".</td></tr>}
+              {bundles.data?.length === 0 && <tr><td colSpan={6} className="muted">No bundles yet. Use "Create bundle".</td></tr>}
             </tbody>
           </table>
         )}
         </>)}
       </section>
+
+      <SettingsCard />
 
       {drawer && <OfferDrawer key={params.get("open")} kind={drawer.kind} id={drawer.id} status={drawer.status} initial={drawer.initial} onClose={() => setOpen(null)} />}
     </div>
