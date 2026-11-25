@@ -25,16 +25,16 @@ Configuration, from the environment:
     RATEL_PAY_KEY_FILE  optional file holding the payments API key (never put it in the environment);
                         not needed through bss-app's nginx, which adds the key on the public paths
     SSL_CERT_FILE       certificates to trust for RATEL_PAY_URL (bss-app's certificate is self-signed)
-    SMS_PORT            TCP port for the 647 SMS service (off when unset)
+    SMS_PORT            TCP port for the 555 SMS service (off when unset)
     SMS_SMSC_URL        the SMSC's HTTP entry point (default http://172.22.0.33:7090)
     SMS_ALLOWED         comma-separated addresses allowed to post texts (default 172.22.0.33)
 Without RATEL_PAY_URL the menu still works and answers that the option is not available yet.
 
-The same process also serves the SMS short number 647 (SmsService below), because USSD over IMS
+The same process also serves the SMS short number 555 (SmsService below), because USSD over IMS
 only works on some Android phones: iPhones need Apple's carrier bundle and feature phones dial the
 code as a call. Text messages reach every phone.
 
-`python -I ussd_as.py --send-sms 234XXXXXXXXXX` (text on standard input) sends one SMS from 647
+`python -I ussd_as.py --send-sms 234XXXXXXXXXX` (text on standard input) sends one SMS from 555
 and exits: 0 when the SMSC took it. The customer SMS sender (customer_sms.py) runs it inside this
 container with `docker exec`, because the SMSC takes requests from this address only.
 """
@@ -470,17 +470,17 @@ class PayApi:
 
 
 # ---------------------------------------------------------------------------------------------
-# SMS short number 647: the same services by text message, for every phone
+# SMS short number 555: the same services by text message, for every phone
 # ---------------------------------------------------------------------------------------------
 
-SMS_SHORT = "647"
-SMS_HELP = ("Ratelplus 647\nBAL - your balance\nBUY 500 - buy N500 airtime\n"
+SMS_SHORT = "555"
+SMS_HELP = ("Ratelplus 555\nBAL - your balance\nBUY 500 - buy N500 airtime\n"
             "BUNDLES - list, BUNDLE 2 - buy\nCARD cardnumber pin - recharge card")
 MSISDN_RE = re.compile(r"^234[0-9]{10}$")
 
 
 class SmsCommands:
-    """Turns one text sent to 647 into one answer. Stateless: every text is a full command."""
+    """Turns one text sent to 555 into one answer. Stateless: every text is a full command."""
 
     def __init__(self, pay: PayApi):
         self.pay = pay
@@ -520,14 +520,14 @@ class SmsCommands:
             if len(digits) != 34:
                 return "Send CARD, the 20-digit card number and the 14-digit PIN, for example CARD 1234... 5678..."
             return self.pay.recharge_text(msisdn, digits[:20], digits[20:])
-        return "Sorry, that is not a 647 command.\n" + SMS_HELP
+        return "Sorry, that is not a 555 command.\n" + SMS_HELP
 
 
 class SmsService:
-    """HTTP endpoint the SMSC calls for every text sent to 647, and the way answers go back.
+    """HTTP endpoint the SMSC calls for every text sent to 555, and the way answers go back.
 
     In:  GET /sms?from=<234...>&hex=<message text, UTF-8, hex encoded>   (from the SMSC only)
-    Out: GET <SMSC>/?msisdn=647&to=<234...>&hex=<answer, UTF-8, hex encoded> (the SMSC queues it)
+    Out: GET <SMSC>/?msisdn=555&to=<234...>&hex=<answer, UTF-8, hex encoded> (the SMSC queues it)
     The request is answered at once and the command runs in the background, so the SMSC never waits
     on the payments API.
     """
@@ -588,7 +588,7 @@ class SmsService:
 
     def send(self, msisdn: str, text: str) -> bool:
         # Hex, not URL encoding: the SMSC's URL decoder refuses control characters such as the
-        # newlines in the menu. The SMSC decodes it with {s.decode.hexa} (apply-smsc-647.py).
+        # newlines in the menu. The SMSC decodes it with {s.decode.hexa} (apply-smsc-shortcode.py).
         url = f"{self.smsc_url}/?msisdn={SMS_SHORT}&to={msisdn}&hex={text.encode('utf-8').hex()}"
         req = urllib.request.Request(url, headers={"Content-Length": "0"})  # Kamailio wants it on TCP
         try:
@@ -896,7 +896,7 @@ async def main():
 
 
 def send_sms_cli(args: list[str]) -> int:
-    """One SMS from 647 to args[0], the text read from standard input. 0 when the SMSC took it."""
+    """One SMS from 555 to args[0], the text read from standard input. 0 when the SMSC took it."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if len(args) != 1 or not re.fullmatch(r"234[0-9]{10}", args[0]):
         log.error("send-sms: give one number in 234 form")

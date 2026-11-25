@@ -9,7 +9,7 @@ The welcome after an activation and the summary after each charged call, queued 
    (`docker exec scscf kamcmd ulscscf.showimpu tel:<number>`). Not registered: leave it for a
    later pass. The SMS centre gives up on an unreachable phone after about a minute, so sending
    before the phone is on the network would lose the SMS.
-3. Send it from 647 through the ussd container (`ussd_as.py --send-sms`), the only address the
+3. Send it from 555 through the ussd container (`ussd_as.py --send-sms`), the only address the
    SMS centre takes requests from.
 4. Tell bss-app it was sent (POST /v1/pay/customer-sms/<sms_id>/sent).
 

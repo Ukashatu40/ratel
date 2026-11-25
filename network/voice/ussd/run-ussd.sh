@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Start (or restart) the USSD and SMS 647 service container on the voice VM.
+# Start (or restart) the USSD and SMS 555 service container on the voice VM.
 #
 # It joins the IMS network (ratel_ims) at 172.22.0.40 and runs ussd_as.py from this folder in a
 # stock python image, nothing installed. Restarts with Docker. Changes nothing else: calls do not
-# pass through it. USSD reaches it only through the S-CSCF rule, texts to 647 only through the
-# SMSC change (apply-smsc-647.py). It listens on udp 5060 (USSD) and tcp 8647 (texts from the SMSC).
+# pass through it. USSD reaches it only through the S-CSCF rule, texts to 555 only through the
+# SMSC change (apply-smsc-shortcode.py). It listens on udp 5060 (USSD) and tcp 8647 (texts from the SMSC).
 #
 # Usage: ./run-ussd.sh            start or replace the container
 #        ./run-ussd.sh --stop     stop and remove it
@@ -64,7 +64,7 @@ try:
 except socket.timeout:
     print("NO ANSWER")
 PY
-echo "--- 647 SMS port refuses a caller that is not the SMSC? (want 403) ---"
+echo "--- 555 SMS port refuses a caller that is not the SMSC? (want 403) ---"
 python3 - "$IP" <<'PY'
 import http.client, sys
 try:

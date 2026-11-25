@@ -24,7 +24,7 @@ grep -q '^RATEL_PAY_URL=' "$HERE/ussd.env" || { echo "RATEL_PAY_URL missing in u
 
 sudo tee "$UNIT.service" >/dev/null <<UNITEOF
 [Unit]
-Description=Ratelplus: send queued customer SMS (welcome, call summaries) from 647
+Description=Ratelplus: send queued customer SMS (welcome, call summaries) from 555
 After=docker.service
 
 [Service]

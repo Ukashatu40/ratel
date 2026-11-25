@@ -41,7 +41,7 @@ UNKNOWN = ""  # an unknown number prints nothing and exits 0
 NOT_REGISTERED = "{\n\timpu: tel:2348000000002\n\tstate: not registered\n\tbarring: 0\n\tcontacts: {\n\t}\n"
 NO_CONTACT = "{\n\timpu: tel:2348000000002\n\tstate: registered\n\tcontacts: {\n\t}\n"
 
-TEXT = "Welcome to Ratelplus! Your number is 08000000001. Text MENU to 647 for balance, bundles and top-up."
+TEXT = "Welcome to Ratelplus! Your number is 08000000001. Text MENU to 555 for balance, bundles and top-up."
 
 
 class FakeBss(BaseHTTPRequestHandler):
@@ -144,7 +144,7 @@ def main() -> int:
 
         print("== two SMS for one line: each sent once")
         call = {"sms_id": 10, "line_id": 3, "msisdn": "2348000000001", "kind": "call",
-                "text": "Last call to 08031234567: 1m 00s, cost N20.00. Balance N480.00. Text MENU to 647."}
+                "text": "Last call to 08031234567: 1m 00s, cost N20.00. Balance N480.00. Text MENU to 555."}
         FakeBss.due, FakeBss.marked = [one, call], [7]
         docker = FakeDocker({"2348000000001": REGISTERED})
         failures += sender(state, docker).one_pass()

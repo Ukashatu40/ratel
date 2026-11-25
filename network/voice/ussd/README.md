@@ -1,16 +1,16 @@
-# Self-care: USSD `*123#` and SMS short number 647
+# Self-care: USSD `*123#` and SMS short number 555
 
 One small service, the container `ussd` at 172.22.0.40 on the IMS network `ratel_ims` on the voice
 VM, offers the same self-care functions two ways. Calls never pass through it.
 
 | Channel | Works on | How it reaches the service |
 | ---- | ---- | ---- |
-| SMS to **647** | every phone that sends SMS over IMS (tested: iPhone, desk phone) | the SMSC hands texts to 647 to the service, answers come back from 647 |
+| SMS to **555** | every phone that sends SMS over IMS (tested: iPhone, desk phone) | the SMSC hands texts to 555 to the service, answers come back from 555 |
 | USSD `*123#` | Android phones whose line is EPS-only (see below); not iPhone, not the desk phone | the S-CSCF sends `*` and `#` dial strings to the service |
 
-## SMS 647
+## SMS 555
 
-Text one of these to 647 (any case):
+Text one of these to 555 (any case):
 
 ```
 MENU                       the list below
@@ -29,13 +29,19 @@ SMS channel, and on USSD only when it lists USSD.
 Every text is a full command and gets one answer of at most 160 characters. Card numbers and PINs
 are never logged, only the command word.
 
-The SMSC change (`apply-smsc-647.py`) does two things in `kamailio_smsc.cfg`:
+The SMSC change (`apply-smsc-shortcode.py`) does three things in `kamailio_smsc.cfg`:
 
-1. In `route[SMS_FROM_3GPP]`, a text to 647 is passed to `http://172.22.0.40:8647/sms` with the
+1. In `route[SMS_FROM_3GPP]`, a text to 555 is passed to `http://172.22.0.40:8647/sms` with the
    sender's network-asserted number and the text hex encoded, instead of being queued.
 2. The SMSC's HTTP entry point (`event_route[xhttp:request]`), which the service uses to send its
-   answers as sender 647, accepts requests from 172.22.0.40 only. It accepted anyone before, and
-   nothing else in Ratelplus uses it. It also sets the coding the queue needs.
+   answers and the customer SMS as sender 555, accepts requests from 172.22.0.40 only. It accepted
+   anyone before, and nothing else in Ratelplus uses it. It also sets the coding the queue needs.
+3. In `route[SEND_SMS]`, an SMS from a short number goes out with the address type "unknown" (0x81)
+   instead of "international" (0x91), so phones show 555 and not +555. The short number was 647
+   until 25 Nov 2026, and phones showed it as +64 7.
+
+On a config that has the 647 version (24 Nov), the script replaces it. Port 8647 is only the
+service's internal port; it did not change with the number.
 
 The service takes requests on port 8647 from the SMSC (172.22.0.33) only.
 
@@ -76,22 +82,23 @@ UDP towards the S-CSCF, with the SIP retransmission timers. Standard library onl
 
 | File | What |
 | ---- | ---- |
-| `ussd_as.py` | the service (USSD and SMS 647) |
+| `ussd_as.py` | the service (USSD and SMS 555) |
 | `test_ussd.py` | plays a phone, the SMSC and a fake payments API against it: `python3 -I test_ussd.py` |
 | `run-ussd.sh` | starts the container (`--stop` removes it) and checks both ports |
 | `scscf-ussd-rule.cfg` | the S-CSCF block, for `route[FINAL_ORIG]` in `kamailio_scscf.cfg` |
-| `apply-smsc-647.py` | adds 647 to `kamailio_smsc.cfg` (dry run by default, `--apply` writes with a backup) |
+| `apply-smsc-shortcode.py` | adds 555 to `kamailio_smsc.cfg`, or replaces the 647 version (dry run by default, `--apply` writes with a backup) |
+| `test_apply_smsc.py` | its tests: `python3 -I test_apply_smsc.py` |
 | `customer_sms.py` | sends the queued SMS to customers (welcome, call summaries) once the number is registered (one pass) |
 | `test_customer_sms.py` | its tests, with a fake bss-app and a fake `docker`: `python3 -I test_customer_sms.py` |
 | `install-sms-timer.sh` | installs the systemd timer that runs it every minute (`--stop` removes it) |
 
 ## SMS to customers: welcome and call summaries
 
-bss-app queues two kinds of SMS to customers (docs/customer-sms.md), and this VM sends them from 647:
+bss-app queues two kinds of SMS to customers (docs/customer-sms.md), and this VM sends them from 555:
 
 ```
-Welcome to Ratelplus! Your number is 0XXXXXXXXXX. Text MENU to 647 for balance, bundles and top-up.
-Last call to 08031234567: 2m 15s, cost N22.50. Balance N477.50. Text MENU to 647.
+Welcome to Ratelplus! Your number is 0XXXXXXXXXX. Text MENU to 555 for balance, bundles and top-up.
+Last call to 08031234567: 2m 15s, cost N22.50. Balance N477.50. Text MENU to 555.
 ```
 
 `customer_sms.py` runs every minute (systemd timer `ratel-customer-sms.timer`, installed by
@@ -100,7 +107,7 @@ Last call to 08031234567: 2m 15s, cost N22.50. Balance N477.50. Text MENU to 647
 1. asks the S-CSCF whether the number is registered (`kamcmd ulscscf.showimpu tel:<number>`:
    `state: registered` with a contact). Not yet: it waits for a later pass, because the SMSC drops
    an SMS it cannot deliver after about a minute;
-2. sends it from 647 through this container (`ussd_as.py --send-sms`, the address the SMSC takes);
+2. sends it from 555 through this container (`ussd_as.py --send-sms`, the address the SMSC takes);
 3. tells bss-app it was sent. What was handed to the SMSC is kept in `customer-sms-sent.txt` first,
    so a failure to tell bss-app never sends a second SMS.
 
@@ -119,7 +126,7 @@ Balance and buying a bundle by number need ratel-app with the catalogue release
 
 ## Switching it off
 
-- SMS 647: copy the `kamailio_smsc.cfg.bak-647-*` backup back and `docker restart smsc`.
+- SMS 555: copy the `kamailio_smsc.cfg.bak-short-*` backup back and `docker restart smsc`.
 - USSD: remove the block from `kamailio_scscf.cfg` and restart the `scscf` container (every phone
   then re-registers: airplane toggle).
 - Both: `./run-ussd.sh --stop`.

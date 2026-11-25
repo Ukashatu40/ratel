@@ -195,7 +195,7 @@ def run(env_extra):
 
 
 class FakeSmsc(BaseHTTPRequestHandler):
-    """Plays the SMSC's HTTP entry point: records every answer the 647 service queues."""
+    """Plays the SMSC's HTTP entry point: records every answer the 555 service queues."""
     sent = []
 
     def log_message(self, *a):
@@ -214,7 +214,7 @@ class FakeSmsc(BaseHTTPRequestHandler):
 
 
 def sms_get(path):
-    """One request to the 647 service as the SMSC would make it; returns the HTTP status."""
+    """One request to the 555 service as the SMSC would make it; returns the HTTP status."""
     import http.client
     c = http.client.HTTPConnection("127.0.0.1", 18647, timeout=5)
     c.request("GET", path)
@@ -241,7 +241,7 @@ def sms_tests():
                 "SMS_PORT": "18647", "SMS_SMSC_URL": "http://127.0.0.1:17090", "SMS_ALLOWED": "127.0.0.1"})
     me = "2348000000902"
     cases = [
-        ("menu", lambda a: a.startswith("Ratelplus 647\nBAL")),
+        ("menu", lambda a: a.startswith("Ratelplus 555\nBAL")),
         ("bal", lambda a: a == "Airtime N1,234.50. Data 2.5GB until 30 Nov"),
         ("Buy 500", lambda a: a == "Pay N500 at https://checkout.paystack.com/abc123"),
         ("BUY 20", lambda a: a.startswith("The amount must be between")),
@@ -252,12 +252,12 @@ def sms_tests():
         ("CARD 1234 5678 9012 3456 7890 2222 2222 2222 22", lambda a: a.startswith("Recharge of N500.00 successful")),
         ("*12345678901234567890*11111111111111#", lambda a: a == "This card cannot be used."),
         ("card 123", lambda a: a.startswith("Send CARD")),
-        ("hello there & more = 100%", lambda a: a.startswith("Sorry, that is not a 647 command.")),
+        ("hello there & more = 100%", lambda a: a.startswith("Sorry, that is not a 555 command.")),
     ]
     try:
         for text, check in cases:
             status, sent = sms_case(me, text)
-            ok = status == 200 and sent is not None and sent.get("msisdn") == "647" \
+            ok = status == 200 and sent is not None and sent.get("msisdn") == "555" \
                 and sent.get("to") == me and check(sent.get("text", "")) and len(sent["text"]) <= 160
             print(f"   {'ok ' if ok else 'FAIL'} {text!r} -> {sent and sent.get('text')!r}")
             failures += not ok
@@ -276,7 +276,7 @@ def sms_tests():
         if "1234567890" in out or "22222222" in out:
             failures += 1
             print("FAIL: a card number or PIN reached the log")
-    print("== --send-sms (one SMS from 647, as the welcome sender uses it)")
+    print("== --send-sms (one SMS from 555, as the welcome sender uses it)")
     env = {k: v for k, v in os.environ.items() if not k.startswith(SERVICE_SETTINGS)}
     env["SMS_SMSC_URL"] = "http://127.0.0.1:17090"
     here = os.path.dirname(os.path.abspath(__file__))
@@ -285,8 +285,8 @@ def sms_tests():
     before = len(FakeSmsc.sent)
     done = subprocess.run(cli + ["2348000000903"], input=welcome, env=env, capture_output=True, text=True, timeout=20)
     got = FakeSmsc.sent[before:]
-    ok = done.returncode == 0 and got == [{"msisdn": "647", "to": "2348000000903", "text": welcome}]
-    print(f"   {'ok ' if ok else 'FAIL'} sends one SMS from 647 -> exit {done.returncode}, {got}")
+    ok = done.returncode == 0 and got == [{"msisdn": "555", "to": "2348000000903", "text": welcome}]
+    print(f"   {'ok ' if ok else 'FAIL'} sends one SMS from 555 -> exit {done.returncode}, {got}")
     failures += not ok
     for args, text in [(["0800000903"], welcome), (["2348000000903"], ""), (["2348000000903"], "x" * 161), ([], welcome)]:
         done = subprocess.run(cli + args, input=text, env=env, capture_output=True, text=True, timeout=20)
@@ -364,7 +364,7 @@ def main():
         if "Traceback" in out:
             failures += 1
             print("FAIL: the service logged a traceback")
-    print("== SMS short number 647")
+    print("== SMS short number 555")
     failures += sms_tests()
     httpd.shutdown()
     print("ALL PASSED" if failures == 0 else f"{failures} FAILED")
