@@ -137,8 +137,9 @@ server {
     # The SMS short number 647 and USSD (the ussd container on the voice VM): self-care by the
     # number the network asserted (docs/catalogue.md). Not public: the voice VM only, since a caller
     # here could read any line's balance. The included file adds the payments key, as for RatelPay.
-    # A regex location, so it wins over the staff-only `location /v1/` prefix below.
-    location ~ ^/v1/pay/(airtime|bundles|lines/234[0-9]{10}/(balance|purchases))$ {
+    # A regex location, so it wins over the staff-only `location /v1/` prefix below. In quotes,
+    # because nginx reads the `{` of `{10}` as the start of the block otherwise.
+    location ~ "^/v1/pay/(airtime|bundles|lines/234[0-9]{10}/(balance|purchases))$" {
         allow <address-of-voice-vm>;
         deny  all;
         limit_req zone=ratel_pay burst=20 nodelay;
