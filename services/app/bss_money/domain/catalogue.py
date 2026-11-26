@@ -9,6 +9,8 @@ Decided by the project lead on 2026-11-24 (docs/catalogue.md):
 - Airtime: the smallest top-up is 20 naira where no payment processor imposes more; card payments
   keep the gateway's floor (100 naira at Paystack). Voice calls are charged from airtime, per
   second, at one rate for calls to Ratelplus numbers (on-net) and one for every other number.
+- An SMS to another Ratelplus line costs one price, VAT inclusive (2026-11-26: N2). Texts to 555
+  are free; texts to other networks are refused until there is SMS interconnect (ADR 0013).
 """
 
 from __future__ import annotations
@@ -52,6 +54,7 @@ class CatalogueSettings:
     airtime_presets_kobo: tuple[int, ...]  # the amounts the SMS and USSD menus offer
     voice_onnet_kobo_per_min: int  # to a Ratelplus number
     voice_offnet_kobo_per_min: int  # to any other number
+    sms_onnet_kobo: int  # one SMS to a Ratelplus number, VAT inclusive
 
     def __post_init__(self) -> None:
         for name in (
@@ -60,6 +63,7 @@ class CatalogueSettings:
             "card_max_kobo",
             "voice_onnet_kobo_per_min",
             "voice_offnet_kobo_per_min",
+            "sms_onnet_kobo",
         ):
             value = getattr(self, name)
             if not _is_int(value) or value < 0:
@@ -80,7 +84,7 @@ class CatalogueSettings:
 
 
 # Until an admin saves settings. The call rates are the project lead's starting values of
-# 2026-11-24 and are meant to be changed in RatelDesk.
+# 2026-11-24, the SMS price of 2026-11-26; all are meant to be changed in RatelDesk.
 DEFAULT_SETTINGS = CatalogueSettings(
     airtime_min_kobo=20 * KOBO_PER_NAIRA,
     card_min_kobo=100 * KOBO_PER_NAIRA,
@@ -88,6 +92,7 @@ DEFAULT_SETTINGS = CatalogueSettings(
     airtime_presets_kobo=(10_000, 20_000, 50_000, 100_000),
     voice_onnet_kobo_per_min=10 * KOBO_PER_NAIRA,
     voice_offnet_kobo_per_min=20 * KOBO_PER_NAIRA,
+    sms_onnet_kobo=2 * KOBO_PER_NAIRA,
 )
 
 

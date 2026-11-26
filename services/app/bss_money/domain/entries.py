@@ -31,6 +31,7 @@ class EntryKind(StrEnum):
     VAT = "vat"  # its own entry. TODO(finance): the rate (7.5% when the plan was written)
     CORRECTION = "correction"  # fixes an earlier entry by adding a new one
     CALL = "call"  # money out: a voice call paid from airtime (VAT is its own entry, as above)
+    SMS = "sms"  # money out: a text to another Ratelplus line (VAT is its own entry)
 
 
 class InvalidPosting(ValueError):

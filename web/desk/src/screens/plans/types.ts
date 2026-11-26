@@ -13,9 +13,9 @@ export type BundleInput = Omit<Bundle, "bundleId" | "status">;
 
 export interface OfferHistoryEntry { at: number; action: string; actor: string; detail: string }
 
-// Airtime limits and call rates, in whole kobo (docs/catalogue.md).
+// Airtime limits, call rates and the SMS price, in whole kobo (docs/catalogue.md).
 export interface CatalogueSettings {
   airtimeMinKobo: number; cardMinKobo: number; cardMaxKobo: number; presetsKobo: number[];
-  onnetKoboPerMin: number; offnetKoboPerMin: number;
+  onnetKoboPerMin: number; offnetKoboPerMin: number; smsOnnetKobo: number;
 }
 export interface SettingsView { settings: CatalogueSettings; gateway: { minKobo: number; maxKobo: number } }

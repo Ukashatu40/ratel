@@ -144,6 +144,7 @@ def test_settings_stay_inside_the_gateway_and_every_change_is_audited(admin: Tes
         "airtime_presets_kobo": [10_000, 50_000],
         "voice_onnet_kobo_per_min": 800,
         "voice_offnet_kobo_per_min": 1_500,
+        "sms_onnet_kobo": 250,
         "reason": "launch rates",
     }
     below = admin.put("/v1/catalogue/settings", json={**good, "card_min_kobo": 5_000})
@@ -161,3 +162,6 @@ def test_settings_stay_inside_the_gateway_and_every_change_is_audited(admin: Tes
     assert items[0]["reason"] == "launch price list"
     assert "600.00 naira" in items[0]["detail"]
     assert "voice_onnet_kobo_per_min 1000 -> 800" in items[1]["detail"]
+    assert "sms_onnet_kobo 200 -> 250" in items[1]["detail"]
+    negative = admin.put("/v1/catalogue/settings", json={**good, "sms_onnet_kobo": -1})
+    assert negative.status_code == 422

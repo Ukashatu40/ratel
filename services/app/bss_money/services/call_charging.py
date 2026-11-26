@@ -111,6 +111,8 @@ def _mark_before_start(scope: CallChargeScope, call: CallToCharge) -> None:
             charged_kobo=0,
             uncovered_kobo=0,
         )
+        if call.call_id:
+            repositories.calls.settle_reservation(call.call_id)
 
 
 def _charge_one(scope: CallChargeScope, call: CallToCharge, vat_rate_bps: int) -> tuple[int, int]:
@@ -146,6 +148,8 @@ def _charge_one(scope: CallChargeScope, call: CallToCharge, vat_rate_bps: int) -
             charged_kobo=taken,
             uncovered_kobo=short,
         )
+        if call.call_id:  # its record is charged: the call's reservation stops holding money
+            repositories.calls.settle_reservation(call.call_id)
         if line_id is not None and cost.cost_kobo > 0:
             repositories.sms.add(
                 line_id=line_id,

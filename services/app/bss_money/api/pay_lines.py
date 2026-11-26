@@ -16,9 +16,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.bss_lines.api.deps import now_utc
 from app.bss_money.api.dependencies import require_pay_key
+from app.bss_money.domain.prepaid import parse_free_numbers
 from app.bss_money.domain.purchase import OfferKind
-from app.bss_money.repositories.ports import CatalogScope, CatalogueScope, PurchaseScope
-from app.bss_money.services import catalogue, pay_lines, purchase
+from app.bss_money.repositories.ports import (
+    CatalogScope,
+    CatalogueScope,
+    PrepaidScope,
+    PurchaseScope,
+)
+from app.bss_money.services import catalogue, pay_lines, prepaid, purchase
 from app.bss_money.services.catalog import bundles_on_sale
 from app.bss_money.services.pay_lines import PayLineScope
 from app.config import Settings
@@ -74,6 +80,50 @@ class CustomerSmsListOut(BaseModel):
 class CustomerSmsSentOut(BaseModel):
     sms_id: int
     sent_at: int
+
+
+# The voice VM's numbers and ids: a SIP Call-ID, an SMSC message id, a number as dialled or a URI.
+CallId = Annotated[str, Field(min_length=1, max_length=128)]
+Number = Annotated[str, Field(min_length=1, max_length=128)]
+
+
+class CallAuthorizeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    call_id: CallId
+    caller: Number
+    dialled: Number
+
+
+class CallAuthorizeOut(BaseModel):
+    allowed: bool
+    max_seconds: int  # 0: no limit
+    reason: str
+
+
+class CallEndIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    call_id: CallId
+    seconds: int = Field(ge=0, le=86_400)
+
+
+class CallEndOut(BaseModel):
+    ended: bool
+
+
+class SmsChargeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message_id: CallId
+    sender: Number
+    recipient: Number
+
+
+class SmsChargeOut(BaseModel):
+    send: bool
+    reason: str
+    charged_kobo: int
 
 
 def _unknown() -> ApiError:
@@ -186,3 +236,59 @@ def mark_customer_sms_sent(
     except pay_lines.NoSuchSms:
         raise ApiError(404, "not_found", "There is no such SMS.") from None
     return CustomerSmsSentOut(sms_id=sms_id, sent_at=to_epoch(sent_at))
+
+
+@router.post("/calls/authorize", response_model=CallAuthorizeOut)
+def authorize_call(
+    request: Request, body: CallAuthorizeIn, key: OptionalKey = None
+) -> CallAuthorizeOut:
+    """At call set-up (ADR 0013): whether the caller may call, and for how many seconds at most.
+
+    The money for that limit is held until the call ends. Asked again with the same Call-ID, the
+    answer is the same and nothing more is held.
+    """
+    del key  # idempotent by the Call-ID
+    settings: Settings = request.app.state.settings
+    scope: PrepaidScope = request.app.state.prepaid_scope
+    decision = prepaid.authorize_call(
+        scope,
+        call_id=body.call_id,
+        caller=body.caller,
+        dialled=body.dialled,
+        free_numbers=parse_free_numbers(settings.free_call_numbers),
+        charge_from=settings.call_charging_from,
+        now=now_utc(request),
+    )
+    return CallAuthorizeOut(
+        allowed=decision.allowed, max_seconds=decision.max_seconds, reason=decision.reason.value
+    )
+
+
+@router.post("/calls/end", response_model=CallEndOut)
+def end_call(request: Request, body: CallEndIn, key: OptionalKey = None) -> CallEndOut:
+    """At hang-up: the call's hold shrinks to what it cost. `ended` is false when there was no open
+    hold (an unlimited call, or a repeat)."""
+    del key  # idempotent by the Call-ID
+    scope: PrepaidScope = request.app.state.prepaid_scope
+    return CallEndOut(ended=prepaid.end_call(scope, call_id=body.call_id, seconds=body.seconds))
+
+
+@router.post("/sms/charge", response_model=SmsChargeOut)
+def charge_sms(request: Request, body: SmsChargeIn, key: OptionalKey = None) -> SmsChargeOut:
+    """Before the SMS centre queues a text from a phone: whether to send it, and what it cost.
+
+    Charged once per message id: asked again, the first answer comes back and nothing is charged.
+    """
+    del key  # idempotent by the message id
+    settings: Settings = request.app.state.settings
+    scope: PrepaidScope = request.app.state.prepaid_scope
+    outcome, kobo = prepaid.charge_sms(
+        scope,
+        message_id=body.message_id,
+        sender=body.sender,
+        recipient=body.recipient,
+        vat_rate_bps=settings.vat_rate_bps,
+        charge_from=settings.call_charging_from,
+        now=now_utc(request),
+    )
+    return SmsChargeOut(send=outcome.send, reason=outcome.value, charged_kobo=kobo)

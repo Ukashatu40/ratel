@@ -529,6 +529,7 @@ CatalogueScope = Callable[[], AbstractContextManager[CatalogueRepository]]
 @dataclass(frozen=True)
 class CallToCharge:
     record_id: int
+    call_id: str  # the SIP Call-ID: settles the call's reservation (ADR 0013)
     from_msisdn: str
     to_msisdn: str
     answered_at: datetime | None
@@ -562,6 +563,10 @@ class CallChargeRepository(Protocol):
         uncovered_kobo: int,
     ) -> None: ...
 
+    def settle_reservation(self, call_id: str) -> None:
+        """The call's reservation, if any, is settled: its record has been charged."""
+        ...
+
 
 @dataclass(frozen=True)
 class CallChargeRepositories:
@@ -572,3 +577,73 @@ class CallChargeRepositories:
 
 
 CallChargeScope = Callable[[], AbstractContextManager[CallChargeRepositories]]
+
+
+@dataclass(frozen=True)
+class PrepaidLine:
+    line_id: int
+    state: LineState
+
+
+@dataclass(frozen=True)
+class ReservationView:
+    call_id: str
+    line_id: int
+    rate_kobo_per_min: int
+    max_seconds: int
+    reserved_kobo: int
+    state: str  # open, ended, settled
+
+
+@dataclass(frozen=True)
+class SmsChargeView:
+    outcome: str
+    charged_kobo: int
+
+
+class PrepaidRepository(Protocol):
+    """Call reservations and SMS charges (ADR 0013). Works inside the caller's transaction."""
+
+    def lock_line(self, msisdn: str) -> PrepaidLine | None:
+        """The line with this number (not terminated), locked until the transaction ends, so two
+        calls or texts from one line take turns over its balance."""
+        ...
+
+    def is_ratel_number(self, msisdn: str) -> bool: ...
+
+    def held_kobo(self, line_id: int, now: datetime) -> int:
+        """Kobo set aside by the line's open and ended reservations that have not expired."""
+        ...
+
+    def reservation(self, call_id: str) -> ReservationView | None: ...
+
+    def add_reservation(
+        self,
+        *,
+        call_id: str,
+        line_id: int,
+        rate_kobo_per_min: int,
+        max_seconds: int,
+        reserved_kobo: int,
+        expires_at: datetime,
+    ) -> None: ...
+
+    def end_reservation(self, call_id: str, used_seconds: int, reserved_kobo: int) -> None:
+        """An open reservation becomes ended, holding `reserved_kobo` (the call's cost)."""
+        ...
+
+    def sms_charge(self, message_id: str) -> SmsChargeView | None: ...
+
+    def add_sms_charge(
+        self, *, message_id: str, line_id: int | None, outcome: str, charged_kobo: int
+    ) -> None: ...
+
+
+@dataclass(frozen=True)
+class PrepaidRepositories:
+    prepaid: PrepaidRepository
+    ledger: LedgerRepository
+    catalogue: CatalogueRepository
+
+
+PrepaidScope = Callable[[], AbstractContextManager[PrepaidRepositories]]

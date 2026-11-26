@@ -95,3 +95,32 @@ def test_a_live_block_written_for_the_old_short_number_647_is_replaced() -> None
     old = current.replace("short number 555 and USSD", "short number 647 and USSD")
     assert old != current
     assert tool.patch(old, TEMPLATE) == current
+
+
+@pytest.mark.parametrize(
+    ("path", "allowed"),
+    [
+        ("/v1/pay/calls/authorize", True),
+        ("/v1/pay/calls/end", True),
+        ("/v1/pay/sms/charge", True),
+        ("/v1/pay/customer-sms/12/sent", True),
+        ("/v1/pay/lines/2348000010010/balance", True),
+        ("/v1/pay/calls", False),
+        ("/v1/pay/sms/charge/1", False),
+        ("/v1/pay/payments", False),  # RatelPay's, with its own block
+    ],
+)
+def test_the_block_passes_the_voice_vm_paths_and_only_those(path: str, allowed: bool) -> None:
+    """ADR 0013: the P-CSCF and the SMS centre ask bss-app before each call and text."""
+    block = tool.BLOCK.search(TEMPLATE)
+    assert block is not None
+    pattern = re.search(r'location ~ "([^"]+)"', block.group(0))
+    assert pattern is not None
+    assert bool(re.match(pattern.group(1), path)) is allowed
+
+
+def test_a_live_block_without_the_prepaid_paths_gets_them() -> None:
+    current = _filled(TEMPLATE)
+    older = current.replace("|calls/(authorize|end)", "", 1).replace("|sms/charge", "", 1)
+    assert older != current
+    assert tool.patch(older, TEMPLATE) == current
