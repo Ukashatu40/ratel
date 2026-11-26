@@ -74,6 +74,10 @@ be able to take RatelCore down. Only RatelLink touches MongoDB, over `127.0.0.1`
 API and RatelDesk is reachable only over the WireGuard VPN. Public by design: RatelPay and the
 payment gateway's webhook. Expose only those paths, verify every webhook signature, rate-limit both.
 
+> **Note (project lead's decision 61, 2026-11-26):** RatelDesk, staff sign-in and the staff API are
+> public on the lab's bss-app under `desk.ratelplus.net`, ahead of the VPN. The machine paths
+> (usage, calls, self-care, the webhook, `/healthz`) keep their address lists. Risk R-20.
+
 > **Note (management decision, 2026-10-08):** The WireGuard VPN is deferred to the production
 > phase. RatelLink binds to `127.0.0.1` and is fronted by a TLS reverse proxy that accepts `/v1`
 > only from bss-app for the lab and pilot. The intent (every API and RatelDesk behind WireGuard) is

@@ -13,7 +13,7 @@ Read **Apply** in full before you start. A wrong rule can cut your SSH session o
 | core-cp | SSH (key-only, 10 new connections a minute per address), S1 (SCTP 36412) from the radios, PFCP (UDP 8805 and 8806) from core-up, HTTPS (443) from core-up and bss-app for RatelLink's proxy | dropped |
 | core-up | SSH (as above), GTP-U (UDP 2152) from the radios, PFCP (UDP 8805 and 8806) from core-cp | dropped |
 | voice VM | SSH (as above). Calls and the containers' own traffic are routed through the VM and not touched. Docker's published port for PyHSS (8080) is dropped for anyone not in `pyhss_clients` | input dropped; the rest routed as before |
-| bss-app | SSH (as above), HTTPS (443) from any address, because RatelPay and the payment webhook are public; nginx decides which path each caller may use | dropped |
+| bss-app | SSH (as above), HTTPS (443) from any address, because RatelPay, the payment webhook and, since decision 61, RatelDesk are public; HTTP (80) from any address for RatelDesk's certificate check and the redirect to HTTPS; nginx decides which path each caller may use | dropped |
 
 Replies to what the host started, loopback and ping are always let in. Only traffic addressed to the host
 is filtered. The phones' internet traffic is forwarded through core-up and is not touched, and neither
@@ -115,7 +115,7 @@ sudo systemctl disable --now ratel-fw.service
   `addresses.nft`; `{ 127.0.0.1 }` blocks everyone outside the VM, which is right if the API is only used by
   an SSH tunnel). The rule assumes the compose file publishes `8080` to the container's `8080`: change them
   together. Docker's own tables stay as they are, and this one is separate.
-- **bss-app** has no Docker. Nothing besides SSH and HTTPS is open, and the app's own port (8000) is reachable
+- **bss-app** has no Docker. Nothing besides SSH, HTTPS and (since decision 61) HTTP for the certificate check is open, and the app's own port (8000) is reachable
   only from the host itself, through nginx.
 
 On both, the address names the file uses must all be in the host's `addresses.nft` **before** you load it
