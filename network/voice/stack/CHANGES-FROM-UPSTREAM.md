@@ -35,6 +35,7 @@ This tree was taken from upstream around **2026-09-05** (nearest upstream commit
 | `scscf/kamailio_scscf.cfg` | SMS over IMS routing: the terminating test gained `!is_method("MESSAGE")`, and `route[FINAL_ORIG]` passes `INVITE|MESSAGE` into `PSTN_handling` instead of `INVITE` alone | this page |
 | `scscf/kamailio_scscf.cfg` | originating number normalisation, national and international | [`../scscf-numbering/`](../scscf-numbering/) |
 | `pcscf/kamailio_pcscf.cfg` | `udp_mtu_try_proto` commented out | [`../pcscf-transport/`](../pcscf-transport/) |
+| `pcscf/pcscf.cfg`, `pcscf/kamailio_pcscf.cfg` | `WITH_REGINFO` on, and `pcscf_uri` set to `PCSCF_URL` instead of the unfilled `"sip:HOSTNAME"`: the P-CSCF publishes registration changes to the S-CSCF and follows its view, so a phone whose registration the P-CSCF ends gets a NOTIFY and re-registers by itself (26 Nov 2026: without it, contacts stayed "deregistration pending, publish sent" while the S-CSCF still had them registered, and calls failed until an airplane toggle) | this page |
 | `smsc/kamailio_smsc.cfg` | SMS destination rewrite, worker interval, retry count | [`../smsc-numbering/`](../smsc-numbering/) |
 | `ratel-ims.yaml`, `env.example` | ours, no upstream equivalent | [README.md](README.md) |
 
