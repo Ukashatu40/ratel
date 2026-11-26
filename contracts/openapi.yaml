@@ -1688,6 +1688,111 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/calls/authorize:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_authorize_call
+      summary: At call set-up, whether a caller may call and for how many seconds at most.
+      description: |
+        Asked by the P-CSCF for each call a phone starts (ADR 0013). A billed caller gets a limit
+        of what their available airtime buys at the call's rate (available: the balance less what
+        other calls hold), at most three hours, and that money is held until the call ends. Less
+        than ten seconds of airtime refuses the call (`insufficient_balance`). Calls to the free
+        numbers (FREE_CALL_NUMBERS: emergency 112, 199, customer care) are never refused or
+        limited; nor are calls before CALL_CHARGING_FROM (`charging_off`), nor callers that are
+        not a line in RatelBSS (`not_billed`). `max_seconds` 0 means no limit. Asked again with
+        the same `call_id`, the answer is the same and nothing more is held, so no
+        `Idempotency-Key` is needed (one is accepted). Not public: voice VM only, through the
+        reverse proxy, which adds the key.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallAuthorizeRequest"
+      responses:
+        "200":
+          description: The decision. A refusal is a 200 with `allowed` false.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallAuthorization"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/calls/end:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_end_call
+      summary: At hang-up, shrink the call's hold to what it cost.
+      description: |
+        Reported by the P-CSCF when a limited call ends, with its answered seconds. The hold
+        shrinks to the call's cost and the rest is free again at once; the call is still charged
+        from its call record, which releases the hold. `ended` is false when there was no open
+        hold (an unlimited call, or a repeat), so a repeat changes nothing. Not public: voice VM
+        only, through the reverse proxy.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallEndRequest"
+      responses:
+        "200":
+          description: Whether an open hold was shrunk.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallEnded"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/pay/sms/charge:
+    post:
+      tags: [RatelBSS]
+      operationId: bss_charge_sms
+      summary: Before the SMS centre queues a text from a phone, whether to send it and its cost.
+      description: |
+        Asked by the SMS centre for each text a phone sends (ADR 0013). A text to another
+        Ratelplus line costs the catalogue's SMS price from airtime (`charged`), or is refused
+        when the available airtime does not cover it (`refused_balance`). A text to 555 is free
+        (`free_self_care`). A text to anything else (another network, another short code) is
+        refused and not charged (`refused_off_net`): there is no SMS interconnect. Before
+        CALL_CHARGING_FROM texts are free (`free_charging_off`); senders that are not a line in
+        RatelBSS are not billed (`not_billed`). Charged once per `message_id`: asked again, the
+        first answer comes back and nothing more is charged. Not public: voice VM only, through
+        the reverse proxy.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SmsChargeRequest"
+      responses:
+        "200":
+          description: The decision. A refusal is a 200 with `send` false.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmsCharge"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/pay/payments:
     post:
       tags: [RatelBSS]
@@ -2153,6 +2258,93 @@ components:
         sent_at:
           type: integer
           description: Epoch seconds, UTC.
+    CallAuthorizeRequest:
+      type: object
+      required: [call_id, caller, dialled]
+      additionalProperties: false
+      properties:
+        call_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The SIP Call-ID; the call record carries the same one.
+        caller:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The caller's number or URI (P-Asserted-Identity).
+        dialled:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The number or URI dialled (the Request-URI).
+    CallAuthorization:
+      type: object
+      required: [allowed, max_seconds, reason]
+      additionalProperties: false
+      properties:
+        allowed:
+          type: boolean
+        max_seconds:
+          type: integer
+          minimum: 0
+          description: The longest the call may last once answered; 0 means no limit.
+        reason:
+          type: string
+          enum: [charging_off, free_number, not_billed, limited, insufficient_balance, line_not_in_service]
+    CallEndRequest:
+      type: object
+      required: [call_id, seconds]
+      additionalProperties: false
+      properties:
+        call_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        seconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          description: Answered seconds, rounded up.
+    CallEnded:
+      type: object
+      required: [ended]
+      additionalProperties: false
+      properties:
+        ended:
+          type: boolean
+    SmsChargeRequest:
+      type: object
+      required: [message_id, sender, recipient]
+      additionalProperties: false
+      properties:
+        message_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The SMS centre's id for the text, the same on a retry.
+        sender:
+          type: string
+          minLength: 1
+          maxLength: 128
+        recipient:
+          type: string
+          minLength: 1
+          maxLength: 128
+    SmsCharge:
+      type: object
+      required: [send, reason, charged_kobo]
+      additionalProperties: false
+      properties:
+        send:
+          type: boolean
+        reason:
+          type: string
+          enum: [charged, free_self_care, free_charging_off, not_billed, refused_balance, refused_off_net, refused_not_in_service]
+        charged_kobo:
+          type: integer
+          minimum: 0
+          description: VAT inclusive; 0 when not charged.
     BuyBundleByNumber:
       type: object
       required: [bundle_id, channel]
@@ -2215,7 +2407,7 @@ components:
           type: [number, "null"]
     CatalogueSettings:
       type: object
-      required: [airtime_min_kobo, card_min_kobo, card_max_kobo, airtime_presets_kobo, voice_onnet_kobo_per_min, voice_offnet_kobo_per_min]
+      required: [airtime_min_kobo, card_min_kobo, card_max_kobo, airtime_presets_kobo, voice_onnet_kobo_per_min, voice_offnet_kobo_per_min, sms_onnet_kobo]
       additionalProperties: false
       properties:
         airtime_min_kobo:
@@ -2239,6 +2431,10 @@ components:
         voice_offnet_kobo_per_min:
           type: integer
           minimum: 0
+        sms_onnet_kobo:
+          type: integer
+          minimum: 0
+          description: One text to another Ratelplus line, VAT inclusive.
     CatalogueSettingsChange:
       allOf:
         - $ref: "#/components/schemas/CatalogueSettings"

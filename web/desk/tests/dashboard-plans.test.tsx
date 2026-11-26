@@ -81,6 +81,23 @@ describe("plans", () => {
     expect(screen.getByRole("button", { name: /create bundle/i })).toBeEnabled();
     expect(await screen.findByLabelText(/smallest top-up/i)).toHaveValue("20");
     expect(screen.getByLabelText(/calls to other networks/i)).toHaveValue("20");
+    expect(screen.getByLabelText(/texts to ratelplus numbers/i)).toHaveValue("2");
+  });
+
+  it("saves the SMS price with the other settings, in kobo", async () => {
+    realMode();
+    const user = userEvent.setup();
+    const saved = () => Promise.resolve(new Response(JSON.stringify(catalogue.settings), { status: 200, headers: { "Content-Type": "application/json" } }));
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => (init?.method === "PUT" ? saved() : json(catalogue)));
+    wrap(<PlansScreen />);
+    const sms = await screen.findByLabelText(/texts to ratelplus numbers/i, {}, { timeout: 5000 });
+    await user.clear(sms);
+    await user.type(sms, "2.50");
+    await user.type(screen.getByLabelText(/why the settings change/i), "SMS launch price");
+    await user.click(screen.getByRole("button", { name: /save airtime, call & text settings/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true));
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(put?.[1].body)).toMatchObject({ sms_onnet_kobo: 250, voice_offnet_kobo_per_min: 2000, reason: "SMS launch price" });
   });
 
   it("publishes a bundle with the reason, the channels and an Idempotency-Key", async () => {

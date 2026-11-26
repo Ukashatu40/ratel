@@ -36,6 +36,7 @@ from app.bss_money.models.allowance import AllowanceBucket
 from app.bss_money.models.catalogue import CallCharge, CatalogueAudit, CatalogueSetting
 from app.bss_money.models.ledger import LedgerEntry, Wallet
 from app.bss_money.models.payments import Payment
+from app.bss_money.models.prepaid import CallReservation, SmsCharge
 from app.bss_money.models.rating import UsageRating
 from app.bss_money.models.vouchers import Voucher, VoucherAttempt
 from app.bss_money.repositories.ports import (
@@ -52,7 +53,10 @@ from app.bss_money.repositories.ports import (
     NewVoucher,
     OfferView,
     PendingSms,
+    PrepaidLine,
     RatedLine,
+    ReservationView,
+    SmsChargeView,
     StoredEntry,
     StoredPayment,
     StoredVoucher,
@@ -892,6 +896,7 @@ class SqlCatalogueRepository:
             airtime_presets_kobo=tuple(int(p) for p in row.airtime_presets.split(",") if p.strip()),
             voice_onnet_kobo_per_min=row.voice_onnet_kobo_per_min,
             voice_offnet_kobo_per_min=row.voice_offnet_kobo_per_min,
+            sms_onnet_kobo=row.sms_onnet_kobo,
         )
 
     def save_settings(self, settings: CatalogueSettings) -> None:
@@ -905,6 +910,7 @@ class SqlCatalogueRepository:
         row.airtime_presets = ",".join(str(p) for p in settings.airtime_presets_kobo)
         row.voice_onnet_kobo_per_min = settings.voice_onnet_kobo_per_min
         row.voice_offnet_kobo_per_min = settings.voice_offnet_kobo_per_min
+        row.sms_onnet_kobo = settings.sms_onnet_kobo
         self._session.flush()
 
     def audit_for_key(self, idempotency_key: str) -> AuditRow | None:
@@ -970,6 +976,7 @@ class SqlCallChargeRepository:
         return [
             CallToCharge(
                 record_id=r.id,
+                call_id=r.call_id,
                 from_msisdn=r.from_msisdn,
                 to_msisdn=r.to_msisdn,
                 answered_at=_utc_or_none(r.answered_at),
@@ -1013,6 +1020,106 @@ class SqlCallChargeRepository:
                 rate_kobo_per_min=rate_kobo_per_min,
                 charged_kobo=charged_kobo,
                 uncovered_kobo=uncovered_kobo,
+            )
+        )
+        self._session.flush()
+
+    def settle_reservation(self, call_id: str) -> None:
+        self._session.execute(
+            update(CallReservation)
+            .where(CallReservation.call_id == call_id, CallReservation.state != "settled")
+            .values(state="settled")
+        )
+
+
+class SqlPrepaidRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def lock_line(self, msisdn: str) -> PrepaidLine | None:
+        row = self._session.execute(
+            select(Line.line_id, Line.state)
+            .where(Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value)
+            .with_for_update()
+        ).first()
+        return None if row is None else PrepaidLine(line_id=row.line_id, state=LineState(row.state))
+
+    def is_ratel_number(self, msisdn: str) -> bool:
+        found = self._session.scalar(
+            select(Line.line_id).where(
+                Line.msisdn == msisdn, Line.state != LineState.TERMINATED.value
+            )
+        )
+        return found is not None
+
+    def held_kobo(self, line_id: int, now: datetime) -> int:
+        held = self._session.scalar(
+            select(func.coalesce(func.sum(CallReservation.reserved_kobo), 0)).where(
+                CallReservation.line_id == line_id,
+                CallReservation.state.in_(("open", "ended")),
+                CallReservation.expires_at > now,
+            )
+        )
+        return int(held or 0)
+
+    def reservation(self, call_id: str) -> ReservationView | None:
+        row = self._session.scalar(
+            select(CallReservation).where(CallReservation.call_id == call_id).with_for_update()
+        )
+        if row is None:
+            return None
+        return ReservationView(
+            call_id=row.call_id,
+            line_id=row.line_id,
+            rate_kobo_per_min=row.rate_kobo_per_min,
+            max_seconds=row.max_seconds,
+            reserved_kobo=row.reserved_kobo,
+            state=row.state,
+        )
+
+    def add_reservation(
+        self,
+        *,
+        call_id: str,
+        line_id: int,
+        rate_kobo_per_min: int,
+        max_seconds: int,
+        reserved_kobo: int,
+        expires_at: datetime,
+    ) -> None:
+        self._session.add(
+            CallReservation(
+                call_id=call_id,
+                line_id=line_id,
+                rate_kobo_per_min=rate_kobo_per_min,
+                max_seconds=max_seconds,
+                reserved_kobo=reserved_kobo,
+                state="open",
+                expires_at=expires_at,
+            )
+        )
+        self._session.flush()
+
+    def end_reservation(self, call_id: str, used_seconds: int, reserved_kobo: int) -> None:
+        self._session.execute(
+            update(CallReservation)
+            .where(CallReservation.call_id == call_id, CallReservation.state == "open")
+            .values(state="ended", used_seconds=used_seconds, reserved_kobo=reserved_kobo)
+        )
+
+    def sms_charge(self, message_id: str) -> SmsChargeView | None:
+        row = self._session.scalar(select(SmsCharge).where(SmsCharge.message_id == message_id))
+        return None if row is None else SmsChargeView(row.outcome, row.charged_kobo)
+
+    def add_sms_charge(
+        self, *, message_id: str, line_id: int | None, outcome: str, charged_kobo: int
+    ) -> None:
+        self._session.add(
+            SmsCharge(
+                message_id=message_id,
+                line_id=line_id,
+                outcome=outcome,
+                charged_kobo=charged_kobo,
             )
         )
         self._session.flush()

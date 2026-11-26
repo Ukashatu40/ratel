@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Unset: the call-charging job charges no call at all, so a deployment never charges by accident
     # the test calls made before launch.
     call_charging_from: AwareDatetime | None = None
+    # Numbers a call to is never refused or limited, even with no airtime (ADR 0013): emergency 112,
+    # 199, and customer care once it has a number. Comma separated, as dialled.
+    free_call_numbers: str = "112,199"
 
     @field_validator("call_charging_from", mode="before")
     @classmethod

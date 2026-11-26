@@ -16,6 +16,7 @@ from app.bss_money.domain.catalogue import DEFAULT_SETTINGS
 from app.bss_money.domain.entries import EntryKind, new_posting
 from app.bss_money.models.catalogue import CallCharge
 from app.bss_money.models.ledger import LedgerEntry
+from app.bss_money.models.prepaid import CallReservation
 from app.bss_money.repositories.ports import CallChargeRepositories
 from app.bss_money.repositories.sql import (
     SqlCallChargeRepository,
@@ -284,3 +285,27 @@ def test_calls_that_cost_nothing_queue_no_sms(factory: sessionmaker[Session]) ->
     _call(factory, "c", OUTSIDE, 60)
     charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=T0 + timedelta(days=1))
     assert _sms(factory) == []  # c ended before charging started
+
+
+def test_charging_a_call_settles_its_reservation_so_it_stops_holding_money(
+    factory: sessionmaker[Session],
+) -> None:
+    """ADR 0013: the hold taken at call set-up ends when the call record is charged."""
+    _top_up(factory, 100_000)
+    _call(factory, "a", FRIEND, 60)
+    with factory() as s, s.begin():
+        s.add(
+            CallReservation(
+                call_id="a",
+                line_id=1,
+                rate_kobo_per_min=DEFAULT_SETTINGS.voice_onnet_kobo_per_min,
+                max_seconds=600,
+                reserved_kobo=DEFAULT_SETTINGS.voice_onnet_kobo_per_min,
+                used_seconds=60,
+                state="ended",
+                expires_at=T0 + timedelta(hours=1),
+            )
+        )
+    charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
+    with factory() as s:
+        assert s.scalar(select(CallReservation.state)) == "settled"

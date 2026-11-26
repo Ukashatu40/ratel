@@ -25,6 +25,7 @@ from app.bss_money.repositories.ports import (
     BundleCatalog,
     DeskReads,
     PaymentRepositories,
+    PrepaidRepositories,
     PurchaseRepositories,
     RedemptionRepositories,
 )
@@ -37,6 +38,7 @@ from app.bss_money.repositories.sql import (
     SqlMoneyReadRepository,
     SqlPaidPlanCheck,
     SqlPaymentRepository,
+    SqlPrepaidRepository,
     SqlPurchaseRepository,
     SqlRatingRepository,
     SqlVoucherRepository,
@@ -160,6 +162,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
     app.state.purchase_scope = purchase_scope
+
+    @contextmanager
+    def prepaid_scope() -> Iterator[PrepaidRepositories]:
+        # One transaction per call or text decision: the line is locked, so two calls or texts from
+        # one line take turns over its balance (ADR 0013).
+        with app.state.session_factory() as session, session.begin():
+            yield PrepaidRepositories(
+                prepaid=SqlPrepaidRepository(session),
+                ledger=SqlLedgerRepository(session),
+                catalogue=SqlCatalogueRepository(session),
+            )
+
+    app.state.prepaid_scope = prepaid_scope
 
     @contextmanager
     def payment_scope() -> Iterator[PaymentRepositories]:

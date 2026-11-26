@@ -64,6 +64,7 @@ class SettingsBody(BaseModel):
     airtime_presets_kobo: list[int] = Field(min_length=1, max_length=PRESETS_MAX)
     voice_onnet_kobo_per_min: int = Field(ge=0)
     voice_offnet_kobo_per_min: int = Field(ge=0)
+    sms_onnet_kobo: int = Field(ge=0)
 
 
 class GatewayLimits(BaseModel):
@@ -160,6 +161,7 @@ def _settings_out(s: CatalogueSettings) -> SettingsBody:
         airtime_presets_kobo=list(s.airtime_presets_kobo),
         voice_onnet_kobo_per_min=s.voice_onnet_kobo_per_min,
         voice_offnet_kobo_per_min=s.voice_offnet_kobo_per_min,
+        sms_onnet_kobo=s.sms_onnet_kobo,
     )
 
 
@@ -255,6 +257,7 @@ def put_settings(
                 airtime_presets_kobo=tuple(body.airtime_presets_kobo),
                 voice_onnet_kobo_per_min=body.voice_onnet_kobo_per_min,
                 voice_offnet_kobo_per_min=body.voice_offnet_kobo_per_min,
+                sms_onnet_kobo=body.sms_onnet_kobo,
             ),
             reason=body.reason,
             gateway_min_kobo=settings.payment_min_kobo,

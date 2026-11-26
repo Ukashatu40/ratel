@@ -24,6 +24,7 @@ class CatalogueSetting(Base, TimestampMixin):
         CheckConstraint("card_max_kobo >= card_min_kobo", name="card_max_not_below_min"),
         CheckConstraint("voice_onnet_kobo_per_min >= 0", name="onnet_not_negative"),
         CheckConstraint("voice_offnet_kobo_per_min >= 0", name="offnet_not_negative"),
+        CheckConstraint("sms_onnet_kobo >= 0", name="sms_onnet_not_negative"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
@@ -34,6 +35,7 @@ class CatalogueSetting(Base, TimestampMixin):
     airtime_presets: Mapped[str] = mapped_column(String(120))
     voice_onnet_kobo_per_min: Mapped[int] = mapped_column(BigInteger)
     voice_offnet_kobo_per_min: Mapped[int] = mapped_column(BigInteger)
+    sms_onnet_kobo: Mapped[int] = mapped_column(BigInteger, server_default="200")
 
 
 class CatalogueAudit(Base, TimestampMixin):

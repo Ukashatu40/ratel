@@ -55,3 +55,6 @@ No call summary is sent while call charging is off (`CALL_CHARGING_FROM` unset).
 - A line not in service (suspended, terminated) is not sent anything while it is not.
 - Marked sent means handed to the SMS centre while the number was registered. Delivery to the phone
   is not reported back by this SMS centre.
+- These SMS cost the customer nothing. Texts customers send themselves are charged from airtime
+  (2 naira to another Ratelplus line, free to 555, not sent to other networks): docs/catalogue.md,
+  ADR 0013.
