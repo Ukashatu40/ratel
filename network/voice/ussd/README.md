@@ -29,7 +29,8 @@ SMS channel, and on USSD only when it lists USSD.
 Every text is a full command and gets one answer of at most 160 characters. Card numbers and PINs
 are never logged, only the command word.
 
-The SMSC change (`apply-smsc-shortcode.py`) does three things in `kamailio_smsc.cfg`:
+The SMSC change (`apply-smsc-shortcode.py`) does three things in `kamailio_smsc.cfg`, after the
+`smsc` container's own Kamailio has checked the new file (`kamailio -c`):
 
 1. In `route[SMS_FROM_3GPP]`, a text to 555 is passed to `http://172.22.0.40:8647/sms` with the
    sender's network-asserted number and the text hex encoded, instead of being queued.
@@ -37,7 +38,8 @@ The SMSC change (`apply-smsc-shortcode.py`) does three things in `kamailio_smsc.
    answers and the customer SMS as sender 555, accepts requests from 172.22.0.40 only. It accepted
    anyone before, and nothing else in Ratelplus uses it. It also sets the coding the queue needs.
 3. In `route[SEND_SMS]`, an SMS from a short number goes out with the address type "unknown" (0x81)
-   instead of "international" (0x91), so phones show 555 and not +555. The short number was 647
+   instead of "international" (0x91), so phones show 555 and not +555 (`$tpdu(origen_flags)`, the
+   sender address the phone shows; `$rpdata` has no such setting). The short number was 647
    until 25 Nov 2026, and phones showed it as +64 7.
 
 On a config that has the 647 version (24 Nov), the script replaces it. Port 8647 is only the
