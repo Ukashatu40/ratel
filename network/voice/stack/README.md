@@ -75,6 +75,7 @@ own. They are described in [CHANGES-FROM-UPSTREAM.md](CHANGES-FROM-UPSTREAM.md).
 | `rtpengine/` | `rtpengine`: its start-up script |
 | `ratel-ims.yaml` | the compose file: which containers run, on which addresses, on the `ratel_ims` bridge |
 | `env.example` | every variable the stack reads, with placeholder values only |
+| `restart-pcscf.sh` | ours: restarts `pcscf` on the voice VM, checks it stays up and has the IMS route with the MTU lock, then says what to check on core-cp (the PCRF's Rx connection on 3871) |
 
 ## What is deliberately not here
 

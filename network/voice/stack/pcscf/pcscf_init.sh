@@ -94,7 +94,13 @@ sed -i 's|RTPENGINE_IP|'$RTPENGINE_IP'|g' /etc/kamailio_pcscf/kamailio_pcscf.cfg
 sed -i 's|RTPENGINE_IP|'$RTPENGINE_IP'|g' /etc/kamailio_pcscf/route/rtp.cfg
 
 # Add static route to route traffic back to UE as there is not NATing
-ip r add ${UE_IPV4_IMS} via ${UPF_IP}
+# RATEL (26 Nov 2026): through this container's own gateway, with the path MTU locked. The upstream
+# line (`ip r add ${UE_IPV4_IMS} via ${UPF_IP}`) fails here, because UPF_IP is core-up's address and
+# not on this network, so IMS traffic took the default route with no MTU limit. Packets over the
+# core-up tunnel MTU (ogstun2, 1400) were then dropped, and calls to idle phones stalled (20 Nov).
+UE_IMS_GW=$(ip route show default | awk '{print $3; exit}')
+ip r replace ${UE_IPV4_IMS} via ${UE_IMS_GW} mtu lock ${UE_IMS_PATH_MTU:-1400} \
+	|| echo "pcscf_init: could not add the IMS route via ${UE_IMS_GW} with MTU ${UE_IMS_PATH_MTU:-1400}"
 # Route needed for VoWiFi client where internet APN is used
 ip r add ${UE_IPV4_INTERNET} via ${UPF_IP}
 
