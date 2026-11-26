@@ -22,9 +22,9 @@ Configuration, from the environment:
     USSD_PORT           default 5060
     USSD_LOG_LEVEL      default INFO
     RATEL_PAY_URL       base URL of ratel-app's payments API, for example https://bss-app/...
-    RATEL_PAY_KEY_FILE  optional file holding the payments API key (never put it in the environment);
+    RATEL_PAY_KEY_FILE  optional file holding the payments API key (never in the environment);
                         not needed through bss-app's nginx, which adds the key on the public paths
-    SSL_CERT_FILE       certificates to trust for RATEL_PAY_URL (bss-app's certificate is self-signed)
+    SSL_CERT_FILE       certificates to trust for RATEL_PAY_URL (bss-app's is self-signed)
     SMS_PORT            TCP port for the 555 SMS service (off when unset)
     SMS_SMSC_URL        the SMSC's HTTP entry point (default http://172.22.0.33:7090)
     SMS_ALLOWED         comma-separated addresses allowed to post texts (default 172.22.0.33)
@@ -45,8 +45,8 @@ import asyncio
 import json
 import logging
 import os
-import random
 import re
+import secrets
 import ssl
 import string
 import sys
@@ -68,13 +68,37 @@ USSD_MAX = 182  # characters in one USSD string
 ALLOW = "INVITE, ACK, BYE, CANCEL, INFO, OPTIONS"
 USSD_TYPE = "application/vnd.3gpp.ussd+xml"
 COMPACT = {
-    "i": "call-id", "m": "contact", "e": "content-encoding", "l": "content-length",
-    "c": "content-type", "f": "from", "s": "subject", "k": "supported", "t": "to", "v": "via",
+    "i": "call-id",
+    "m": "contact",
+    "e": "content-encoding",
+    "l": "content-length",
+    "c": "content-type",
+    "f": "from",
+    "s": "subject",
+    "k": "supported",
+    "t": "to",
+    "v": "via",
 }
 
 
+def last_four(msisdn: str | None) -> str:
+    """A phone number as the logs show it: the last four digits only (customer data stays out)."""
+    digits = "".join(c for c in (msisdn or "") if c.isdigit())
+    return "..." + digits[-4:] if len(digits) >= 4 else "unknown"
+
+
+def masked_code(code: str) -> str:
+    """A dialled USSD code with any run of five digits or more hidden (it may carry a card)."""
+    return re.sub(r"[0-9]{5,}", lambda m: "*" * len(m.group(0)), code)
+
+
+def first_word(data: bytes) -> str:
+    """The SIP method of a request, or `SIP/2.0` for a response: nothing that names anyone."""
+    return data.split(b" ", 1)[0][:16].decode("ascii", "replace")
+
+
 def token(n: int = 10) -> str:
-    return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(n))
+    return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(n))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -260,10 +284,10 @@ class Reply:
 class Menu:
     """What to answer. Pure logic plus calls to ratel-app; no SIP in here."""
 
-    def __init__(self, pay: "PayApi"):
+    def __init__(self, pay: PayApi):
         self.pay = pay
 
-    def start(self, s: "Session", code: str) -> Reply:
+    def start(self, s: Session, code: str) -> Reply:
         code = code.replace("%23", "#")
         m = re.fullmatch(r"\*123\*([0-9]{20})\*([0-9]{14})#", code)
         if m:  # *123*CARD*PIN#: recharge in one go
@@ -273,7 +297,7 @@ class Menu:
             return Reply(MAIN_MENU, False)
         return Reply("Unknown service code. Dial *123# for the Ratelplus menu.", True)
 
-    def answer(self, s: "Session", text: str) -> Reply:
+    def answer(self, s: Session, text: str) -> Reply:
         text = text.strip()
         if s.state == "main":
             if text == "1":
@@ -310,13 +334,16 @@ class Menu:
             return self.recharge(s, m.group(1), m.group(2))
         return Reply("Session ended. Dial *123# to start again.", True)
 
-    def recharge(self, s: "Session", card: str, pin: str) -> Reply:
+    def recharge(self, s: Session, card: str, pin: str) -> Reply:
         return Reply(self.pay.recharge_text(s.msisdn, card, pin), True)
 
 
 def bundle_menu(offers: list[dict]) -> str:
     """A numbered list of bundles, short enough for one USSD screen."""
-    lines = [f"{i}. {b['name']} {PayApi.naira(b['price_kobo'], whole=True)}" for i, b in enumerate(offers, 1)]
+    lines = [
+        f"{i}. {b['name']} {PayApi.naira(b['price_kobo'], whole=True)}"
+        for i, b in enumerate(offers, 1)
+    ]
     return "Buy a bundle\n" + "\n".join(lines)
 
 
@@ -335,7 +362,7 @@ class PayApi:
         return bool(self.base)
 
     def _call(self, method: str, path: str, body: dict | None = None, extra: dict | None = None):
-        req = urllib.request.Request(self.base + path, method=method)
+        req = urllib.request.Request(self.base + path, method=method)  # noqa: S310  (RATEL_PAY_URL from the service's own settings, http or https)
         if self.key:
             req.add_header("Authorization", f"Bearer {self.key}")
         req.add_header("Accept", "application/json")
@@ -346,7 +373,7 @@ class PayApi:
             data = json.dumps(body).encode()
             req.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(req, data=data, timeout=6, context=self.ctx) as r:
+            with urllib.request.urlopen(req, data=data, timeout=6, context=self.ctx) as r:  # noqa: S310  (RATEL_PAY_URL from the service's own settings, http or https)
                 return r.status, json.loads(r.read() or b"{}")
         except urllib.error.HTTPError as e:
             try:
@@ -394,7 +421,9 @@ class PayApi:
         items = body.get("bundles", []) if status == 200 else []
         return sorted(items, key=lambda b: (b.get("price_kobo", 0), b.get("bundle_id", 0)))[:6]
 
-    def buy_bundle_text(self, msisdn: str | None, bundle_id: int, channel: str, request_id: str) -> str:
+    def buy_bundle_text(
+        self, msisdn: str | None, bundle_id: int, channel: str, request_id: str
+    ) -> str:
         if not (self.ready and msisdn):
             return "Bundles are not available yet. Please try again later."
         status, body = self._call(
@@ -407,11 +436,15 @@ class PayApi:
             until = ""
             if body.get("valid_to"):
                 until = " until " + time.strftime("%d %b", time.gmtime(body["valid_to"]))
-            return (f"{body['name']} is active{until}. "
-                    f"Airtime left {self.naira(body['balance_kobo'])}")
+            return (
+                f"{body['name']} is active{until}. Airtime left {self.naira(body['balance_kobo'])}"
+            )
         error = (body.get("error") or {}) if isinstance(body, dict) else {}
         if error.get("code") == "insufficient_funds":
-            return "Not enough airtime for this bundle. Top up with BUY and the amount, or a recharge card."
+            return (
+                "Not enough airtime for this bundle. "
+                "Top up with BUY and the amount, or a recharge card."
+            )
         if status == 409:
             return "That bundle is not available now. Send BUNDLES for the list."
         return "Bundles are not available right now. Please try again later."
@@ -438,14 +471,19 @@ class PayApi:
         offers = self.bundles(channel)
         if not offers:
             return "Bundles are not available right now. Please try again later."
-        lines = [f"{i} {b['name']} {self.naira(b['price_kobo'], whole=True)}" for i, b in enumerate(offers, 1)]
+        lines = [
+            f"{i} {b['name']} {self.naira(b['price_kobo'], whole=True)}"
+            for i, b in enumerate(offers, 1)
+        ]
         return "Bundles\n" + "\n".join(lines) + "\nReply BUNDLE and the number"
 
     def payment_text(self, msisdn: str | None, naira: int) -> str:
         if not (self.ready and msisdn):
             return "Airtime purchase is not available yet. Please try again later."
         status, body = self._call(
-            "POST", "/v1/pay/payments", {"msisdn": msisdn, "amount_kobo": naira * 100},
+            "POST",
+            "/v1/pay/payments",
+            {"msisdn": msisdn, "amount_kobo": naira * 100},
             {"Idempotency-Key": f"ussd-{msisdn}-{naira}-{int(time.time())}"},
         )
         url = body.get("checkout_url") if status == 200 else None
@@ -460,8 +498,10 @@ class PayApi:
             "POST", "/v1/pay/vouchers/redeem", {"msisdn": msisdn, "card_number": card, "pin": pin}
         )
         if status == 200:
-            return (f"Recharge of {self.naira(body['amount_kobo'])} successful. "
-                    f"New balance {self.naira(body['balance_kobo'])}")
+            return (
+                f"Recharge of {self.naira(body['amount_kobo'])} successful. "
+                f"New balance {self.naira(body['balance_kobo'])}"
+            )
         if status == 429:
             return "Too many attempts. Please try again later."
         if status in (400, 422):
@@ -474,8 +514,10 @@ class PayApi:
 # ---------------------------------------------------------------------------------------------
 
 SMS_SHORT = "555"
-SMS_HELP = ("Ratelplus 555\nBAL - your balance\nBUY 500 - buy N500 airtime\n"
-            "BUNDLES - list, BUNDLE 2 - buy\nCARD cardnumber pin - recharge card")
+SMS_HELP = (
+    "Ratelplus 555\nBAL - your balance\nBUY 500 - buy N500 airtime\n"
+    "BUNDLES - list, BUNDLE 2 - buy\nCARD cardnumber pin - recharge card"
+)
 MSISDN_RE = re.compile(r"^234[0-9]{10}$")
 
 
@@ -518,7 +560,10 @@ class SmsCommands:
         if word in ("CARD", "RECHARGE", "LOAD") or re.fullmatch(r"\*?[0-9]{20}\*[0-9]{14}#?", t):
             digits = re.sub(r"[^0-9]", "", t)
             if len(digits) != 34:
-                return "Send CARD, the 20-digit card number and the 14-digit PIN, for example CARD 1234... 5678..."
+                return (
+                    "Send CARD, the 20-digit card number and the 14-digit PIN, "
+                    "for example CARD 1234... 5678..."
+                )
             return self.pay.recharge_text(msisdn, digits[:20], digits[20:])
         return "Sorry, that is not a 555 command.\n" + SMS_HELP
 
@@ -558,14 +603,18 @@ class SmsService:
             except ValueError:
                 return await self._reply(writer, 400, "bad hex")
             if not MSISDN_RE.match(msisdn):
-                log.warning("sms: ignored text from %r (not a Ratelplus number)", msisdn)
+                log.warning("sms: ignored a text from a number that is not a Ratelplus number")
                 return await self._reply(writer, 400, "bad from")
             await self._reply(writer, 200, "ok")
             task = asyncio.get_running_loop().create_task(self.process(msisdn, text))
             self.tasks.add(task)
             task.add_done_callback(self.tasks.discard)
-        except (asyncio.IncompleteReadError, asyncio.LimitOverrunError, asyncio.TimeoutError,
-                ConnectionError):
+        except (
+            TimeoutError,
+            asyncio.IncompleteReadError,
+            asyncio.LimitOverrunError,
+            ConnectionError,
+        ):
             pass
         finally:
             writer.close()
@@ -574,25 +623,34 @@ class SmsService:
     async def _reply(writer: asyncio.StreamWriter, code: int, text: str):
         reason = {200: "OK", 400: "Bad Request", 403: "Forbidden", 404: "Not Found"}[code]
         body = text.encode()
-        writer.write(f"HTTP/1.1 {code} {reason}\r\nContent-Type: text/plain\r\n"
-                     f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode() + body)
+        writer.write(
+            f"HTTP/1.1 {code} {reason}\r\nContent-Type: text/plain\r\n"
+            f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+            + body
+        )
         await writer.drain()
 
     async def process(self, msisdn: str, text: str):
-        log.info("sms: %s from %s", self.commands.keyword(text), msisdn)
+        log.info("sms: %s from %s", self.commands.keyword(text), last_four(msisdn))
         answer = await asyncio.to_thread(self.commands.answer, msisdn, text, token(12))
         if len(answer) > 160:  # one SMS: the SMSC does not split long messages
             answer = answer[:157] + "..."
         ok = await asyncio.to_thread(self.send, msisdn, answer)
-        log.info("sms: answer to %s %s", msisdn, "queued at the SMSC" if ok else "NOT delivered to the SMSC")
+        log.info(
+            "sms: answer to %s %s",
+            last_four(msisdn),
+            "queued at the SMSC" if ok else "NOT delivered to the SMSC",
+        )
 
     def send(self, msisdn: str, text: str) -> bool:
         # Hex, not URL encoding: the SMSC's URL decoder refuses control characters such as the
         # newlines in the menu. The SMSC decodes it with {s.decode.hexa} (apply-smsc-shortcode.py).
         url = f"{self.smsc_url}/?msisdn={SMS_SHORT}&to={msisdn}&hex={text.encode('utf-8').hex()}"
-        req = urllib.request.Request(url, headers={"Content-Length": "0"})  # Kamailio wants it on TCP
+        req = urllib.request.Request(  # noqa: S310  (SMS_SMSC_URL from the service's own settings, http)
+            url, headers={"Content-Length": "0"}
+        )  # Kamailio wants it on TCP
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with urllib.request.urlopen(req, timeout=5) as r:  # noqa: S310  (SMS_SMSC_URL from the service's own settings, http)
                 return r.status == 200
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             log.warning("sms: SMSC did not take the answer: %s", type(e).__name__)
@@ -641,7 +699,8 @@ class UssdService(asyncio.DatagramProtocol):
         log.info("listening on udp %s:%d", self.ip, self.port)
 
     def send(self, data: bytes, addr: tuple[str, int]):
-        log.debug("send to %s:%d\n%s", addr[0], addr[1], data.decode("utf-8", "replace"))
+        # The method or status only, even at DEBUG: the messages carry numbers, cards and PINs.
+        log.debug("send to %s:%d: %s (%d bytes)", addr[0], addr[1], first_word(data), len(data))
         self.transport.sendto(data, addr)
 
     def datagram_received(self, data: bytes, addr):
@@ -651,7 +710,7 @@ class UssdService(asyncio.DatagramProtocol):
         if msg is None:
             log.warning("unparsable datagram from %s", addr)
             return
-        log.debug("recv from %s:%d\n%s", addr[0], addr[1], data.decode("utf-8", "replace"))
+        log.debug("recv from %s:%d: %s (%d bytes)", addr[0], addr[1], first_word(data), len(data))
         try:
             if msg.is_request:
                 self.on_request(msg, addr)
@@ -662,8 +721,16 @@ class UssdService(asyncio.DatagramProtocol):
 
     # --- responses we send --------------------------------------------------------------------
 
-    def respond(self, req: Msg, addr, code: int, reason: str, to_tag: str | None = None,
-                extra: list[tuple[str, str]] | None = None, body: bytes = b"") -> bytes:
+    def respond(
+        self,
+        req: Msg,
+        addr,
+        code: int,
+        reason: str,
+        to_tag: str | None = None,
+        extra: list[tuple[str, str]] | None = None,
+        body: bytes = b"",
+    ) -> bytes:
         hdrs = [("Via", v) for v in req.all("via")]
         hdrs.append(("From", req.get("from") or ""))
         to = req.get("to") or ""
@@ -700,11 +767,18 @@ class UssdService(asyncio.DatagramProtocol):
             r = self.respond(req, addr, 200, "OK")
             self.done_responses[(req.branch, method)] = r
         elif method == "OPTIONS":
-            self.respond(req, addr, 200, "OK", to_tag=token(),
-                         extra=[("Allow", ALLOW), ("Accept", USSD_TYPE)])
+            self.respond(
+                req,
+                addr,
+                200,
+                "OK",
+                to_tag=token(),
+                extra=[("Allow", ALLOW), ("Accept", USSD_TYPE)],
+            )
         else:
-            self.respond(req, addr, 405, "Method Not Allowed", to_tag=token(),
-                         extra=[("Allow", ALLOW)])
+            self.respond(
+                req, addr, 405, "Method Not Allowed", to_tag=token(), extra=[("Allow", ALLOW)]
+            )
 
     def on_invite(self, req: Msg, addr):
         if req.call_id in self.sessions:  # re-INVITE: not used by USSI
@@ -717,23 +791,31 @@ class UssdService(asyncio.DatagramProtocol):
         msisdn = user_digits(caller) or user_digits(req.get("from") or "")
         tag = token()
         s = Session(
-            call_id=req.call_id, peer=addr,
+            call_id=req.call_id,
+            peer=addr,
             remote_target=uri_of((req.all("contact") or [""])[0]),
             route_set=req.all("record-route"),
             local=(req.get("to") or "") + f";tag={tag}",
-            remote=req.get("from") or "", msisdn=msisdn, invite_branch=req.branch,
+            remote=req.get("from") or "",
+            msisdn=msisdn,
+            invite_branch=req.branch,
         )
         self.sessions[s.call_id] = s
-        log.info("session %s from %s: %s", s.call_id, msisdn or "unknown", code)
+        log.info("session %s from %s: %s", s.call_id, last_four(msisdn), masked_code(code))
 
         answer = sdp_answer(parts.get("application/sdp"), self.ip)
         extra = [("Record-Route", rr) for rr in s.route_set]
-        extra += [("Contact", f"<sip:ussd@{self.ip}:{self.port}>"), ("Recv-Info", "g.3gpp.ussd"),
-                  ("Allow", ALLOW), ("Accept", f"{USSD_TYPE}, application/sdp, multipart/mixed")]
+        extra += [
+            ("Contact", f"<sip:ussd@{self.ip}:{self.port}>"),
+            ("Recv-Info", "g.3gpp.ussd"),
+            ("Allow", ALLOW),
+            ("Accept", f"{USSD_TYPE}, application/sdp, multipart/mixed"),
+        ]
         if answer:
             extra.append(("Content-Type", "application/sdp"))
-        s.invite_ok = self.respond(req, addr, 200, "OK", to_tag=tag, extra=extra,
-                                   body=answer or b"")
+        s.invite_ok = self.respond(
+            req, addr, 200, "OK", to_tag=tag, extra=extra, body=answer or b""
+        )
         self.done_responses[(req.branch, "INVITE")] = s.invite_ok
         asyncio.get_running_loop().create_task(self.resend_ok(s, addr))
         asyncio.get_running_loop().create_task(self.first_answer(s, code))
@@ -785,7 +867,8 @@ class UssdService(asyncio.DatagramProtocol):
         text = ussd_string(xml)
         if text is None:
             return
-        log.info("session %s: user answered %r", s.call_id, "*" * len(text) if s.state == "card" else text)
+        # Only the length: an answer can be a card number and PIN, an amount or a phone number.
+        log.info("session %s: user answered (%d characters)", s.call_id, len(text))
         asyncio.get_running_loop().create_task(self.next_answer(s, text))
 
     async def next_answer(self, s: Session, text: str):
@@ -795,7 +878,13 @@ class UssdService(asyncio.DatagramProtocol):
     def deliver(self, s: Session, reply: Reply):
         if s.closed:
             return
-        log.info("session %s: %s %r", s.call_id, "BYE" if reply.end else "INFO", reply.text[:60])
+        # Not the text: it can hold the customer's balance or bundles.
+        log.info(
+            "session %s: %s, %d characters",
+            s.call_id,
+            "BYE" if reply.end else "INFO",
+            len(reply.text),
+        )
         self.send_request(s, "BYE" if reply.end else "INFO", ussd_xml(reply.text))
 
     # --- requests we send -------------------------------------------------------------------
@@ -805,15 +894,21 @@ class UssdService(asyncio.DatagramProtocol):
         branch = "z9hG4bK" + token(16)
         hdrs = [("Via", f"SIP/2.0/UDP {self.ip}:{self.port};branch={branch};rport")]
         hdrs += [("Route", r) for r in s.route_set]
-        hdrs += [("Max-Forwards", "70"), ("From", s.local), ("To", s.remote),
-                 ("Call-ID", s.call_id), ("CSeq", f"{s.cseq} {method}"),
-                 ("Contact", f"<sip:ussd@{self.ip}:{self.port}>")]
+        hdrs += [
+            ("Max-Forwards", "70"),
+            ("From", s.local),
+            ("To", s.remote),
+            ("Call-ID", s.call_id),
+            ("CSeq", f"{s.cseq} {method}"),
+            ("Contact", f"<sip:ussd@{self.ip}:{self.port}>"),
+        ]
         if body:
             hdrs += [("Info-Package", "g.3gpp.ussd")] if method == "INFO" else []
             hdrs += [("Content-Type", USSD_TYPE), ("Content-Disposition", "Info-Package")]
         data = build(f"{method} {s.remote_target} SIP/2.0", hdrs, body)
         self.out_tx[branch] = asyncio.get_running_loop().create_task(
-            self.resend_request(s, branch, data, method))
+            self.resend_request(s, branch, data, method)
+        )
         self.send(data, s.peer)
         if method == "BYE":
             s.state = "ending"
@@ -881,15 +976,22 @@ async def main():
     if key_file and os.path.exists(key_file):
         key = open(key_file).read().strip() or None
     pay = PayApi(os.environ.get("RATEL_PAY_URL"), key)
-    log.info("payments API: %s", "configured" if pay.ready else "not configured (menu answers 'not available yet')")
+    log.info(
+        "payments API: %s",
+        "configured" if pay.ready else "not configured (menu answers 'not available yet')",
+    )
     service = UssdService(public_ip, port, Menu(pay))
     loop = asyncio.get_running_loop()
-    bind = os.environ.get("USSD_BIND_IP", "0.0.0.0")
+    # Inside the ussd container: the S-CSCF reaches it over the Docker network.
+    bind = os.environ.get("USSD_BIND_IP", "0.0.0.0")  # noqa: S104
     await loop.create_datagram_endpoint(lambda: service, local_addr=(bind, port))
     sms_port = os.environ.get("SMS_PORT")
     if sms_port:
-        sms = SmsService(SmsCommands(pay), os.environ.get("SMS_SMSC_URL", "http://172.22.0.33:7090"),
-                         set(os.environ.get("SMS_ALLOWED", "172.22.0.33").split(",")))
+        sms = SmsService(
+            SmsCommands(pay),
+            os.environ.get("SMS_SMSC_URL", "http://172.22.0.33:7090"),
+            set(os.environ.get("SMS_ALLOWED", "172.22.0.33").split(",")),
+        )
         await asyncio.start_server(sms.handle, bind, int(sms_port))
         log.info("sms: short number %s listening on tcp %s:%s", SMS_SHORT, bind, sms_port)
     await service.housekeeping()
@@ -905,9 +1007,17 @@ def send_sms_cli(args: list[str]) -> int:
     if not text or len(text) > 160:
         log.error("send-sms: the text must be 1 to 160 characters (one SMS)")
         return 2
-    sms = SmsService(SmsCommands(PayApi(None, None)), os.environ.get("SMS_SMSC_URL", "http://172.22.0.33:7090"), set())
+    sms = SmsService(
+        SmsCommands(PayApi(None, None)),
+        os.environ.get("SMS_SMSC_URL", "http://172.22.0.33:7090"),
+        set(),
+    )
     ok = sms.send(args[0], text)
-    log.info("send-sms: to %s %s", args[0], "queued at the SMSC" if ok else "NOT taken by the SMSC")
+    log.info(
+        "send-sms: to %s %s",
+        last_four(args[0]),
+        "queued at the SMSC" if ok else "NOT taken by the SMSC",
+    )
     return 0 if ok else 1
 
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Customer SMS sender: one pass, run every minute by ratel-customer-sms.timer (docs/customer-sms.md).
+"""Customer SMS sender: one pass, run every minute by ratel-customer-sms.timer.
+
+See docs/customer-sms.md.
 
 The welcome after an activation and the summary after each charged call, queued by bss-app.
 
@@ -70,7 +72,10 @@ def is_registered(showimpu: str) -> bool:
     if not re.search(r"^\s*state:\s*registered\s*$", showimpu, re.M):
         return False
     contacts = re.search(r"^\s*contacts:\s*\{(.*)", showimpu, re.M | re.S)
-    return contacts is not None and re.search(r"^\s*sip:\S+:\s*\{", contacts.group(1), re.M) is not None
+    return (
+        contacts is not None
+        and re.search(r"^\s*sip:\S+:\s*\{", contacts.group(1), re.M) is not None
+    )
 
 
 class Sender:
@@ -84,10 +89,12 @@ class Sender:
         self.run = run
 
     def _api(self, method: str, path: str) -> dict:
-        req = urllib.request.Request(self.base + path, method=method, headers={"Accept": "application/json"})
+        req = urllib.request.Request(  # noqa: S310  (RATEL_PAY_URL from the service's own settings, http or https)
+            self.base + path, method=method, headers={"Accept": "application/json"}
+        )
         if method == "POST":
             req.add_header("Content-Length", "0")
-        with urllib.request.urlopen(req, timeout=10, context=self.tls) as r:
+        with urllib.request.urlopen(req, timeout=10, context=self.tls) as r:  # noqa: S310  (RATEL_PAY_URL from the service's own settings, http or https)
             return json.loads(r.read() or b"{}")
 
     def _handed_over(self) -> set[int]:
@@ -107,7 +114,17 @@ class Sender:
         return done.returncode == 0 and is_registered(done.stdout)
 
     def send(self, msisdn: str, text: str) -> bool:
-        cmd = ["docker", "exec", "-i", self.ussd, "python", "-I", "/app/ussd_as.py", "--send-sms", msisdn]
+        cmd = [
+            "docker",
+            "exec",
+            "-i",
+            self.ussd,
+            "python",
+            "-I",
+            "/app/ussd_as.py",
+            "--send-sms",
+            msisdn,
+        ]
         done = self.run(cmd, input=text, capture_output=True, text=True, timeout=30)
         return done.returncode == 0
 
@@ -138,13 +155,19 @@ class Sender:
                         continue
                     self._remember(sms_id)
                     sent += 1
-                    log.info("sms %s: %s sent to %s", sms_id, kind, msisdn)
+                    log.info("sms %s: %s sent to ...%s", sms_id, kind, msisdn[-4:])
                 self._api("POST", f"/v1/pay/customer-sms/{sms_id}/sent")
             except (urllib.error.URLError, OSError, subprocess.SubprocessError, ValueError) as e:
                 log.warning("sms %s: %s, will retry on the next pass", sms_id, type(e).__name__)
                 failures += 1
         if due:
-            log.info("pass: %d due, %d sent, %d not registered yet, %d failed", len(due), sent, waiting, failures)
+            log.info(
+                "pass: %d due, %d sent, %d not registered yet, %d failed",
+                len(due),
+                sent,
+                waiting,
+                failures,
+            )
         return failures
 
 

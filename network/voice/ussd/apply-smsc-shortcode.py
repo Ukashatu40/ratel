@@ -17,10 +17,14 @@ A file that has the earlier 647 version (apply-smsc-647.py, "RATEL 647") gets it
 one. A file that has this version already is left alone.
 
 Usage (in ~/docker_open5gs/smsc):
-  python3 apply-smsc-shortcode.py kamailio_smsc.cfg            dry run: shows the result, changes nothing
-  python3 apply-smsc-shortcode.py kamailio_smsc.cfg --apply    backs up, writes, then: docker restart smsc
+  python3 apply-smsc-shortcode.py kamailio_smsc.cfg
+      dry run: shows the result, changes nothing
+  python3 apply-smsc-shortcode.py kamailio_smsc.cfg --apply
+      backs up, writes, then: docker restart smsc
 Rollback: copy the backup it names over kamailio_smsc.cfg and docker restart smsc.
 """
+
+# ruff: noqa: T201  (a command-line tool: printing is its output)
 
 from __future__ import annotations
 
@@ -43,7 +47,7 @@ FROM_3GPP_BLOCK = r"""		# RATEL SHORT (2026-11-25): a text to the short number 5
 			}
 			exit;
 		}
-""".replace("555", SHORT)
+""".replace("555", SHORT)  # noqa: E501  (config text that must match the live file byte for byte)
 
 XHTTP_ANCHOR = "event_route[xhttp:request] {\n"
 XHTTP_BLOCK = """	# RATEL SHORT (2026-11-25): only the self-care service in the ussd container may submit texts here.
@@ -52,7 +56,7 @@ XHTTP_BLOCK = """	# RATEL SHORT (2026-11-25): only the self-care service in the 
 		xhttp_reply("403", "Forbidden", "text/plain", "forbidden");
 		exit;
 	}
-"""
+"""  # noqa: E501  (config text that must match the live file byte for byte)
 
 DCS_ANCHOR = "\t\t$avp(from_outbound) = 1;\n"
 DCS_BLOCK = r"""		$avp(dcs) = 0; # RATEL SHORT: the queue insert needs a coding
@@ -61,16 +65,18 @@ DCS_BLOCK = r"""		$avp(dcs) = 0; # RATEL SHORT: the queue insert needs a coding
 		if ($(hu{url.querystring}{param.value,hex,&}{s.len}) > 0) {
 			$avp(text) = $(hu{url.querystring}{param.value,hex,&}{s.decode.hexa});
 		}
-"""
+"""  # noqa: E501  (config text that must match the live file byte for byte)
 
-ORIGEN_ANCHOR = "\t$tpdu(origen) = $avp(from); // The Destination becomes the originator of the SMS\n"
+ORIGEN_ANCHOR = (
+    "\t$tpdu(origen) = $avp(from); // The Destination becomes the originator of the SMS\n"
+)
 ORIGEN_BLOCK = r"""	# RATEL SHORT: a short number goes out with the address type "unknown" (0x81), not
 	# "international" (0x91), so phones show 555 and not +555 (647 showed as +64 7).
 	if ($avp(from) =~ "^[0-9]{3,6}$") {
 		$tpdu(origen_flags) = 129;
 		$rpdata(originator_flags) = 129;
 	}
-"""
+"""  # noqa: E501  (config text that must match the live file byte for byte)
 
 # What apply-smsc-647.py wrote (24 Nov 2026): removed exactly, then this version is added.
 OLD_FROM_3GPP = r"""		# RATEL 647 (2026-11-24): a text to the short number 647 goes to the self-care service
@@ -84,14 +90,14 @@ OLD_FROM_3GPP = r"""		# RATEL 647 (2026-11-24): a text to the short number 647 g
 			}
 			exit;
 		}
-"""
+"""  # noqa: E501  (config text that must match the live file byte for byte)
 OLD_XHTTP = """	# RATEL 647 (2026-11-24): only the 647 service in the ussd container may submit texts here.
 	if ($si != "172.22.0.40") {
 		xlog("L_WARN", "SMSC: HTTP submit refused from $si\\n");
 		xhttp_reply("403", "Forbidden", "text/plain", "forbidden");
 		exit;
 	}
-"""
+"""  # noqa: E501  (config text that must match the live file byte for byte)
 OLD_DCS = r"""		$avp(dcs) = 0; # RATEL 647: the queue insert needs a coding
 		# RATEL 647 hex: answers from the 647 service come hex encoded, because the URL decoder
 		# above refuses control characters such as the newlines in the menu.
@@ -108,13 +114,17 @@ def patch(text: str) -> str:
     if "RATEL 647" in text:
         for old in (OLD_FROM_3GPP, OLD_XHTTP, OLD_DCS):
             if text.count(old) != 1:
-                raise ValueError("found the 647 version, but not exactly as apply-smsc-647.py wrote it")
+                raise ValueError(
+                    "found the 647 version, but not exactly as apply-smsc-647.py wrote it"
+                )
             text = text.replace(old, "", 1)
         if "RATEL 647" in text:
             raise ValueError("a 647 change is left that this does not know")
     for anchor in (FROM_3GPP_ANCHOR, XHTTP_ANCHOR, DCS_ANCHOR, ORIGEN_ANCHOR):
         if text.count(anchor) != 1:
-            raise ValueError(f"expected exactly one line {anchor.strip()!r}, found {text.count(anchor)}")
+            raise ValueError(
+                f"expected exactly one line {anchor.strip()!r}, found {text.count(anchor)}"
+            )
     text = text.replace(FROM_3GPP_ANCHOR, FROM_3GPP_ANCHOR + FROM_3GPP_BLOCK, 1)
     text = text.replace(XHTTP_ANCHOR, XHTTP_ANCHOR + XHTTP_BLOCK, 1)
     text = text.replace(DCS_ANCHOR, DCS_ANCHOR + DCS_BLOCK, 1)
@@ -134,7 +144,11 @@ def main() -> int:
     lines = new.splitlines()
     for i, line in enumerate(lines):
         if MARK in line and "#" in line.split(MARK)[0]:
-            print("\n".join(f"{n + 1:4} {lines[n]}" for n in range(max(0, i - 1), min(len(lines), i + 9))))
+            print(
+                "\n".join(
+                    f"{n + 1:4} {lines[n]}" for n in range(max(0, i - 1), min(len(lines), i + 9))
+                )
+            )
             print("     ...")
     if not apply:
         print("\ndry run: nothing written. Run again with --apply to write it.")

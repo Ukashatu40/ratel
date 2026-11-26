@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Tests for customer_sms.py: a fake bss-app over HTTP and a fake `docker`. `python3 -I test_customer_sms.py`."""
+"""Tests for customer_sms.py: a fake bss-app over HTTP and a fake `docker`.
+
+Run: `python3 -I test_customer_sms.py`.
+"""
+
+# ruff: noqa: T201  (a test script run by hand on the voice VM: it prints its report)
 
 from __future__ import annotations
 
@@ -11,9 +16,10 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import customer_sms  # noqa: E402
+import customer_sms
 
 # Real output of `kamcmd ulscscf.showimpu` on the voice VM, 25 Nov 2026 (iPhone line 454).
 REGISTERED = """{
@@ -38,15 +44,20 @@ REGISTERED = """{
 		}
 """
 UNKNOWN = ""  # an unknown number prints nothing and exits 0
-NOT_REGISTERED = "{\n\timpu: tel:2348000000002\n\tstate: not registered\n\tbarring: 0\n\tcontacts: {\n\t}\n"
+NOT_REGISTERED = (
+    "{\n\timpu: tel:2348000000002\n\tstate: not registered\n\tbarring: 0\n\tcontacts: {\n\t}\n"
+)
 NO_CONTACT = "{\n\timpu: tel:2348000000002\n\tstate: registered\n\tcontacts: {\n\t}\n"
 
-TEXT = "Welcome to Ratelplus! Your number is 08000000001. Text MENU to 555 for balance, bundles and top-up."
+TEXT = (
+    "Welcome to Ratelplus! Your number is 08000000001. "
+    "Text MENU to 555 for balance, bundles and top-up."
+)
 
 
 class FakeBss(BaseHTTPRequestHandler):
-    due: list[dict] = []
-    marked: list[int] = []
+    due: ClassVar[list[dict]] = []
+    marked: ClassVar[list[int]] = []
     fail_mark = False
 
     def log_message(self, *a):
@@ -62,7 +73,9 @@ class FakeBss(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/v1/pay/customer-sms"):
-            return self._json(200, {"items": [d for d in FakeBss.due if d["sms_id"] not in FakeBss.marked]})
+            return self._json(
+                200, {"items": [d for d in FakeBss.due if d["sms_id"] not in FakeBss.marked]}
+            )
         self._json(404, {})
 
     def do_POST(self):
@@ -93,8 +106,13 @@ class FakeDocker:
 
 
 def sender(state: Path, docker: FakeDocker) -> customer_sms.Sender:
-    conf = {"RATEL_PAY_URL": "http://127.0.0.1:18081", "SMS_CA_FILE": "/nonexistent",
-            "SMS_STATE_FILE": str(state), "SMS_SCSCF": "scscf", "SMS_USSD": "ussd"}
+    conf = {
+        "RATEL_PAY_URL": "http://127.0.0.1:18081",
+        "SMS_CA_FILE": "/nonexistent",
+        "SMS_STATE_FILE": str(state),
+        "SMS_SCSCF": "scscf",
+        "SMS_USSD": "ussd",
+    }
     return customer_sms.Sender(conf, run=docker)
 
 
@@ -120,53 +138,90 @@ def main() -> int:
         FakeBss.due, FakeBss.marked = [one], []
         docker = FakeDocker({})
         failures += sender(state, docker).one_pass()
-        failures += check("not registered yet: nothing sent, nothing marked",
-                          docker.sent == [] and FakeBss.marked == [])
+        failures += check(
+            "not registered yet: nothing sent, nothing marked",
+            docker.sent == [] and FakeBss.marked == [],
+        )
 
         docker = FakeDocker({"2348000000001": REGISTERED}, send_ok=False)
         bad = sender(state, docker).one_pass()
-        failures += check("the SMS centre refuses: counted, not marked, not remembered",
-                          bad == 1 and FakeBss.marked == [] and not state.exists())
+        failures += check(
+            "the SMS centre refuses: counted, not marked, not remembered",
+            bad == 1 and FakeBss.marked == [] and not state.exists(),
+        )
 
         FakeBss.fail_mark = True
         docker = FakeDocker({"2348000000001": REGISTERED})
         bad = sender(state, docker).one_pass()
-        failures += check("sent once, bss-app not told yet: remembered",
-                          docker.sent == [("2348000000001", TEXT)] and bad == 1 and state.read_text() == "7\n")
+        failures += check(
+            "sent once, bss-app not told yet: remembered",
+            docker.sent == [("2348000000001", TEXT)] and bad == 1 and state.read_text() == "7\n",
+        )
         FakeBss.fail_mark = False
         docker2 = FakeDocker({"2348000000001": REGISTERED})
         failures += sender(state, docker2).one_pass()
-        failures += check("the next pass tells bss-app without a second SMS",
-                          docker2.sent == [] and FakeBss.marked == [7])
+        failures += check(
+            "the next pass tells bss-app without a second SMS",
+            docker2.sent == [] and FakeBss.marked == [7],
+        )
         docker3 = FakeDocker({"2348000000001": REGISTERED})
         failures += sender(state, docker3).one_pass()
-        failures += check("once marked, nothing more happens", docker3.sent == [] and FakeBss.marked == [7])
+        failures += check(
+            "once marked, nothing more happens", docker3.sent == [] and FakeBss.marked == [7]
+        )
 
         print("== two SMS for one line: each sent once")
-        call = {"sms_id": 10, "line_id": 3, "msisdn": "2348000000001", "kind": "call",
-                "text": "Last call to 08031234567: 1m 00s, cost N20.00. Balance N480.00. Text MENU to 555."}
+        call = {
+            "sms_id": 10,
+            "line_id": 3,
+            "msisdn": "2348000000001",
+            "kind": "call",
+            "text": (
+                "Last call to 08031234567: 1m 00s, cost N20.00. Balance N480.00. Text MENU to 555."
+            ),
+        }
         FakeBss.due, FakeBss.marked = [one, call], [7]
         docker = FakeDocker({"2348000000001": REGISTERED})
         failures += sender(state, docker).one_pass()
-        failures += check("the call summary goes out, the welcome is not sent again",
-                          docker.sent == [("2348000000001", call["text"])] and FakeBss.marked == [7, 10])
+        failures += check(
+            "the call summary goes out, the welcome is not sent again",
+            docker.sent == [("2348000000001", call["text"])] and FakeBss.marked == [7, 10],
+        )
 
         print("== what bss-app sends is checked")
-        FakeBss.due, FakeBss.marked = [
-            {"sms_id": 8, "line_id": 4, "msisdn": "0800000001", "kind": "call", "text": TEXT},
-            {"sms_id": 9, "line_id": 5, "msisdn": "2348000000009", "kind": "call", "text": "x" * 161},
-        ], []
+        FakeBss.due, FakeBss.marked = (
+            [
+                {"sms_id": 8, "line_id": 4, "msisdn": "0800000001", "kind": "call", "text": TEXT},
+                {
+                    "sms_id": 9,
+                    "line_id": 5,
+                    "msisdn": "2348000000009",
+                    "kind": "call",
+                    "text": "x" * 161,
+                },
+            ],
+            [],
+        )
         docker = FakeDocker({"0800000001": REGISTERED, "2348000000009": REGISTERED})
         bad = sender(state, docker).one_pass()
-        failures += check("a bad number or a text over one SMS is not sent",
-                          bad == 2 and docker.sent == [] and FakeBss.marked == [])
+        failures += check(
+            "a bad number or a text over one SMS is not sent",
+            bad == 2 and docker.sent == [] and FakeBss.marked == [],
+        )
 
     print("== bss-app not answering")
-    conf = {"RATEL_PAY_URL": "http://127.0.0.1:1", "SMS_CA_FILE": "/nonexistent",
-            "SMS_STATE_FILE": "/nonexistent/x", "SMS_SCSCF": "s", "SMS_USSD": "u"}
+    conf = {
+        "RATEL_PAY_URL": "http://127.0.0.1:1",
+        "SMS_CA_FILE": "/nonexistent",
+        "SMS_STATE_FILE": "/nonexistent/x",
+        "SMS_SCSCF": "s",
+        "SMS_USSD": "u",
+    }
     docker = FakeDocker({})
-    failures += check("counted as a failure, nothing sent",
-                      customer_sms.Sender(conf, run=docker).one_pass() == 1 and docker.sent == [])
+    failures += check(
+        "counted as a failure, nothing sent",
+        customer_sms.Sender(conf, run=docker).one_pass() == 1 and docker.sent == [],
+    )
     httpd.shutdown()
     print("ALL PASSED" if not failures else f"{failures} FAILED")
     return 1 if failures else 0
