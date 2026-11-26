@@ -67,13 +67,15 @@ def test_the_voice_vm_protects_the_port_docker_publishes_in_the_forward_path() -
     )  # only the forward chain: all other routing is untouched
 
 
-def test_bss_app_opens_https_to_everyone_and_nothing_else_but_ssh() -> None:
+def test_bss_app_opens_https_and_http_to_everyone_and_nothing_else_but_ssh() -> None:
     code = _code(DEPLOY / "bss-app.nft")
     assert "tcp dport 443 accept" in code
+    assert "tcp dport 80 accept" in code  # Let's Encrypt's check and the redirect (decision 61)
     ports = re.findall(r"dport (\d+)", code)
-    assert sorted(ports) == [
+    assert sorted(ports, key=int) == [
         "22",
         "22",
         "22",
+        "80",
         "443",
-    ]  # ssh (limited twice, then accepted) and https
+    ]  # ssh (limited twice, then accepted), http and https
