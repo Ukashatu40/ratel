@@ -1,0 +1,6 @@
+# Local to each voice VM, never committed: the payments address, the key, bss-app's certificate,
+# and the SMS sender's record of what it handed to the SMS centre.
+ussd.env
+pay.key
+bss-ca.pem
+customer-sms-sent.txt
