@@ -5,6 +5,11 @@
 # paths. Everything else is for the office network and the VPN, plus the meter agents' addresses on
 # the usage ingest path. The public paths: the RatelPay page (one static file, /pay), the three
 # calls the page makes (redeem a card, start a payment, follow a payment) and Paystack's webhook.
+#
+# Decision 61 (2026-11-26) makes RatelDesk, staff sign-in and the staff API public on the lab's
+# bss-app under desk.ratelplus.net. This template stays office-only, the safer default for a new
+# install; make-desk-public.py turns a live file into the public form, in two steps
+# (docs/runbooks/desk-public-domain.md).
 
 limit_req_zone $binary_remote_addr zone=ratel_app:1m rate=20r/s;
 # Redeeming a card. Many customers share one address on a mobile network, so this is generous; the

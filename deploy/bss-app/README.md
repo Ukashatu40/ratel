@@ -32,6 +32,7 @@ Owner: Software team (project lead). TODO: confirm host details and how deployme
 | `postgres-roles.sql` | The two database roles: an owner for migrations, and a runtime role that cannot change the schema |
 | `nginx/ratel-app.conf.example` | A TLS reverse proxy template. RatelDesk (static files, office and VPN only) and the public paths: the RatelPay page (`/pay`, one static file from the release), the three calls the page makes, and Paystack's webhook |
 | `nginx/add-pay-page-and-desk.py` | Brings a live nginx config made from an older template up to date: adds the RatelPay page and RatelDesk blocks and changes nothing else |
+| `nginx/make-desk-public.py` | Serves RatelDesk publicly under its own name (decision 61): first a plain-HTTP server for the certificate check, then, once the certificate exists, the name, the certificate and no address list on the Desk, sign-in and the staff API. Every other path keeps its addresses ([runbook](../../docs/runbooks/desk-public-domain.md)) |
 | `nginx/ratel-pay-key.conf.example` | The one line that adds the redemption key (`PAY_API_KEY`) to that public path. Real file: root-owned, never committed |
 
 ## Layout on bss-app

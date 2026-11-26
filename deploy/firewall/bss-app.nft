@@ -3,10 +3,11 @@
 # addresses are not in this file: it reads them from /etc/ratel-fw/addresses.nft on the host.
 #
 # Policy is drop. Let in: replies, loopback (the app listens on 127.0.0.1:8000, behind nginx), ping,
-# SSH (key-only, rate limited) and HTTPS. HTTPS is open to every address on purpose: RatelPay and
-# the payment webhook are public (docs/ARCHITECTURE.md). Which path each caller may use is nginx's
-# job (deploy/bss-app/nginx), not this file's: the proxy admits the staff API only from the office
-# and VPN, the usage path only from the agents, and the voucher path from anyone with the proxy's key.
+# SSH (key-only, rate limited), HTTPS and HTTP. HTTPS is open to every address on purpose: RatelPay,
+# the payment webhook and, since decision 61, RatelDesk are public (docs/ARCHITECTURE.md). HTTP only
+# answers the certificate check and redirects to HTTPS. Which path each caller may use is nginx's
+# job (deploy/bss-app/nginx), not this file's: the proxy admits the staff API from the office and VPN
+# (from anyone once decision 61 is applied), the usage path only from the agents, and the voucher path from anyone with the proxy's key.
 #
 # Check the syntax without applying it:   sudo nft -c -f /etc/ratel-fw/ratel-fw.nft
 include "/etc/ratel-fw/addresses.nft"
@@ -30,6 +31,10 @@ table inet ratel_fw {
         tcp dport 22 accept
 
         tcp dport 443 accept
+
+        # Plain HTTP for RatelDesk's public name (decision 61): nginx answers only Let's Encrypt's check
+        # on it and sends everything else to HTTPS (deploy/bss-app/nginx/make-desk-public.py).
+        tcp dport 80 accept
 
         # Not a verdict: it counts what the policy then drops (sudo nft list chain inet ratel_fw input).
         counter
