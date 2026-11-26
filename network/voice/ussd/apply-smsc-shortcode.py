@@ -11,16 +11,22 @@ The short number is 555 (SHORT below). Three changes, all marked "RATEL SHORT":
      URL decoder refuses newlines.
   3. route[SEND_SMS]: an SMS from a short number (3 to 6 digits) is sent with the address type
      "unknown" (0x81) instead of "international" (0x91), so phones show 555 and not +555. With the
-     international type, 647 showed as +64 7.
+     international type, 647 showed as +64 7. Only the sender address inside the SMS (TP-OA, what
+     the phone shows) has a type setting in Kamailio's smsops: $tpdu(origen_flags). $rpdata has
+     none; `$rpdata(originator_flags)` made the SMSC refuse to start (26 Nov 2026).
+
+Before it writes, it has the smsc container's own Kamailio check the new file (`kamailio -c`), and
+refuses when that fails, so a file the SMSC would not load is never written. The dry run shows the
+same check. `--no-check` skips it (only where the container is not running).
 
 A file that has the earlier 647 version (apply-smsc-647.py, "RATEL 647") gets it replaced by this
 one. A file that has this version already is left alone.
 
 Usage (in ~/docker_open5gs/smsc):
   python3 apply-smsc-shortcode.py kamailio_smsc.cfg
-      dry run: shows the result, changes nothing
+      dry run: shows the result and the Kamailio check, changes nothing
   python3 apply-smsc-shortcode.py kamailio_smsc.cfg --apply
-      backs up, writes, then: docker restart smsc
+      checks, backs up, writes, then: docker restart smsc
 Rollback: copy the backup it names over kamailio_smsc.cfg and docker restart smsc.
 """
 
@@ -29,8 +35,10 @@ Rollback: copy the backup it names over kamailio_smsc.cfg and docker restart sms
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 import time
+from collections.abc import Callable
 
 SHORT = "555"
 MARK = "RATEL SHORT"
@@ -74,7 +82,6 @@ ORIGEN_BLOCK = r"""	# RATEL SHORT: a short number goes out with the address type
 	# "international" (0x91), so phones show 555 and not +555 (647 showed as +64 7).
 	if ($avp(from) =~ "^[0-9]{3,6}$") {
 		$tpdu(origen_flags) = 129;
-		$rpdata(originator_flags) = 129;
 	}
 """  # noqa: E501  (config text that must match the live file byte for byte)
 
@@ -131,11 +138,58 @@ def patch(text: str) -> str:
     return text.replace(ORIGEN_ANCHOR, ORIGEN_ANCHOR + ORIGEN_BLOCK, 1)
 
 
-def main() -> int:
-    if len(sys.argv) < 2:
+CONTAINER = "smsc"
+CHECK_FILE = "/etc/kamailio_smsc/.ratel-short-check.cfg"  # next to the live file, for its includes
+
+
+def kamailio_check(
+    text: str, run: Callable[..., subprocess.CompletedProcess[str]]
+) -> tuple[bool, str]:
+    """Has the smsc container's Kamailio parse `text` (kamailio -c). (ok, what it said when not)."""
+    try:
+        put = run(
+            ["docker", "exec", "-i", CONTAINER, "sh", "-c", f"cat > {CHECK_FILE}"],
+            input=text,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if put.returncode != 0:
+            return (
+                False,
+                f"could not copy the file into the {CONTAINER} container: {put.stderr.strip()}",
+            )
+        done = run(
+            ["docker", "exec", CONTAINER, "kamailio", "-c", "-f", CHECK_FILE],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, f"could not run the check: {type(e).__name__}"
+    finally:
+        try:
+            run(
+                ["docker", "exec", CONTAINER, "rm", "-f", CHECK_FILE],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+    said = (done.stdout + done.stderr).strip()
+    errors = [line for line in said.splitlines() if "ERROR" in line or "CRITICAL" in line]
+    if done.returncode != 0 or errors:
+        return False, "\n".join(errors[-8:]) or said[-800:]
+    return True, ""
+
+
+def main(argv: list[str] | None = None, run=subprocess.run) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if not args:
         print(__doc__)
         return 2
-    path, apply = sys.argv[1], "--apply" in sys.argv[2:]
+    path, apply, checked = args[0], "--apply" in args[1:], "--no-check" not in args[1:]
     try:
         new = patch(open(path).read())
     except ValueError as e:
@@ -150,6 +204,13 @@ def main() -> int:
                 )
             )
             print("     ...")
+    if checked:
+        ok, said = kamailio_check(new, run)
+        if not ok:
+            print(f"\nthe {CONTAINER} container's Kamailio refuses the new file:\n{said}")
+            print("nothing written" if apply else "dry run: nothing written")
+            return 1
+        print(f"\nthe {CONTAINER} container's Kamailio accepts the new file (kamailio -c)")
     if not apply:
         print("\ndry run: nothing written. Run again with --apply to write it.")
         return 0
