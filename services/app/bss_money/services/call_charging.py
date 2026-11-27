@@ -23,6 +23,7 @@ from datetime import datetime
 
 from app.bss_lines.domain.customer_sms import SmsKind
 from app.bss_money.domain.entries import EntryKind, new_posting
+from app.bss_money.domain.prepaid import in_own_range
 from app.bss_money.domain.purchase import split_vat
 from app.bss_money.domain.voice import (
     answered_seconds,
@@ -30,7 +31,7 @@ from app.bss_money.domain.voice import (
     call_summary_text,
     national_msisdn,
 )
-from app.bss_money.repositories.ports import CallChargeScope, CallToCharge
+from app.bss_money.repositories.ports import CallChargeRepository, CallChargeScope, CallToCharge
 from app.bss_money.services.catalogue import settings_or_default
 from common.logging import log_event
 
@@ -53,6 +54,7 @@ def charge_calls(
     vat_rate_bps: int,
     charge_from: datetime,
     batch_size: int = 500,
+    own_prefixes: tuple[str, ...] = (),
 ) -> CallChargeRun:
     if charge_from.tzinfo is None:
         raise ValueError("charge_from must carry its UTC offset")
@@ -62,11 +64,11 @@ def charge_calls(
     for call in calls:
         try:
             if call.ended_at < charge_from:
-                _mark_before_start(scope, call)
+                _mark_before_start(scope, call, own_prefixes)
                 handled += 1
                 before += 1
                 continue
-            taken, short = _charge_one(scope, call, vat_rate_bps)
+            taken, short = _charge_one(scope, call, vat_rate_bps, own_prefixes)
         except Exception as exc:  # one bad record must not stop the others; the next run retries it
             failed += 1
             log_event(
@@ -96,7 +98,14 @@ def charge_calls(
     return run
 
 
-def _mark_before_start(scope: CallChargeScope, call: CallToCharge) -> None:
+def _on_net(calls: CallChargeRepository, callee: str | None, prefixes: tuple[str, ...]) -> bool:
+    """A Ratelplus number: a live line, or in Ratelplus's own ranges (domain/prepaid.py)."""
+    return callee is not None and (in_own_range(callee, prefixes) or calls.is_ratel_number(callee))
+
+
+def _mark_before_start(
+    scope: CallChargeScope, call: CallToCharge, own_prefixes: tuple[str, ...] = ()
+) -> None:
     """Record a call from before charging started as done, at no cost, so it is never charged."""
     with scope() as repositories:
         caller = national_msisdn(call.from_msisdn)
@@ -106,7 +115,7 @@ def _mark_before_start(scope: CallChargeScope, call: CallToCharge) -> None:
             record_id=call.record_id,
             line_id=line_id,
             seconds=answered_seconds(call.answered_at, call.ended_at),
-            on_net=callee is not None and repositories.calls.is_ratel_number(callee),
+            on_net=_on_net(repositories.calls, callee, own_prefixes),
             rate_kobo_per_min=0,
             charged_kobo=0,
             uncovered_kobo=0,
@@ -115,14 +124,19 @@ def _mark_before_start(scope: CallChargeScope, call: CallToCharge) -> None:
             repositories.calls.settle_reservation(call.call_id)
 
 
-def _charge_one(scope: CallChargeScope, call: CallToCharge, vat_rate_bps: int) -> tuple[int, int]:
+def _charge_one(
+    scope: CallChargeScope,
+    call: CallToCharge,
+    vat_rate_bps: int,
+    own_prefixes: tuple[str, ...] = (),
+) -> tuple[int, int]:
     """(kobo taken, kobo uncovered) for one call, written in one transaction."""
     with scope() as repositories:
         settings = settings_or_default(repositories.catalogue)
         caller = national_msisdn(call.from_msisdn)
         line_id = repositories.calls.lock_line_for_msisdn(caller) if caller else None
         callee = national_msisdn(call.to_msisdn)
-        on_net = callee is not None and repositories.calls.is_ratel_number(callee)
+        on_net = _on_net(repositories.calls, callee, own_prefixes)
         rate = settings.voice_onnet_kobo_per_min if on_net else settings.voice_offnet_kobo_per_min
         cost = call_cost(answered_seconds(call.answered_at, call.ended_at), rate, on_net=on_net)
         taken = 0

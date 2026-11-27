@@ -1764,14 +1764,15 @@ paths:
       summary: Before the SMS centre queues a text from a phone, whether to send it and its cost.
       description: |
         Asked by the SMS centre for each text a phone sends (ADR 0013). A text to another
-        Ratelplus line costs the catalogue's SMS price from airtime (`charged`), or is refused
-        when the available airtime does not cover it (`refused_balance`). A text to 555 is free
-        (`free_self_care`). A text to anything else (another network, another short code) is
-        refused and not charged (`refused_off_net`): there is no SMS interconnect. Before
-        CALL_CHARGING_FROM texts are free (`free_charging_off`); senders that are not a line in
-        RatelBSS are not billed (`not_billed`). Charged once per `message_id`: asked again, the
-        first answer comes back and nothing more is charged. Not public: voice VM only, through
-        the reverse proxy.
+        Ratelplus number (a live line, or a number in RATEL_NUMBER_PREFIXES) costs the catalogue's
+        SMS price from airtime (`charged`), or is refused when the available airtime does not
+        cover it (`refused_balance`). A text to 555 is free (`free_self_care`). A text to anything
+        else (another network, another short code) is refused and not charged
+        (`refused_off_net`): there is no SMS interconnect. Before CALL_CHARGING_FROM nothing is
+        refused or charged (`free_charging_off`), and senders that are not a line in RatelBSS
+        never are (`not_billed`). Charged once per `message_id`: asked again, the first answer
+        comes back and nothing more is charged. Not public: voice VM only, through the reverse
+        proxy.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:

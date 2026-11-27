@@ -7,9 +7,11 @@ Pure: no database, no clock, no logging. Money is whole kobo; rates and prices i
 - Emergency and free numbers (112, 199, customer care: a deployment setting) are never refused or
   limited. Neither are calls while charging is off, nor callers that are not a line in RatelBSS
   (lab SIMs provisioned straight into the HSS; every customer line comes through RatelBSS).
-- An SMS to another Ratelplus line costs the catalogue's SMS price; to the self-care number 555
+- An SMS to another Ratelplus number costs the catalogue's SMS price; to the self-care number 555
   it is free; to anything else (other networks, other short codes) it is refused and not charged,
-  as there is no SMS interconnect.
+  as there is no SMS interconnect. Before charging starts nothing is refused.
+- A Ratelplus number is a live line in RatelBSS or a number in Ratelplus's own ranges
+  (RATEL_NUMBER_PREFIXES): SIMs put straight into the HSS have no line but are still ours.
 """
 
 from __future__ import annotations
@@ -72,6 +74,16 @@ def parse_free_numbers(setting: str) -> frozenset[str]:
 
 def is_free_number(dialled: str, free: frozenset[str]) -> bool:
     return digits(dialled) in free
+
+
+def parse_number_prefixes(setting: str) -> tuple[str, ...]:
+    """'2342064730, 234...' as the digit prefixes of Ratelplus's own number ranges."""
+    return tuple(d for d in (digits(part) for part in setting.split(",")) if d)
+
+
+def in_own_range(msisdn: str, prefixes: tuple[str, ...]) -> bool:
+    """Whether a 234-form number is in one of Ratelplus's ranges."""
+    return any(msisdn.startswith(p) for p in prefixes)
 
 
 def affordable_seconds(available_kobo: int, rate_kobo_per_min: int) -> int:

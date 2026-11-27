@@ -23,6 +23,7 @@ from contextlib import contextmanager
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.bss_money.domain.prepaid import parse_number_prefixes
 from app.bss_money.repositories.ports import CallChargeRepositories
 from app.bss_money.repositories.sql import (
     SqlCallChargeRepository,
@@ -63,6 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             call_scope,
             vat_rate_bps=settings.vat_rate_bps,
             charge_from=settings.call_charging_from,
+            own_prefixes=parse_number_prefixes(settings.ratel_number_prefixes),
         )
     except SQLAlchemyError as exc:
         # Type only: a driver message can carry the database host and user.

@@ -41,10 +41,15 @@ Prepaid control of calls and texts was decided on 2026-11-26 (docs/adr/0013).
   SIMs put straight into the HSS). A suspended line cannot call.
 - If bss-app does not answer in time, the P-CSCF lets the call through with a two-minute limit.
 - Texts: before queueing a text from a phone, the SMS centre asks `POST /v1/pay/sms/charge`. A text
-  to another Ratelplus line costs the SMS price (`sms_onnet_kobo`, 2 naira, VAT inclusive, set in
+  to another Ratelplus number costs the SMS price (`sms_onnet_kobo`, 2 naira, VAT inclusive, set in
   RatelDesk), charged once per SMS centre message id, or is refused when the airtime does not cover
   it. Texts to 555 are free. Texts to anything else (other networks, other short codes) are refused
-  and not charged: there is no SMS interconnect yet. Free until `CALL_CHARGING_FROM`.
+  and not charged: there is no SMS interconnect yet. Before `CALL_CHARGING_FROM` no text is refused
+  or charged, and texts from SIMs that are not a line in RatelBSS never are.
+- A Ratelplus number is a live line in RatelBSS, or a number in Ratelplus's own ranges
+  (`RATEL_NUMBER_PREFIXES`, 234-form prefixes): SIMs put straight into the HSS have no line. The same
+  rule sets the on-net call rate. (27 Nov 2026: with lines only, texts between lab SIMs were refused
+  as "other networks"; the SMS centre change was rolled back the same night.)
 
 ## Starting catalogue (2026-11-24)
 

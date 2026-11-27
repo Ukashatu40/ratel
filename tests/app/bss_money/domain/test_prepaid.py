@@ -12,9 +12,11 @@ from app.bss_money.domain.prepaid import (
     affordable_seconds,
     cost_of,
     digits,
+    in_own_range,
     is_free_number,
     limited_call,
     parse_free_numbers,
+    parse_number_prefixes,
 )
 
 
@@ -101,3 +103,12 @@ def test_enough_airtime_limits_the_call_and_holds_its_cost() -> None:
 )
 def test_only_refused_texts_are_not_sent(outcome: SmsOutcome, send: bool) -> None:
     assert outcome.send is send
+
+
+def test_own_ranges_are_digit_prefixes() -> None:
+    own = parse_number_prefixes(" 2342064730, +23491 ,, ")
+    assert own == ("2342064730", "23491")
+    assert in_own_range("2342064730433", own)
+    assert in_own_range("2349100000000", own)
+    assert not in_own_range("2348031234567", own)
+    assert not in_own_range("2342064730433", ())
