@@ -1,7 +1,8 @@
 # Self-care: USSD `*123#` and SMS short number 555
 
 One small service, the container `ussd` at 172.22.0.40 on the IMS network `ratel_ims` on the voice
-VM, offers the same self-care functions two ways. Calls never pass through it.
+VM, offers the same self-care functions two ways. Calls never pass through it: it only answers
+the P-CSCF's and the SMS centre's prepaid questions (see "Prepaid checks" below).
 
 | Channel | Works on | How it reaches the service |
 | ---- | ---- | ---- |
@@ -126,9 +127,23 @@ Balance and buying a bundle by number need ratel-app with the catalogue release
 (`feat/catalogue-and-voice-charging`) and bss-app's nginx rule for the voice VM
 (`deploy/bss-app/nginx/add-selfcare-paths.py`).
 
+## Prepaid checks (ADR 0013)
+
+On the same HTTP port (8647) the service relays the prepaid questions to bss-app and answers in
+plain text, so the Kamailio configs need no JSON or TLS (network/voice/prepaid):
+
+| Path | Asked by | Answer |
+| ---- | ---- | ---- |
+| `/call/authorize?call_id=&caller=&dialled=` | the P-CSCF (`CALL_ALLOWED`, 172.22.0.21), at call set-up | `200 <max seconds>` (0: no limit) or `402 <reason>`; bss-app silent for 1.5 s: `200 120` |
+| `/call/end?call_id=&seconds=` | the P-CSCF, at hang-up or a failed call | `200 ok` at once; bss-app is told in the background |
+| `/sms/charge?id=&from=&to=` | the SMS centre (`SMS_ALLOWED`, 172.22.0.33), before queueing a text | `200 <reason>` to send, or `402 <reason>` and an SMS from 555 telling the sender why; bss-app silent: `200 unchecked` |
+
+Logs show the last four digits only: `docker logs ussd 2>&1 | grep -E "call:|sms:" | tail`.
+
 ## Switching it off
 
 - SMS 555: copy the `kamailio_smsc.cfg.bak-short-*` backup back and `docker restart smsc`.
 - USSD: remove the block from `kamailio_scscf.cfg` and restart the `scscf` container (every phone
   then re-registers: airplane toggle).
-- Both: `./run-ussd.sh --stop`.
+- Both: `./run-ussd.sh --stop`. With the prepaid change installed, every call is then limited to
+  two minutes and texts go unchecked, so roll that back first (network/voice/prepaid).

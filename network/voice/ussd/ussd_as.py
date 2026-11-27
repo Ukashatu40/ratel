@@ -28,7 +28,18 @@ Configuration, from the environment:
     SMS_PORT            TCP port for the 555 SMS service (off when unset)
     SMS_SMSC_URL        the SMSC's HTTP entry point (default http://172.22.0.33:7090)
     SMS_ALLOWED         comma-separated addresses allowed to post texts (default 172.22.0.33)
+    CALL_ALLOWED        comma-separated addresses allowed to ask about calls (default 172.22.0.21,
+                        the P-CSCF)
 Without RATEL_PAY_URL the menu still works and answers that the option is not available yet.
+
+On the same HTTP port it relays the prepaid checks (ADR 0013, docs/catalogue.md) to bss-app and
+answers in plain text, so the Kamailio configs need no JSON or TLS:
+    GET /call/authorize?call_id=&caller=&dialled=   (P-CSCF, at call set-up)
+        200 "<max seconds>" (0: no limit) | 402 "<reason>". bss-app not answering: 200 "120".
+    GET /call/end?call_id=&seconds=                  (P-CSCF, at hang-up or a failed call) 200 "ok"
+    GET /sms/charge?id=&from=&to=                    (SMSC, before queueing a text from a phone)
+        200 "<reason>": send it | 402 "<reason>": do not, and the sender gets an SMS from 555
+        saying why. bss-app not answering: 200 "unchecked" (the text goes, uncharged).
 
 The same process also serves the SMS short number 555 (SmsService below), because USSD over IMS
 only works on some Android phones: iPhones need Apple's carrier bundle and feature phones dial the
@@ -361,7 +372,14 @@ class PayApi:
         # the payments key itself and replaces any Authorization header, as it does for RatelPay.
         return bool(self.base)
 
-    def _call(self, method: str, path: str, body: dict | None = None, extra: dict | None = None):
+    def _call(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        extra: dict | None = None,
+        timeout: float = 6,
+    ):
         req = urllib.request.Request(self.base + path, method=method)  # noqa: S310  (RATEL_PAY_URL from the service's own settings, http or https)
         if self.key:
             req.add_header("Authorization", f"Bearer {self.key}")
@@ -373,7 +391,7 @@ class PayApi:
             data = json.dumps(body).encode()
             req.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(req, data=data, timeout=6, context=self.ctx) as r:  # noqa: S310  (RATEL_PAY_URL from the service's own settings, http or https)
+            with urllib.request.urlopen(req, data=data, timeout=timeout, context=self.ctx) as r:  # noqa: S310  (RATEL_PAY_URL from the service's own settings, http or https)
                 return r.status, json.loads(r.read() or b"{}")
         except urllib.error.HTTPError as e:
             try:
@@ -383,6 +401,49 @@ class PayApi:
         except (urllib.error.URLError, TimeoutError, ValueError, OSError) as e:
             log.warning("pay api %s %s failed: %s", method, path, type(e).__name__)
             return 0, {}
+
+    # --- prepaid calls and texts (ADR 0013) -----------------------------------------------------
+    # Short timeouts: the P-CSCF waits for these answers with the call set-up held (2 s at most).
+
+    def authorize_call(
+        self, call_id: str, caller: str, dialled: str
+    ) -> tuple[bool, int, str] | None:
+        """(allowed, max seconds, 0 meaning no limit, reason); None when bss-app did not answer."""
+        if not self.ready:
+            return None
+        status, body = self._call(
+            "POST",
+            "/v1/pay/calls/authorize",
+            {"call_id": call_id, "caller": caller, "dialled": dialled},
+            timeout=PREPAID_TIMEOUT,
+        )
+        allowed, seconds, reason = body.get("allowed"), body.get("max_seconds"), body.get("reason")
+        if status != 200 or not isinstance(allowed, bool) or not isinstance(seconds, int):
+            return None
+        return allowed, max(seconds, 0), str(reason or "")
+
+    def end_call(self, call_id: str, seconds: int) -> bool:
+        if not self.ready:
+            return False
+        status, _ = self._call(
+            "POST", "/v1/pay/calls/end", {"call_id": call_id, "seconds": seconds}, timeout=5
+        )
+        return status == 200
+
+    def charge_sms(self, message_id: str, sender: str, recipient: str) -> tuple[bool, str] | None:
+        """(send it, reason), or None when bss-app did not answer."""
+        if not self.ready:
+            return None
+        status, body = self._call(
+            "POST",
+            "/v1/pay/sms/charge",
+            {"message_id": message_id, "sender": sender, "recipient": recipient},
+            timeout=PREPAID_TIMEOUT,
+        )
+        send, reason = body.get("send"), body.get("reason")
+        if status != 200 or not isinstance(send, bool):
+            return None
+        return send, str(reason or "")
 
     @staticmethod
     def naira(kobo: int, whole: bool = False) -> str:
@@ -520,6 +581,33 @@ SMS_HELP = (
 )
 MSISDN_RE = re.compile(r"^234[0-9]{10}$")
 
+# Prepaid control (ADR 0013). bss-app not answering in time: the call goes ahead, limited to 2 min.
+PREPAID_TIMEOUT = 1.5  # seconds for bss-app to answer; the P-CSCF gives this service 2
+CALL_FALLBACK_SECONDS = 120
+# What a sender is told, from 555, when a text is not sent. Plain ASCII, one SMS each.
+SMS_REFUSED_TEXT = {
+    "refused_balance": (
+        "Your text was not sent: your airtime is too low. Text BUY 500 to 555 to top up."
+    ),
+    "refused_off_net": (
+        "Your text was not sent: texts to other networks are not available yet. "
+        "Texts to Ratelplus numbers work."
+    ),
+}
+ID_RE = re.compile(r"^[!-~]{1,128}$")  # a SIP Call-ID or SMSC message id: visible ASCII, no spaces
+
+
+def national(number: str) -> str | None:
+    """A Ratelplus-style number in 234 form from a URI or a dialled number, or None."""
+    value = number.strip()
+    for prefix in ("tel:", "sip:", "sips:"):
+        if value.lower().startswith(prefix):
+            value = value[len(prefix) :]
+    value = value.split("@", 1)[0].split(";", 1)[0].lstrip("+")
+    if re.fullmatch(r"0[0-9]{10}", value):
+        return "234" + value[1:]
+    return value if MSISDN_RE.match(value) else None
+
 
 class SmsCommands:
     """Turns one text sent to 555 into one answer. Stateless: every text is a full command."""
@@ -577,10 +665,18 @@ class SmsService:
     on the payments API.
     """
 
-    def __init__(self, commands: SmsCommands, smsc_url: str, allowed: set[str]):
+    def __init__(
+        self,
+        commands: SmsCommands,
+        smsc_url: str,
+        allowed: set[str],
+        call_allowed: set[str] | None = None,
+    ):
         self.commands = commands
+        self.pay = commands.pay
         self.smsc_url = smsc_url.rstrip("/")
-        self.allowed = allowed
+        self.allowed = allowed  # the SMSC: /sms and /sms/charge
+        self.call_allowed = call_allowed or set()  # the P-CSCF: /call/authorize and /call/end
         self.tasks: set[asyncio.Task] = set()
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -591,10 +687,17 @@ class SmsService:
             method, _, rest = line.partition(" ")
             target = rest.rsplit(" ", 1)[0]
             path, _, query = target.partition("?")
-            if peer not in self.allowed:
-                log.warning("sms: refused HTTP request from %s", peer)
+            allowed = self.call_allowed if path.startswith("/call/") else self.allowed
+            if peer not in allowed:
+                log.warning("http: refused a request from %s", peer)
                 return await self._reply(writer, 403, "forbidden")
-            if method != "GET" or path != "/sms":
+            if method != "GET":
+                return await self._reply(writer, 404, "not found")
+            if path in ("/call/authorize", "/call/end", "/sms/charge"):
+                q = dict(urllib.parse.parse_qsl(query, keep_blank_values=True))
+                code, text = await self.prepaid(path, q)
+                return await self._reply(writer, code, text)
+            if path != "/sms":
                 return await self._reply(writer, 404, "not found")
             params = dict(p.partition("=")[::2] for p in query.split("&") if p)
             msisdn = urllib.parse.unquote(params.get("from", ""))
@@ -621,7 +724,13 @@ class SmsService:
 
     @staticmethod
     async def _reply(writer: asyncio.StreamWriter, code: int, text: str):
-        reason = {200: "OK", 400: "Bad Request", 403: "Forbidden", 404: "Not Found"}[code]
+        reason = {
+            200: "OK",
+            400: "Bad Request",
+            402: "Payment Required",
+            403: "Forbidden",
+            404: "Not Found",
+        }[code]
         body = text.encode()
         writer.write(
             f"HTTP/1.1 {code} {reason}\r\nContent-Type: text/plain\r\n"
@@ -629,6 +738,72 @@ class SmsService:
             + body
         )
         await writer.drain()
+
+    def _later(self, coro):
+        task = asyncio.get_running_loop().create_task(coro)
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+
+    async def prepaid(self, path: str, q: dict[str, str]) -> tuple[int, str]:
+        """The P-CSCF's and the SMSC's prepaid questions (ADR 0013), relayed to bss-app."""
+        if path == "/call/authorize":
+            call_id, caller, dialled = (
+                q.get("call_id", ""),
+                q.get("caller", ""),
+                q.get("dialled", ""),
+            )
+            if (
+                not ID_RE.match(call_id)
+                or not 0 < len(caller) <= 128
+                or not 0 < len(dialled) <= 128
+            ):
+                return 400, "bad request"
+            answer = await asyncio.to_thread(self.pay.authorize_call, call_id, caller, dialled)
+            who = last_four(national(caller))
+            if answer is None:
+                log.warning(
+                    "call: bss-app did not answer for a call from %s; limited to %d s",
+                    who,
+                    CALL_FALLBACK_SECONDS,
+                )
+                return 200, str(CALL_FALLBACK_SECONDS)
+            allowed, seconds, reason = answer
+            log.info(
+                "call: from %s %s (%s)",
+                who,
+                (f"limited to {seconds} s" if seconds else "no limit") if allowed else "REFUSED",
+                reason,
+            )
+            return (200, str(seconds)) if allowed else (402, reason or "refused")
+        if path == "/call/end":
+            call_id, seconds = q.get("call_id", ""), q.get("seconds", "")
+            if not ID_RE.match(call_id) or not seconds.isdigit() or int(seconds) > 86_400:
+                return 400, "bad request"
+            self._later(self.end_call(call_id, int(seconds)))
+            return 200, "ok"
+        # /sms/charge
+        message_id, sender, to = q.get("id", ""), q.get("from", ""), q.get("to", "")
+        if not ID_RE.match(message_id) or not 0 < len(sender) <= 128 or not 0 < len(to) <= 128:
+            return 400, "bad request"
+        answer = await asyncio.to_thread(self.pay.charge_sms, message_id, sender, to)
+        who = national(sender)
+        if answer is None:
+            log.warning(
+                "sms: bss-app did not answer for a text from %s; sent unchecked", last_four(who)
+            )
+            return 200, "unchecked"
+        send, reason = answer
+        log.info("sms: text from %s %s (%s)", last_four(who), "sent" if send else "REFUSED", reason)
+        if send:
+            return 200, reason or "send"
+        if who and reason in SMS_REFUSED_TEXT:
+            self._later(asyncio.to_thread(self.send, who, SMS_REFUSED_TEXT[reason]))
+        return 402, reason or "refused"
+
+    async def end_call(self, call_id: str, seconds: int):
+        if not await asyncio.to_thread(self.pay.end_call, call_id, seconds):
+            # Not lost: the call record settles the hold within a minute or two.
+            log.warning("call: bss-app did not take a call end (%d s)", seconds)
 
     async def process(self, msisdn: str, text: str):
         log.info("sms: %s from %s", self.commands.keyword(text), last_four(msisdn))
@@ -991,6 +1166,7 @@ async def main():
             SmsCommands(pay),
             os.environ.get("SMS_SMSC_URL", "http://172.22.0.33:7090"),
             set(os.environ.get("SMS_ALLOWED", "172.22.0.33").split(",")),
+            set(os.environ.get("CALL_ALLOWED", "172.22.0.21").split(",")),
         )
         await asyncio.start_server(sms.handle, bind, int(sms_port))
         log.info("sms: short number %s listening on tcp %s:%s", SMS_SHORT, bind, sms_port)

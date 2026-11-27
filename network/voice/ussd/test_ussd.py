@@ -98,6 +98,26 @@ class FakePay(BaseHTTPRequestHandler):
                     "replayed": False,
                 },
             )  # 25 Nov 2026
+        if self.path == "/v1/pay/calls/authorize":
+            if body["dialled"].endswith("0999"):
+                time.sleep(2.5)  # slower than the service waits: it must fall back to 2 minutes
+            if "2348000000910" in body["caller"]:
+                return self._send(
+                    200, {"allowed": False, "max_seconds": 0, "reason": "insufficient_balance"}
+                )
+            return self._send(200, {"allowed": True, "max_seconds": 300, "reason": "limited"})
+        if self.path == "/v1/pay/calls/end":
+            return self._send(200, {"ended": True})
+        if self.path == "/v1/pay/sms/charge":
+            if body["recipient"] == "2348031234567":
+                return self._send(
+                    200, {"send": False, "reason": "refused_off_net", "charged_kobo": 0}
+                )
+            if "2348000000911" in body["sender"]:
+                return self._send(
+                    200, {"send": False, "reason": "refused_balance", "charged_kobo": 0}
+                )
+            return self._send(200, {"send": True, "reason": "charged", "charged_kobo": 200})
         if self.path == "/v1/pay/vouchers/redeem":
             if body["pin"] == "11111111111111":
                 return self._send(400, {})
@@ -299,6 +319,136 @@ def sms_get(path):
     return status
 
 
+def http_get(path):
+    """One GET to the service's HTTP port; returns (status, body text)."""
+    import http.client
+
+    c = http.client.HTTPConnection("127.0.0.1", 18647, timeout=10)
+    c.request("GET", path)
+    resp = c.getresponse()
+    out = resp.status, resp.read().decode()
+    c.close()
+    return out
+
+
+def prepaid_tests():
+    """ADR 0013: the P-CSCF's and the SMSC's questions, relayed to bss-app (here FakePay)."""
+    from urllib.parse import urlencode
+
+    failures = 0
+    proc = run(
+        {
+            "RATEL_PAY_URL": "http://127.0.0.1:18080",
+            "SMS_PORT": "18647",
+            "SMS_SMSC_URL": "http://127.0.0.1:17090",
+            "SMS_ALLOWED": "127.0.0.1",
+            "CALL_ALLOWED": "127.0.0.1",
+        }
+    )
+    smsc = HTTPServer(("127.0.0.1", 17090), FakeSmsc)
+    threading.Thread(target=smsc.serve_forever, daemon=True).start()
+    caller = "sip:+2348000000905@ims.example"
+
+    def authorize(call_id, who, dialled):
+        q = urlencode({"call_id": call_id, "caller": who, "dialled": dialled})
+        return http_get("/call/authorize?" + q)
+
+    def charge(mid, sender, to):
+        return http_get("/sms/charge?" + urlencode({"id": mid, "from": sender, "to": to}))
+
+    try:
+        before = len(FakeSmsc.sent)
+        cases = [
+            (
+                "a call is limited",
+                authorize("c1@10.46.0.2", caller, "tel:+2348000000906"),
+                (200, "300"),
+            ),
+            (
+                "a call is refused",
+                authorize("c2", "sip:+2348000000910@ims.example", "tel:+2348000000906"),
+                (402, "insufficient_balance"),
+            ),
+            (
+                "bss-app too slow: 2 minutes",
+                authorize("c3", caller, "tel:+2348000000999"),
+                (200, "120"),
+            ),
+            ("a bad call id", authorize("has space", caller, "tel:1"), (400, "bad request")),
+            ("a call end", http_get("/call/end?call_id=c1%4010.46.0.2&seconds=61"), (200, "ok")),
+            ("a bad call end", http_get("/call/end?call_id=c1&seconds=-1"), (400, "bad request")),
+            (
+                "a text is charged",
+                charge("m1", "+2348000000905", "2348000000906"),
+                (200, "charged"),
+            ),
+            (
+                "a text off-net",
+                charge("m2", "+2348000000905", "2348031234567"),
+                (402, "refused_off_net"),
+            ),
+            (
+                "a text without airtime",
+                charge("m3", "2348000000911", "2348000000906"),
+                (402, "refused_balance"),
+            ),
+        ]
+        for name, got, want in cases:
+            ok = got == want
+            print(f"   {'ok ' if ok else 'FAIL'} {name} -> {got} (want {want})")
+            failures += not ok
+        time.sleep(1)
+        ends = [c for c in FakePay.calls if c[1] == "/v1/pay/calls/end"]
+        ok = ends and ends[-1][2] == {"call_id": "c1@10.46.0.2", "seconds": 61}
+        print(f"   {'ok ' if ok else 'FAIL'} the call end reached bss-app -> {ends[-1:]}")
+        failures += not ok
+        told = FakeSmsc.sent[before:]
+        want_told = [
+            ("2348000000905", "texts to other networks are not available yet"),
+            ("2348000000911", "your airtime is too low"),
+        ]
+        ok = sorted((t["to"], t["msisdn"]) for t in told) == sorted(
+            (n, "555") for n, _ in want_told
+        ) and all(any(w in t["text"] and t["to"] == n for t in told) for n, w in want_told)
+        ok = ok and all(len(t["text"]) <= 160 for t in told)
+        print(f"   {'ok ' if ok else 'FAIL'} refused senders are told why, from 555 -> {told}")
+        failures += not ok
+        got = http_get("/call/authorize?call_id=x&caller=a&dialled=b")
+        print(
+            f"   {'ok ' if got[0] == 200 else 'FAIL'} the P-CSCF's path from its address -> {got}"
+        )
+        failures += got[0] != 200
+    finally:
+        smsc.shutdown()
+        smsc.server_close()
+        proc.terminate()
+        out = proc.communicate()[0]
+        print("".join("   | " + ln + "\n" for ln in out.splitlines()[-6:]))
+        if "Traceback" in out:
+            failures += 1
+            print("FAIL: the service logged a traceback")
+        if re.search(r"234[0-9]{10}", out):
+            failures += 1
+            print("FAIL: a full phone number reached the log")
+    # The call paths only from the P-CSCF's address, the text paths only from the SMSC's.
+    proc = run(
+        {
+            "RATEL_PAY_URL": "http://127.0.0.1:18080",
+            "SMS_PORT": "18647",
+            "SMS_ALLOWED": "127.0.0.1",
+            "CALL_ALLOWED": "172.22.0.21",
+        }
+    )
+    try:
+        got = http_get("/call/authorize?call_id=x&caller=a&dialled=b")[0]
+        print(f"   {'ok ' if got == 403 else 'FAIL'} a call question not from the P-CSCF -> {got}")
+        failures += got != 403
+    finally:
+        proc.terminate()
+        proc.communicate()
+    return failures
+
+
 def sms_case(msisdn, text):
     before = len(FakeSmsc.sent)
     status = sms_get(f"/sms?from={msisdn}&hex={text.encode().hex()}")
@@ -410,6 +560,7 @@ def sms_tests():
         )
         failures += not ok
     smsc.shutdown()
+    smsc.server_close()
     proc = run(
         {
             "SMS_PORT": "18647",
@@ -503,6 +654,8 @@ def main():
             print("FAIL: a full phone number reached the log")
     print("== SMS short number 555")
     failures += sms_tests()
+    print("== prepaid calls and texts (ADR 0013)")
+    failures += prepaid_tests()
     httpd.shutdown()
     print("ALL PASSED" if failures == 0 else f"{failures} FAILED")
     sys.exit(1 if failures else 0)
