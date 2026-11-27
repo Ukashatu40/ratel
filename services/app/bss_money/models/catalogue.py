@@ -36,6 +36,10 @@ class CatalogueSetting(Base, TimestampMixin):
     voice_onnet_kobo_per_min: Mapped[int] = mapped_column(BigInteger)
     voice_offnet_kobo_per_min: Mapped[int] = mapped_column(BigInteger)
     sms_onnet_kobo: Mapped[int] = mapped_column(BigInteger, server_default="200")
+    # Comma-separated whole kobo, smallest first: the face values a voucher batch may have.
+    voucher_values: Mapped[str] = mapped_column(
+        String(120), server_default="10000,20000,50000,100000,200000"
+    )
 
 
 class CatalogueAudit(Base, TimestampMixin):

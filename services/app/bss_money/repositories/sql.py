@@ -11,6 +11,7 @@ writes only BSS: money's own tables.
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
@@ -30,6 +31,7 @@ from app.bss_money.domain.plans import Bundle as BundleOffer
 from app.bss_money.domain.plans import OnExhaustion, Plan
 from app.bss_money.domain.purchase import OfferKind
 from app.bss_money.domain.rating import RatingResult, UsageRecord
+from app.bss_money.domain.voucher_batches import batch_name
 from app.bss_money.domain.vouchers import VoucherState
 from app.bss_money.domain.wallets import WalletMismatch
 from app.bss_money.models.allowance import AllowanceBucket
@@ -38,11 +40,13 @@ from app.bss_money.models.ledger import LedgerEntry, Wallet
 from app.bss_money.models.payments import Payment
 from app.bss_money.models.prepaid import CallReservation, SmsCharge
 from app.bss_money.models.rating import UsageRating
-from app.bss_money.models.vouchers import Voucher, VoucherAttempt
+from app.bss_money.models.vouchers import Voucher, VoucherAttempt, VoucherBatch, VoucherEvent
 from app.bss_money.repositories.ports import (
     AuditRow,
     BalanceOutOfRange,
+    BatchView,
     CallToCharge,
+    CardView,
     DuplicateEntry,
     DuplicateKey,
     LedgerRow,
@@ -245,6 +249,175 @@ class SqlVoucherRepository:
         self._session.execute(
             update(Voucher).where(Voucher.voucher_id == voucher_id).values(state=state.value)
         )
+
+
+class SqlVoucherAdminRepository:
+    """Voucher batches and cards for RatelDesk (repositories/ports.py, VoucherAdminRepository)."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def _view(self, row: VoucherBatch) -> BatchView:
+        used = self._session.scalar(
+            select(func.count(Voucher.voucher_id)).where(
+                Voucher.batch == row.name, Voucher.state == VoucherState.USED.value
+            )
+        )
+        return BatchView(
+            batch_id=row.batch_id,
+            name=row.name,
+            face_value_kobo=row.face_value_kobo,
+            card_count=row.card_count,
+            state=row.state,
+            requested_by=row.requested_by,
+            requested_at=None if row.created_at is None else _utc(row.created_at),
+            approved_by=row.approved_by,
+            printed_by=row.printed_by,
+            printed_at=None if row.printed_at is None else _utc(row.printed_at),
+            cards_used=used or 0,
+        )
+
+    def batches(self, limit: int) -> list[BatchView]:
+        rows = self._session.scalars(
+            select(VoucherBatch).order_by(VoucherBatch.batch_id.desc()).limit(limit)
+        )
+        return [self._view(row) for row in rows]
+
+    def batch(self, batch_id: int, *, lock: bool = False) -> BatchView | None:
+        query = select(VoucherBatch).where(VoucherBatch.batch_id == batch_id)
+        if lock:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        row = self._session.scalar(query)
+        return None if row is None else self._view(row)
+
+    def batch_for_key(self, idempotency_key: str) -> BatchView | None:
+        row = self._session.scalar(
+            select(VoucherBatch).where(VoucherBatch.idempotency_key == idempotency_key)
+        )
+        return None if row is None else self._view(row)
+
+    def add_batch(
+        self, *, face_value_kobo: int, card_count: int, requested_by: str, idempotency_key: str
+    ) -> BatchView:
+        row = VoucherBatch(
+            name=f"pending-{secrets.token_hex(8)}",  # renamed from its id just below
+            face_value_kobo=face_value_kobo,
+            card_count=card_count,
+            state="requested",
+            requested_by=requested_by,
+            idempotency_key=idempotency_key,
+        )
+        self._session.add(row)
+        self._session.flush()
+        row.name = batch_name(row.batch_id)
+        self._session.flush()
+        return self._view(row)
+
+    def set_batch(
+        self,
+        batch_id: int,
+        *,
+        state: str,
+        approved_by: str | None = None,
+        printed_by: str | None = None,
+        printed_at: datetime | None = None,
+    ) -> None:
+        values: dict[str, object] = {"state": state}
+        if approved_by is not None:
+            values["approved_by"] = approved_by
+        if printed_by is not None:
+            values["printed_by"] = printed_by
+            values["printed_at"] = printed_at
+        self._session.execute(
+            update(VoucherBatch).where(VoucherBatch.batch_id == batch_id).values(**values)
+        )
+
+    def add_cards(self, cards: Sequence[NewVoucher], state: VoucherState) -> list[int]:
+        rows = [
+            Voucher(
+                card_number=v.card_number,
+                pin_hash=v.pin_hash,
+                face_value_kobo=v.face_value_kobo,
+                state=state.value,
+                batch=v.batch,
+                expires_at=v.expires_at,
+            )
+            for v in cards
+        ]
+        self._session.add_all(rows)
+        self._session.flush()
+        return [row.voucher_id for row in rows]
+
+    def cards_of(self, batch: str) -> list[tuple[int, VoucherState]]:
+        rows = self._session.execute(
+            select(Voucher.voucher_id, Voucher.state)
+            .where(Voucher.batch == batch)
+            .order_by(Voucher.voucher_id)
+            .with_for_update()
+        )
+        return [(voucher_id, VoucherState(state)) for voucher_id, state in rows]
+
+    def set_card_states(self, voucher_ids: Sequence[int], state: VoucherState) -> None:
+        if voucher_ids:
+            self._session.execute(
+                update(Voucher)
+                .where(Voucher.voucher_id.in_(list(voucher_ids)))
+                .values(state=state.value)
+            )
+
+    def _card(self, query) -> CardView | None:  # type: ignore[no-untyped-def]
+        row = self._session.execute(query).first()
+        if row is None:
+            return None
+        card, msisdn = row
+        return CardView(
+            voucher_id=card.voucher_id,
+            card_number=card.card_number,
+            batch=card.batch,
+            face_value_kobo=card.face_value_kobo,
+            state=VoucherState(card.state),
+            used_by_msisdn=msisdn,
+            used_at=None if card.used_at is None else _utc(card.used_at),
+        )
+
+    def card(self, card_number: str) -> CardView | None:
+        return self._card(
+            select(Voucher, Line.msisdn)
+            .outerjoin(Line, Line.line_id == Voucher.used_by_line_id)
+            .where(Voucher.card_number == card_number)
+        )
+
+    def card_by_id(self, voucher_id: int, *, lock: bool = False) -> CardView | None:
+        query = (
+            select(Voucher, Line.msisdn)
+            .outerjoin(Line, Line.line_id == Voucher.used_by_line_id)
+            .where(Voucher.voucher_id == voucher_id)
+        )
+        if lock:
+            query = query.with_for_update(of=Voucher).execution_options(populate_existing=True)
+        return self._card(query)
+
+    def add_event(
+        self,
+        *,
+        actor: str,
+        action: str,
+        reason: str,
+        detail: str,
+        batch_id: int | None = None,
+        voucher_id: int | None = None,
+    ) -> None:
+        self._session.add(
+            VoucherEvent(
+                actor=actor,
+                action=action,
+                reason=reason,
+                detail=detail,
+                batch_id=batch_id,
+                voucher_id=voucher_id,
+            )
+        )
+        self._session.flush()
 
 
 _IN_SERVICE = (LineState.ACTIVE.value, LineState.OUT_OF_DATA.value, LineState.EXPIRED.value)
@@ -897,6 +1070,7 @@ class SqlCatalogueRepository:
             voice_onnet_kobo_per_min=row.voice_onnet_kobo_per_min,
             voice_offnet_kobo_per_min=row.voice_offnet_kobo_per_min,
             sms_onnet_kobo=row.sms_onnet_kobo,
+            voucher_values_kobo=tuple(int(v) for v in row.voucher_values.split(",") if v.strip()),
         )
 
     def save_settings(self, settings: CatalogueSettings) -> None:
@@ -911,6 +1085,7 @@ class SqlCatalogueRepository:
         row.voice_onnet_kobo_per_min = settings.voice_onnet_kobo_per_min
         row.voice_offnet_kobo_per_min = settings.voice_offnet_kobo_per_min
         row.sms_onnet_kobo = settings.sms_onnet_kobo
+        row.voucher_values = ",".join(str(v) for v in settings.voucher_values_kobo)
         self._session.flush()
 
     def audit_for_key(self, idempotency_key: str) -> AuditRow | None:

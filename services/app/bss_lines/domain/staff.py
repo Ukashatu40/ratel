@@ -46,6 +46,8 @@ class Permission(StrEnum):
     MANAGE_CATALOGUE = (
         "manage_catalogue"  # plans, bundles, airtime and call rates (docs/catalogue.md)
     )
+    # request, approve, print, stock, sell and lock voucher batches and cards (voucher-batches.md)
+    MANAGE_VOUCHERS = "manage_vouchers"
 
 
 # TODO(PRD): who may do what. Customer care sells and looks after lines; only an admin vouches for
@@ -63,7 +65,12 @@ _AGENT = frozenset(
 PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.AGENT: _AGENT,
     Role.ADMIN: _AGENT
-    | {Permission.VERIFY_KYC, Permission.TERMINATE_LINE, Permission.MANAGE_CATALOGUE},
+    | {
+        Permission.VERIFY_KYC,
+        Permission.TERMINATE_LINE,
+        Permission.MANAGE_CATALOGUE,
+        Permission.MANAGE_VOUCHERS,
+    },
 }
 
 

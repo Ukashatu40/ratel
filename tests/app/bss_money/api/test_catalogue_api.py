@@ -145,6 +145,7 @@ def test_settings_stay_inside_the_gateway_and_every_change_is_audited(admin: Tes
         "voice_onnet_kobo_per_min": 800,
         "voice_offnet_kobo_per_min": 1_500,
         "sms_onnet_kobo": 250,
+        "voucher_values_kobo": [10_000, 50_000, 100_000],
         "reason": "launch rates",
     }
     below = admin.put("/v1/catalogue/settings", json={**good, "card_min_kobo": 5_000})

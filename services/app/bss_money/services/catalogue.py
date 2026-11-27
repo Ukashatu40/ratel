@@ -228,6 +228,7 @@ def _settings_change(before: CatalogueSettings, after: CatalogueSettings) -> str
         "voice_onnet_kobo_per_min",
         "voice_offnet_kobo_per_min",
         "sms_onnet_kobo",
+        "voucher_values_kobo",
     ):
         old, new = getattr(before, name), getattr(after, name)
         if old != new:

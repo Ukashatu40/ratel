@@ -1321,6 +1321,253 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/UnexpectedError"
+  /v1/voucher-batches:
+    get:
+      tags: [RatelBSS]
+      operationId: desk_list_voucher_batches
+      security:
+        - StaffSession: []
+      summary: Voucher batches, newest first (latest 100), and what a new batch may be.
+      description: |
+        Every signed-in staff member may read them. `voucher_values_kobo` are the face values a new
+        batch may have (catalogue settings); `max_cards` the most cards a batch may have.
+      responses:
+        "200":
+          description: The batches.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherBatches"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+    post:
+      tags: [RatelBSS]
+      operationId: desk_request_voucher_batch
+      security:
+        - StaffSession: []
+      summary: Request a voucher batch. Admins only.
+      description: |
+        No card or PIN exists until the batch is approved and printed. The face value must be one
+        of `voucher_values_kobo`. `Idempotency-Key` is required: a repeat answers `200` with the
+        first batch (`replayed` true). Recorded with who asked and why.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoucherBatchRequest"
+      responses:
+        "201":
+          description: The new batch, `requested`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherBatchCreated"
+        "200":
+          description: The batch this key made already.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherBatchCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/voucher-batches/{batch_id}/advance:
+    post:
+      tags: [RatelBSS]
+      operationId: desk_advance_voucher_batch
+      security:
+        - StaffSession: []
+      summary: Approve a batch, mark it in stock, or put it on sale. Admins only.
+      description: |
+        Steps go in order: requested, approved, (printed: sent_to_printer), in_stock, on_sale. The
+        batch's cards move with it; on sale they can be redeemed. Asked for the state it is in
+        already, nothing changes. Any other step answers `409`. Recorded with who and why.
+      parameters:
+        - $ref: "#/components/parameters/VoucherBatchId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoucherBatchAdvance"
+      responses:
+        "200":
+          description: The batch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherBatch"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/voucher-batches/{batch_id}/print:
+    post:
+      tags: [RatelBSS]
+      operationId: desk_print_voucher_batch
+      security:
+        - StaffSession: []
+      summary: Make an approved batch's cards and PINs and return the printable sheet. Once ever.
+      description: |
+        Admins only. The answer is a PDF (A4, 24 cards a page) and the only place the PINs ever
+        exist: they are stored hashed and cannot be shown again. A second call answers `409`; if
+        the sheet is lost, lock the batch and request a new one. The cards are then
+        `sent_to_printer`. Not cached (`Cache-Control: no-store`).
+      parameters:
+        - $ref: "#/components/parameters/VoucherBatchId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: The sheet.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/voucher-batches/{batch_id}/lock:
+    post:
+      tags: [RatelBSS]
+      operationId: desk_lock_voucher_batch
+      security:
+        - StaffSession: []
+      summary: Lock a batch and its cards that are not used. Admins only.
+      description: |
+        For a sheet or a box of cards that is lost or stolen: those cards can never be redeemed.
+        A locked batch answers `409`. Recorded with who and why.
+      parameters:
+        - $ref: "#/components/parameters/VoucherBatchId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoucherReason"
+      responses:
+        "200":
+          description: The batch, `locked`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherBatch"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/vouchers/lookup:
+    post:
+      tags: [RatelBSS]
+      operationId: desk_lookup_voucher
+      security:
+        - StaffSession: []
+      summary: A card's state, by its 20 digit number. Never its PIN.
+      description: |
+        Every signed-in staff member may look a card up (POST, so the number stays out of
+        addresses and logs). The answer carries the last four digits only. Changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoucherLookup"
+      responses:
+        "200":
+          description: The card.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherCard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+  /v1/vouchers/{voucher_id}/lock:
+    post:
+      tags: [RatelBSS]
+      operationId: desk_lock_voucher
+      security:
+        - StaffSession: []
+      summary: Lock one card that is lost or stolen. Admins only.
+      description: |
+        A locked card can never be redeemed. A used, expired or locked card answers `409`.
+      parameters:
+        - name: voucher_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoucherReason"
+      responses:
+        "200":
+          description: The card, `locked`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherCard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
   /v1/catalogue/audit:
     get:
       tags: [RatelBSS]
@@ -1947,6 +2194,13 @@ components:
       schema:
         type: string
         pattern: "^234[0-9]{10}$"
+    VoucherBatchId:
+      name: batch_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2408,7 +2662,7 @@ components:
           type: [number, "null"]
     CatalogueSettings:
       type: object
-      required: [airtime_min_kobo, card_min_kobo, card_max_kobo, airtime_presets_kobo, voice_onnet_kobo_per_min, voice_offnet_kobo_per_min, sms_onnet_kobo]
+      required: [airtime_min_kobo, card_min_kobo, card_max_kobo, airtime_presets_kobo, voice_onnet_kobo_per_min, voice_offnet_kobo_per_min, sms_onnet_kobo, voucher_values_kobo]
       additionalProperties: false
       properties:
         airtime_min_kobo:
@@ -2436,6 +2690,141 @@ components:
           type: integer
           minimum: 0
           description: One text to another Ratelplus line, VAT inclusive.
+        voucher_values_kobo:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            type: integer
+            minimum: 1
+          description: The face values a voucher batch may have, whole kobo, smallest first.
+    VoucherBatch:
+      type: object
+      required: [batch_id, name, face_value_kobo, card_count, state, requested_by, requested_at, approved_by, printed_by, printed_at, cards_used]
+      additionalProperties: false
+      properties:
+        batch_id:
+          type: integer
+        name:
+          type: string
+          description: Printed on every card of the batch, for example V-00007.
+        face_value_kobo:
+          type: integer
+        card_count:
+          type: integer
+        state:
+          type: string
+          enum: [requested, approved, sent_to_printer, in_stock, on_sale, locked]
+        requested_by:
+          type: string
+        requested_at:
+          type: [integer, "null"]
+          description: Unix seconds.
+        approved_by:
+          type: [string, "null"]
+        printed_by:
+          type: [string, "null"]
+        printed_at:
+          type: [integer, "null"]
+          description: Unix seconds.
+        cards_used:
+          type: integer
+    VoucherBatches:
+      type: object
+      required: [items, voucher_values_kobo, max_cards]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoucherBatch"
+        voucher_values_kobo:
+          type: array
+          items:
+            type: integer
+        max_cards:
+          type: integer
+    VoucherBatchRequest:
+      type: object
+      required: [face_value_kobo, card_count, reason]
+      additionalProperties: false
+      properties:
+        face_value_kobo:
+          type: integer
+          minimum: 1
+        card_count:
+          type: integer
+          minimum: 1
+          maximum: 240
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 200
+    VoucherBatchCreated:
+      type: object
+      required: [batch, replayed]
+      additionalProperties: false
+      properties:
+        batch:
+          $ref: "#/components/schemas/VoucherBatch"
+        replayed:
+          type: boolean
+    VoucherBatchAdvance:
+      type: object
+      required: [state, reason]
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum: [approved, in_stock, on_sale]
+          description: The state to move the batch to.
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 200
+    VoucherReason:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 200
+    VoucherLookup:
+      type: object
+      required: [card_number]
+      additionalProperties: false
+      properties:
+        card_number:
+          type: string
+          pattern: "^[0-9]{20}$"
+    VoucherCard:
+      type: object
+      required: [voucher_id, card_number_last4, batch, face_value_kobo, state, failed_attempts, max_attempts, used_by_msisdn, used_at]
+      additionalProperties: false
+      properties:
+        voucher_id:
+          type: integer
+        card_number_last4:
+          type: string
+        batch:
+          type: string
+        face_value_kobo:
+          type: integer
+        state:
+          type: string
+          enum: [requested, approved, sent_to_printer, in_stock, on_sale, used, expired, locked]
+        failed_attempts:
+          type: integer
+          description: Failed redemptions in the last hour.
+        max_attempts:
+          type: integer
+        used_by_msisdn:
+          type: [string, "null"]
+        used_at:
+          type: [integer, "null"]
+          description: Unix seconds.
     CatalogueSettingsChange:
       allOf:
         - $ref: "#/components/schemas/CatalogueSettings"

@@ -71,3 +71,52 @@ class VoucherAttempt(Base, TimestampMixin):
     # As typed, a well formed 20 digit number: it may belong to no card. Never the PIN.
     card_number: Mapped[str] = mapped_column(String(20))
     attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class VoucherBatch(Base, TimestampMixin):
+    """A batch requested in RatelDesk (domain/voucher_batches.py). Its cards are made when it is
+    printed, under `voucher.batch` = `name`. Who took each step is kept here."""
+
+    __tablename__ = "voucher_batch"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('requested', 'approved', 'sent_to_printer', 'in_stock', 'on_sale', "
+            "'locked')",
+            name="state_valid",
+        ),
+        CheckConstraint("face_value_kobo > 0", name="face_value_positive"),
+        CheckConstraint("card_count BETWEEN 1 AND 240", name="card_count_range"),
+        # Printed means printed by someone, at a time; not printed means neither.
+        CheckConstraint("(printed_by IS NULL) = (printed_at IS NULL)", name="printed_has_printer"),
+    )
+
+    batch_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(40), unique=True)
+    face_value_kobo: Mapped[int] = mapped_column(BigInteger)
+    card_count: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(20))
+    requested_by: Mapped[str] = mapped_column(String(254))
+    approved_by: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    printed_by: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The Idempotency-Key the request came with: a repeat returns this batch.
+    idempotency_key: Mapped[str] = mapped_column(String(100), unique=True)
+
+
+class VoucherEvent(Base, TimestampMixin):
+    """Every voucher step taken in RatelDesk: who, what, why. Never a PIN or a full card number."""
+
+    __tablename__ = "voucher_event"
+    __table_args__ = (Index("ix_voucher_event_batch_id", "batch_id"),)
+
+    event_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    batch_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("voucher_batch.batch_id", ondelete="RESTRICT"), nullable=True
+    )
+    voucher_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("voucher.voucher_id", ondelete="RESTRICT"), nullable=True
+    )
+    actor: Mapped[str] = mapped_column(String(254))
+    action: Mapped[str] = mapped_column(String(30))
+    reason: Mapped[str] = mapped_column(String(200))
+    detail: Mapped[str] = mapped_column(String(300))

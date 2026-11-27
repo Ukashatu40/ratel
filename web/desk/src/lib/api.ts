@@ -57,6 +57,27 @@ export function newIdempotencyKey(): string {
 }
 export const apiPut = <T,>(path: string, body: unknown, idempotencyKey?: string) => request<T>("PUT", path, body, idempotencyKey);
 
+// A POST whose answer is a file (the printed voucher sheet). Errors come back as JSON, like every other call.
+export async function apiPostFile(path: string, idempotencyKey?: string): Promise<Blob> {
+  const headers: Record<string, string> = { Accept: "application/pdf, application/json", "X-Ratel-Desk": "1" };
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+  const res = await fetch(BASE + path, { method: "POST", headers, credentials: "include", cache: "no-store" });
+  if (res.status === 401) onUnauthorized?.();
+  if (!res.ok) {
+    let code = "unknown";
+    let message = res.statusText;
+    try {
+      const data = await res.json();
+      code = data?.error?.code ?? code;
+      message = data?.error?.message ?? message;
+    } catch {
+      /* response had no JSON body */
+    }
+    throw new ApiError(res.status, code, message);
+  }
+  return await res.blob();
+}
+
 // One key per distinct request. While the request is the same (a retry after a lost reply) the key is reused, so the
 // backend sees the same request; when anything in it changed, a new key starts a new request.
 export interface KeySlot { signature: string | null; key: string | null }

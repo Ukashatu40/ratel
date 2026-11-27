@@ -63,6 +63,7 @@ Entered by an admin in RatelDesk, not seeded by code. To be checked against our 
 | Home (FWA) plan | 30 days at a fixed speed, slower after a fair use amount (values set in RatelDesk) |
 | Call rates | on-net 10 naira a minute, off-net 20 naira a minute (defaults, set in RatelDesk) |
 | SMS | 2 naira a text to another Ratelplus line (decided 2026-11-26, set in RatelDesk) |
+| Voucher face values | N100, N200, N500, N1,000, N2,000 to start (decided 2026-11-27, set in RatelDesk; docs/runbooks/voucher-batches.md) |
 
 ## Not built yet
 

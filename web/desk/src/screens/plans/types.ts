@@ -16,6 +16,6 @@ export interface OfferHistoryEntry { at: number; action: string; actor: string; 
 // Airtime limits, call rates and the SMS price, in whole kobo (docs/catalogue.md).
 export interface CatalogueSettings {
   airtimeMinKobo: number; cardMinKobo: number; cardMaxKobo: number; presetsKobo: number[];
-  onnetKoboPerMin: number; offnetKoboPerMin: number; smsOnnetKobo: number;
+  onnetKoboPerMin: number; offnetKoboPerMin: number; smsOnnetKobo: number; voucherValuesKobo: number[];
 }
 export interface SettingsView { settings: CatalogueSettings; gateway: { minKobo: number; maxKobo: number } }

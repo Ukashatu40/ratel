@@ -8,9 +8,10 @@ Vouchers):
   lost or stolen card. A card can be redeemed only while it is `on_sale`.
 - At most 5 failed redemption attempts per card number per hour.
 
-TODO(PRD): face values and expiry; who moves a batch from state to state and how (the table below
-is the order the Build Plan lists, nothing more); and whether the Luhn digit belongs to the PIN, as
-assumed here, or whether the card number carries one too.
+Decided 2026-11-27 (domain/voucher_batches.py): face values come from a list in the catalogue,
+cards do not expire, and admins move batches step by step in RatelDesk.
+TODO(PRD): whether the Luhn digit belongs to the PIN, as assumed here, or whether the card number
+carries one too.
 """
 
 from __future__ import annotations
