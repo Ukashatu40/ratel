@@ -61,8 +61,6 @@ Entered by an admin in RatelDesk, not seeded by code. To be checked against our 
 
 ## Not built yet
 
-- The voice VM side of prepaid control (the P-CSCF and SMS centre asking bss-app): its own pull
-  request, after this one is deployed.
 - Spoken announcements ("one minute left", "your balance is low", "the number is not available"):
   phase 2 of ADR 0013, once rtpengine can encode AMR.
 - Night or weekend plans (needs time-of-day metering) and rollover of unused data.
@@ -77,5 +75,5 @@ Entered by an admin in RatelDesk, not seeded by code. To be checked against our 
 | Catalogue API (RatelDesk) | `GET /v1/catalogue`, `POST /v1/catalogue/offers`, `POST /v1/catalogue/offers/{kind}/{id}/retire`, `PUT /v1/catalogue/settings`, `GET /v1/catalogue/audit` |
 | Self-care by number (SMS 555, USSD) | `GET /v1/pay/airtime`, `GET /v1/pay/lines/{msisdn}/balance`, `POST /v1/pay/lines/{msisdn}/purchases`, `GET /v1/pay/bundles?channel=` |
 | Call charging | `services/app/bss_money/services/call_charging.py`, run by `calls_cli` |
-| Prepaid calls and texts (voice VM) | `POST /v1/pay/calls/authorize`, `POST /v1/pay/calls/end`, `POST /v1/pay/sms/charge`; `services/app/bss_money/services/prepaid.py`, `domain/prepaid.py` |
+| Prepaid calls and texts | bss-app: `POST /v1/pay/calls/authorize`, `POST /v1/pay/calls/end`, `POST /v1/pay/sms/charge`; `services/app/bss_money/services/prepaid.py`, `domain/prepaid.py`. Voice VM: `network/voice/prepaid` (P-CSCF and SMS centre), `network/voice/ussd` (relays to bss-app) |
 | Proxy rule for the voice VM | `deploy/bss-app/nginx/add-selfcare-paths.py` |

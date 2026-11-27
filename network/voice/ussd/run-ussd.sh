@@ -4,7 +4,8 @@
 # It joins the IMS network (ratel_ims) at 172.22.0.40 and runs ussd_as.py from this folder in a
 # stock python image, nothing installed. Restarts with Docker. Changes nothing else: calls do not
 # pass through it. USSD reaches it only through the S-CSCF rule, texts to 555 only through the
-# SMSC change (apply-smsc-shortcode.py). It listens on udp 5060 (USSD) and tcp 8647 (texts from the SMSC).
+# SMSC change (apply-smsc-shortcode.py). It listens on udp 5060 (USSD) and tcp 8647 (texts from the SMSC,
+# and the prepaid checks from the P-CSCF and the SMSC, ADR 0013: network/voice/prepaid).
 #
 # Usage: ./run-ussd.sh            start or replace the container
 #        ./run-ussd.sh --stop     stop and remove it
@@ -41,6 +42,7 @@ docker run -d --name "$NAME" --restart unless-stopped \
 	--network "$NET" --ip "$IP" \
 	-e USSD_PUBLIC_IP="$IP" -e USSD_PORT=5060 -e USSD_LOG_LEVEL=INFO \
 	-e SMS_PORT=8647 -e SMS_SMSC_URL=http://172.22.0.33:7090 -e SMS_ALLOWED=172.22.0.33 \
+	-e CALL_ALLOWED=172.22.0.21 \
 	"${ENVFILE[@]}" "${KEY[@]}" "${CA[@]}" \
 	-v "$HERE/ussd_as.py:/app/ussd_as.py:ro" \
 	--log-opt max-size=10m --log-opt max-file=3 \

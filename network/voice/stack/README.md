@@ -59,6 +59,7 @@ how to roll it back, and what was verified when. Read them before editing anythi
 | [`../pcscf-transport/`](../pcscf-transport/) | Transport choice for phones registered over UDP |
 | [`../scscf-numbering/`](../scscf-numbering/) | Originating number normalisation |
 | [`../smsc-numbering/`](../smsc-numbering/) | SMS destination rewrite and delivery timing |
+| [`../prepaid/`](../prepaid/) | Prepaid calls and texts: the P-CSCF and the SMS centre ask bss-app (ADR 0013) |
 
 The Diameter peering, the second DNS zone and the SMS over IMS routing have no directory of their
 own. They are described in [CHANGES-FROM-UPSTREAM.md](CHANGES-FROM-UPSTREAM.md).
