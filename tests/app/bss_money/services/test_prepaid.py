@@ -38,6 +38,8 @@ CALLER = "2348000010010"  # line 1
 FRIEND = "2348000010011"  # line 2: on-net
 BARRED = "2348000010012"  # line 3: suspended
 OUTSIDE = "2348031234567"  # another network
+LAB = "2342064730433"  # a Ratelplus SIM put straight into the HSS: no line in RatelBSS
+OWN = ("2342064730",)  # Ratelplus's own range (RATEL_NUMBER_PREFIXES)
 FREE = frozenset({"112", "199"})
 VAT_BPS = 750
 ONNET = DEFAULT_SETTINGS.voice_onnet_kobo_per_min
@@ -137,6 +139,7 @@ def _authorize(
     caller: str = CALLER,
     now: datetime = T0,
     charge_from: datetime | None = LAUNCH,
+    own: tuple[str, ...] = (),
 ):  # type: ignore[no-untyped-def]
     return authorize_call(
         scope,
@@ -146,6 +149,7 @@ def _authorize(
         free_numbers=FREE,
         charge_from=charge_from,
         now=now,
+        own_prefixes=own,
     )
 
 
@@ -156,6 +160,7 @@ def _sms(
     to: str = FRIEND,
     sender: str = CALLER,
     charge_from: datetime | None = LAUNCH,
+    own: tuple[str, ...] = (),
 ) -> tuple[SmsOutcome, int]:
     return charge_sms(
         scope,
@@ -165,6 +170,7 @@ def _sms(
         vat_rate_bps=VAT_BPS,
         charge_from=charge_from,
         now=T0,
+        own_prefixes=own,
     )
 
 
@@ -371,11 +377,34 @@ def test_texts_to_555_are_free_and_texts_off_net_are_refused(
     assert _balance(factory) == 1_000
 
 
-def test_texts_are_free_until_charging_starts_but_off_net_is_still_refused(
+def test_before_charging_starts_no_text_is_refused_or_charged(
     factory: sessionmaker[Session], scope: Scope
 ) -> None:
-    assert _sms(scope, "m1", charge_from=None) == (SmsOutcome.FREE_CHARGING_OFF, 0)
-    assert _sms(scope, "m2", to=OUTSIDE, charge_from=None) == (SmsOutcome.REFUSED_OFF_NET, 0)
+    """27 Nov: texts between lab SIMs were refused as off-net before launch. Nothing changes until
+    CALL_CHARGING_FROM."""
+    for n, to in enumerate((FRIEND, OUTSIDE, LAB, "32665")):
+        assert _sms(scope, f"m{n}", to=to, charge_from=None) == (SmsOutcome.FREE_CHARGING_OFF, 0)
+    for n, to in enumerate((LAB, OUTSIDE)):  # from a lab SIM too
+        got = _sms(scope, f"l{n}", sender=LAB, to=to, charge_from=None)
+        assert got == (SmsOutcome.FREE_CHARGING_OFF, 0)
+
+
+def test_a_sender_that_is_not_a_line_is_never_refused(scope: Scope) -> None:
+    assert _sms(scope, "m1", sender=LAB, to=OUTSIDE) == (SmsOutcome.NOT_BILLED, 0)
+
+
+def test_a_number_in_ratelplus_s_own_range_is_on_net_without_a_line(
+    factory: sessionmaker[Session], scope: Scope
+) -> None:
+    _top_up(factory, 1_000)
+    assert _sms(scope, "m1", to=LAB) == (SmsOutcome.REFUSED_OFF_NET, 0)  # range not configured
+    assert _sms(scope, "m2", to=LAB, own=OWN) == (SmsOutcome.CHARGED, SMS_PRICE)
+    assert _sms(scope, "m3", to="+" + LAB, own=OWN) == (SmsOutcome.CHARGED, SMS_PRICE)
+    assert _sms(scope, "m4", to=OUTSIDE, own=OWN) == (SmsOutcome.REFUSED_OFF_NET, 0)
+    _top_up(factory, 100_000)
+    assert _authorize(scope, "c1", dialled=LAB, own=OWN).max_seconds == min(
+        (1_000 - 2 * SMS_PRICE + 100_000) * 60 // ONNET, MAX_CALL_SECONDS
+    )
 
 
 def test_a_sender_that_is_not_a_line_is_not_billed(scope: Scope) -> None:

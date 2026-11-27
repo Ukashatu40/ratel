@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.bss_lines.api.deps import now_utc
 from app.bss_money.api.dependencies import require_pay_key
-from app.bss_money.domain.prepaid import parse_free_numbers
+from app.bss_money.domain.prepaid import parse_free_numbers, parse_number_prefixes
 from app.bss_money.domain.purchase import OfferKind
 from app.bss_money.repositories.ports import (
     CatalogScope,
@@ -258,6 +258,7 @@ def authorize_call(
         free_numbers=parse_free_numbers(settings.free_call_numbers),
         charge_from=settings.call_charging_from,
         now=now_utc(request),
+        own_prefixes=parse_number_prefixes(settings.ratel_number_prefixes),
     )
     return CallAuthorizeOut(
         allowed=decision.allowed, max_seconds=decision.max_seconds, reason=decision.reason.value
@@ -290,5 +291,6 @@ def charge_sms(request: Request, body: SmsChargeIn, key: OptionalKey = None) -> 
         vat_rate_bps=settings.vat_rate_bps,
         charge_from=settings.call_charging_from,
         now=now_utc(request),
+        own_prefixes=parse_number_prefixes(settings.ratel_number_prefixes),
     )
     return SmsChargeOut(send=outcome.send, reason=outcome.value, charged_kobo=kobo)

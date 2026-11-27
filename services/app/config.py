@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # Numbers a call to is never refused or limited, even with no airtime (ADR 0013): emergency 112,
     # 199, and customer care once it has a number. Comma separated, as dialled.
     free_call_numbers: str = "112,199"
+    # Ratelplus's own number ranges, as 234-form prefixes, comma separated (for example 2342064730).
+    # A number in them is a Ratelplus number for call rates and texts even without a line in
+    # RatelBSS, as SIMs put straight into the HSS have none. Empty: only live lines count.
+    ratel_number_prefixes: str = ""
 
     @field_validator("call_charging_from", mode="before")
     @classmethod

@@ -25,6 +25,7 @@ from app.bss_money.domain.prepaid import (
     SmsOutcome,
     cost_of,
     digits,
+    in_own_range,
     is_free_number,
     limited_call,
 )
@@ -44,6 +45,14 @@ def _charging(charge_from: datetime | None, now: datetime) -> bool:
     return charge_from is not None and now >= charge_from
 
 
+def _on_net(repositories: PrepaidRepositories, number: str, prefixes: tuple[str, ...]) -> bool:
+    """Whether a dialled number or recipient is a Ratelplus number (domain/prepaid.py)."""
+    msisdn = national_msisdn(number)
+    if msisdn is None:
+        return False
+    return in_own_range(msisdn, prefixes) or repositories.prepaid.is_ratel_number(msisdn)
+
+
 def _available(repositories: PrepaidRepositories, line_id: int, now: datetime) -> int:
     balance = repositories.ledger.balance(line_id) or 0
     return balance - repositories.prepaid.held_kobo(line_id, now)
@@ -58,6 +67,7 @@ def authorize_call(
     free_numbers: frozenset[str],
     charge_from: datetime | None,
     now: datetime,
+    own_prefixes: tuple[str, ...] = (),
 ) -> CallDecision:
     if is_free_number(dialled, free_numbers):
         return _logged(CallDecision(True, 0, CallReason.FREE_NUMBER), None)
@@ -76,8 +86,7 @@ def authorize_call(
                 CallDecision(True, existing.max_seconds, CallReason.LIMITED), line.line_id
             )
         settings = settings_or_default(repositories.catalogue)
-        callee = national_msisdn(digits(dialled))
-        on_net = callee is not None and repositories.prepaid.is_ratel_number(callee)
+        on_net = _on_net(repositories, digits(dialled), own_prefixes)
         rate = settings.voice_onnet_kobo_per_min if on_net else settings.voice_offnet_kobo_per_min
         decision, reserve = limited_call(_available(repositories, line.line_id, now), rate)
         if decision.allowed:
@@ -115,6 +124,7 @@ def charge_sms(
     vat_rate_bps: int,
     charge_from: datetime | None,
     now: datetime,
+    own_prefixes: tuple[str, ...] = (),
 ) -> tuple[SmsOutcome, int]:
     """(outcome, kobo charged). The same message id asked again gets the first answer."""
     to = digits(recipient)
@@ -127,19 +137,19 @@ def charge_sms(
         if earlier is not None:
             return SmsOutcome(earlier.outcome), earlier.charged_kobo
         line_id = None if line is None else line.line_id
-        callee = national_msisdn(to)
-        on_net = callee is not None and repositories.prepaid.is_ratel_number(callee)
         price = 0
+        # Before launch, and for senders that are not a line in RatelBSS, nothing is refused: the
+        # SMS centre behaves as it did before prepaid control.
         if to == SELF_CARE_NUMBER:
             outcome = SmsOutcome.FREE_SELF_CARE
-        elif not on_net:
-            outcome = SmsOutcome.REFUSED_OFF_NET
         elif not _charging(charge_from, now):
             outcome = SmsOutcome.FREE_CHARGING_OFF
         elif line is None:
             outcome = SmsOutcome.NOT_BILLED
         elif line.state not in _CAN_SPEND:
             outcome = SmsOutcome.REFUSED_NOT_IN_SERVICE
+        elif not _on_net(repositories, to, own_prefixes):
+            outcome = SmsOutcome.REFUSED_OFF_NET
         else:
             settings = settings_or_default(repositories.catalogue)
             price = settings.sms_onnet_kobo

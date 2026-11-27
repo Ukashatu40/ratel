@@ -309,3 +309,24 @@ def test_charging_a_call_settles_its_reservation_so_it_stops_holding_money(
     charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH)
     with factory() as s:
         assert s.scalar(select(CallReservation.state)) == "settled"
+
+
+def test_a_call_to_a_number_in_ratelplus_s_own_range_is_on_net_without_a_line(
+    factory: sessionmaker[Session],
+) -> None:
+    """SIMs put straight into the HSS have no line in RatelBSS, but are Ratelplus numbers."""
+    _top_up(factory, 100_000)
+    _call(factory, "a", "2342064730433", 60)
+    _call(factory, "b", "2342064730434", 60)
+    charge_calls(_scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH, own_prefixes=())
+    with factory() as s:
+        before = {c.call_record_id: c.on_net for c in s.scalars(select(CallCharge))}
+    assert before == {1: False, 2: False}  # range not configured: off-net, as before
+    _call(factory, "c", "2342064730433", 60)
+    charge_calls(
+        _scope(factory), vat_rate_bps=VAT_BPS, charge_from=LAUNCH, own_prefixes=("2342064730",)
+    )
+    with factory() as s:
+        third = s.scalars(select(CallCharge).where(CallCharge.call_record_id == 3)).one()
+    assert third.on_net is True
+    assert third.rate_kobo_per_min == DEFAULT_SETTINGS.voice_onnet_kobo_per_min
