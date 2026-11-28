@@ -11,7 +11,7 @@ from app.bss_money.models.ledger import LedgerEntry, Wallet
 from app.bss_money.models.payments import Payment
 from app.bss_money.models.prepaid import CallReservation, SmsCharge
 from app.bss_money.models.rating import UsageRating
-from app.bss_money.models.vouchers import Voucher, VoucherAttempt
+from app.bss_money.models.vouchers import Voucher, VoucherAttempt, VoucherBatch, VoucherEvent
 
 __all__ = [
     "AllowanceBucket",
@@ -25,5 +25,7 @@ __all__ = [
     "UsageRating",
     "Voucher",
     "VoucherAttempt",
+    "VoucherBatch",
+    "VoucherEvent",
     "Wallet",
 ]

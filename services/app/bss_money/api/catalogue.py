@@ -18,6 +18,7 @@ from app.bss_lines.repositories.desk_ports import StaffRecord
 from app.bss_money.domain.catalogue import (
     CHANNELS,
     PRESETS_MAX,
+    VOUCHER_VALUES_MAX,
     CatalogueInvalid,
     CatalogueSettings,
 )
@@ -65,6 +66,7 @@ class SettingsBody(BaseModel):
     voice_onnet_kobo_per_min: int = Field(ge=0)
     voice_offnet_kobo_per_min: int = Field(ge=0)
     sms_onnet_kobo: int = Field(ge=0)
+    voucher_values_kobo: list[int] = Field(min_length=1, max_length=VOUCHER_VALUES_MAX)
 
 
 class GatewayLimits(BaseModel):
@@ -162,6 +164,7 @@ def _settings_out(s: CatalogueSettings) -> SettingsBody:
         voice_onnet_kobo_per_min=s.voice_onnet_kobo_per_min,
         voice_offnet_kobo_per_min=s.voice_offnet_kobo_per_min,
         sms_onnet_kobo=s.sms_onnet_kobo,
+        voucher_values_kobo=list(s.voucher_values_kobo),
     )
 
 
@@ -258,6 +261,7 @@ def put_settings(
                 voice_onnet_kobo_per_min=body.voice_onnet_kobo_per_min,
                 voice_offnet_kobo_per_min=body.voice_offnet_kobo_per_min,
                 sms_onnet_kobo=body.sms_onnet_kobo,
+                voucher_values_kobo=tuple(body.voucher_values_kobo),
             ),
             reason=body.reason,
             gateway_min_kobo=settings.payment_min_kobo,

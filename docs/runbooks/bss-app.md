@@ -121,6 +121,10 @@ input with `--password-stdin`).
 
 ## Vouchers
 
+Since 2026-11-27 admins make voucher batches in RatelDesk (Stock & Vouchers, Vouchers tab), with a printable PDF
+sheet: see [voucher-batches.md](voucher-batches.md). The command-line tool below still works for cards made outside
+RatelDesk; those do not appear as batches there.
+
 Prepaid cards are made and moved along by `python -m app.bss_money.voucher_cli`, run by a person on bss-app, and
 redeemed by customers through the public route `POST /v1/pay/vouchers/redeem` (called by the RatelPay page).
 Use the same `sudo -u ratelbss ... bash -c 'set -a; . /etc/ratel-app/ratel-app.env; ...'` wrapper as for the rating

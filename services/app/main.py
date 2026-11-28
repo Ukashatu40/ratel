@@ -19,6 +19,7 @@ from app.bss_money.api.desk import router as money_desk_router
 from app.bss_money.api.pay_lines import router as pay_lines_router
 from app.bss_money.api.payments import router as payments_router
 from app.bss_money.api.purchases import router as purchases_router
+from app.bss_money.api.voucher_batches import router as voucher_batches_router
 from app.bss_money.api.vouchers import router as bss_money_router
 from app.bss_money.gateways.paystack import PaystackGateway
 from app.bss_money.repositories.ports import (
@@ -28,6 +29,7 @@ from app.bss_money.repositories.ports import (
     PrepaidRepositories,
     PurchaseRepositories,
     RedemptionRepositories,
+    VoucherAdminRepositories,
 )
 from app.bss_money.repositories.sql import (
     SqlBundleCatalog,
@@ -41,6 +43,7 @@ from app.bss_money.repositories.sql import (
     SqlPrepaidRepository,
     SqlPurchaseRepository,
     SqlRatingRepository,
+    SqlVoucherAdminRepository,
     SqlVoucherRepository,
 )
 from app.bss_money.services.pay_lines import PayLineRepositories
@@ -177,6 +180,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.prepaid_scope = prepaid_scope
 
     @contextmanager
+    def voucher_admin_scope() -> Iterator[VoucherAdminRepositories]:
+        with app.state.session_factory() as session, session.begin():
+            yield VoucherAdminRepositories(
+                admin=SqlVoucherAdminRepository(session),
+                vouchers=SqlVoucherRepository(session),
+                catalogue=SqlCatalogueRepository(session),
+            )
+
+    app.state.voucher_admin_scope = voucher_admin_scope
+
+    @contextmanager
     def payment_scope() -> Iterator[PaymentRepositories]:
         # One transaction per step; the step commits on a normal return (refusals included).
         with app.state.session_factory() as session, session.begin():
@@ -228,6 +242,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(kyc_router)
     app.include_router(bss_money_router)
     app.include_router(money_desk_router)
+    app.include_router(voucher_batches_router)
     app.include_router(purchases_router)
     app.include_router(payments_router)
     app.include_router(bundles_router)

@@ -1,6 +1,6 @@
 import { ApiError } from "../../lib/api";
 import { NEXT_BATCH_STEP } from "./types";
-import type { BatchState, NumberRow, NumbersPage, NumbersQuery, SimBatch, SimImportRow, SimSummary, StockHistoryEntry, VoucherBatch, VoucherCard, VoucherState } from "./types";
+import type { BatchState, NumberRow, NumbersPage, NumbersQuery, SimBatch, SimImportRow, SimSummary, StockHistoryEntry, VoucherBatch, VoucherBatches, VoucherCard, VoucherState } from "./types";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -13,7 +13,7 @@ const DEMO_QUARANTINE_DAYS = 10;
 // ---- history (every stock change is recorded)
 const history: StockHistoryEntry[] = [
   { at: nowSec() - 2 * 86400, action: "SIM batch imported", actor: "Ibrahim Danladi", detail: "SIM-2026-007, 2,000 SIMs" },
-  { at: nowSec() - 3 * 3600, action: "Voucher batch approved", actor: "Ibrahim Danladi", detail: "B-2026-015" },
+  { at: nowSec() - 3 * 3600, action: "Voucher batch approved", actor: "Ibrahim Danladi", detail: "V-00004" },
 ];
 const log = (action: string, detail: string) => history.push({ at: nowSec(), action, actor: ACTOR, detail });
 export async function mockGetStockHistory(): Promise<StockHistoryEntry[]> { await wait(150); return [...history].sort((a, b) => b.at - a.at).slice(0, 50); }
@@ -56,51 +56,71 @@ export async function mockGetNumbers({ q, tab, page, pageSize }: NumbersQuery): 
 }
 
 // ---- Vouchers
-const batches: VoucherBatch[] = [
-  { batchId: "B-2026-014", faceValueKobo: 100_000, cardCount: 2000, state: "in_stock", createdBy: "Amina Yusuf", createdAt: nowSec() - 6 * 86400 },
-  { batchId: "B-2026-015", faceValueKobo: 50_000, cardCount: 1000, state: "approved", createdBy: "Bashir Aliyu", createdAt: nowSec() - 86400 },
-  { batchId: "B-2026-013", faceValueKobo: 200_000, cardCount: 1500, state: "on_sale", createdBy: "Amina Yusuf", createdAt: nowSec() - 20 * 86400 },
-  { batchId: "B-2026-009", faceValueKobo: 50_000, cardCount: 3000, state: "expired", createdBy: "Bashir Aliyu", createdAt: nowSec() - 120 * 86400 },
-];
-interface Card { voucherId: string; number: string; batchId: string; faceValueKobo: number; state: VoucherState; failedAttempts: number; checkDigitValid: boolean; redeemedBy: string | null; redeemedAt: number | null }
+const VALUES = [10_000, 20_000, 50_000, 100_000, 200_000];
+const batch = (batchId: number, faceValueKobo: number, cardCount: number, state: BatchState, ago: number, cardsUsed = 0): VoucherBatch => ({
+  batchId, name: `V-${String(batchId).padStart(5, "0")}`, faceValueKobo, cardCount, cardsUsed, state, requestedBy: ACTOR, requestedAt: nowSec() - ago,
+  approvedBy: state === "requested" ? null : ACTOR, printedBy: ["requested", "approved"].includes(state) ? null : ACTOR, printedAt: ["requested", "approved"].includes(state) ? null : nowSec() - ago + 3600,
+});
+const batches: VoucherBatch[] = [batch(4, 50_000, 120, "approved", 86400), batch(3, 100_000, 240, "in_stock", 6 * 86400), batch(2, 20_000, 240, "on_sale", 20 * 86400, 37)];
+interface Card { voucherId: number; number: string; batch: string; faceValueKobo: number; state: VoucherState; failedAttempts: number; usedByMsisdn: string | null; usedAt: number | null }
 // Sample cards to try in the lookup (card numbers have 20 digits).
 const cards: Card[] = [
-  { voucherId: "v1", number: "10000000000000004821", batchId: "B-2026-014", faceValueKobo: 100_000, state: "locked", failedAttempts: 5, checkDigitValid: true, redeemedBy: null, redeemedAt: null },
-  { voucherId: "v2", number: "10000000000000001111", batchId: "B-2026-014", faceValueKobo: 100_000, state: "in_stock", failedAttempts: 0, checkDigitValid: true, redeemedBy: null, redeemedAt: null },
-  { voucherId: "v3", number: "10000000000000002222", batchId: "B-2026-013", faceValueKobo: 200_000, state: "on_sale", failedAttempts: 3, checkDigitValid: true, redeemedBy: null, redeemedAt: null },
-  { voucherId: "v4", number: "10000000000000003333", batchId: "B-2026-013", faceValueKobo: 200_000, state: "used", failedAttempts: 0, checkDigitValid: true, redeemedBy: "+234 700 000 0101", redeemedAt: nowSec() - 3 * 86400 },
+  { voucherId: 1, number: "10000000000000004821", batch: "V-00003", faceValueKobo: 100_000, state: "locked", failedAttempts: 5, usedByMsisdn: null, usedAt: null },
+  { voucherId: 2, number: "10000000000000001111", batch: "V-00003", faceValueKobo: 100_000, state: "in_stock", failedAttempts: 0, usedByMsisdn: null, usedAt: null },
+  { voucherId: 3, number: "10000000000000002222", batch: "V-00002", faceValueKobo: 20_000, state: "on_sale", failedAttempts: 3, usedByMsisdn: null, usedAt: null },
+  { voucherId: 4, number: "10000000000000003333", batch: "V-00002", faceValueKobo: 20_000, state: "used", failedAttempts: 0, usedByMsisdn: "2347000000101", usedAt: nowSec() - 3 * 86400 },
 ];
-const toCard = (c: Card): VoucherCard => ({ voucherId: c.voucherId, maskedNumber: `•••• •••• •••• •••• ${c.number.slice(-4)}`, batchId: c.batchId, faceValueKobo: c.faceValueKobo, state: c.state, failedAttempts: c.failedAttempts, maxAttempts: 5, checkDigitValid: c.checkDigitValid, redeemedBy: c.redeemedBy, redeemedAt: c.redeemedAt });
-
-export async function mockGetVoucherBatches(): Promise<VoucherBatch[]> { await wait(150); return batches.map((b) => ({ ...b })); }
-export async function mockRequestBatch(input: { faceValueKobo: number; cardCount: number }): Promise<void> {
-  await wait(400);
-  const next = Math.max(...batches.map((b) => Number(b.batchId.slice(-3)))) + 1;
-  const b: VoucherBatch = { batchId: `B-2026-${String(next).padStart(3, "0")}`, ...input, state: "requested", createdBy: ACTOR, createdAt: nowSec() };
-  batches.unshift(b);
-  log("Voucher batch requested", `${b.batchId}, ${b.cardCount} cards`);
-}
-export async function mockAdvanceBatch(batchId: string): Promise<void> {
-  await wait(300);
+const toCard = (c: Card): VoucherCard => ({ voucherId: c.voucherId, last4: c.number.slice(-4), batch: c.batch, faceValueKobo: c.faceValueKobo, state: c.state, failedAttempts: c.failedAttempts, maxAttempts: 5, usedByMsisdn: c.usedByMsisdn, usedAt: c.usedAt });
+const find = (batchId: number): number => {
   const i = batches.findIndex((b) => b.batchId === batchId);
-  if (i < 0) throw new ApiError(404, "batch_not_found", "No such batch");
-  const steps: BatchState[] = ["requested", "approved", "sent_to_printer", "in_stock", "on_sale"];
-  const at = steps.indexOf(batches[i].state);
-  if (!NEXT_BATCH_STEP[batches[i].state] || at < 0) throw new Error("This batch cannot move forward");
-  batches[i] = { ...batches[i], state: steps[at + 1] };
-  log(`Voucher batch moved to ${steps[at + 1]}`, batchId);
+  if (i < 0) throw new ApiError(404, "not_found", "No such voucher batch");
+  return i;
+};
+
+export async function mockGetVoucherBatches(): Promise<VoucherBatches> { await wait(150); return { items: batches.map((b) => ({ ...b })), voucherValuesKobo: VALUES, maxCards: 240 }; }
+export async function mockRequestBatch(input: { faceValueKobo: number; cardCount: number; reason: string }): Promise<void> {
+  await wait(400);
+  const next = Math.max(0, ...batches.map((b) => b.batchId)) + 1;
+  const b = batch(next, input.faceValueKobo, input.cardCount, "requested", 0);
+  batches.unshift(b);
+  log("Voucher batch requested", `${b.name}, ${b.cardCount} cards: ${input.reason}`);
+}
+export async function mockAdvanceBatch(batchId: number, to: "approved" | "in_stock" | "on_sale"): Promise<void> {
+  await wait(300);
+  const i = find(batchId);
+  const step = NEXT_BATCH_STEP[batches[i].state];
+  if (batches[i].state === to) return;
+  if (!step || step.kind !== "advance" || step.to !== to) throw new ApiError(409, "voucher_step_refused", `A batch that is ${batches[i].state} cannot move to ${to}`);
+  batches[i] = { ...batches[i], state: to, approvedBy: to === "approved" ? ACTOR : batches[i].approvedBy };
+  log(`Voucher batch moved to ${to}`, batches[i].name);
+}
+// Mock mode has no PINs: the "sheet" is a one-line placeholder, so a demo on mock data never hands out anything usable.
+export async function mockPrintBatch(batchId: number): Promise<Blob> {
+  await wait(500);
+  const i = find(batchId);
+  if (batches[i].state !== "approved") throw new ApiError(409, "voucher_step_refused", "Only an approved batch can be printed, and only once");
+  batches[i] = { ...batches[i], state: "sent_to_printer", printedBy: ACTOR, printedAt: nowSec() };
+  log("Voucher batch printed", batches[i].name);
+  return new Blob(["Mock data: no real cards or PINs."], { type: "application/pdf" });
+}
+export async function mockLockBatch(batchId: number, reason: string): Promise<void> {
+  await wait(300);
+  const i = find(batchId);
+  if (batches[i].state === "locked") throw new ApiError(409, "voucher_step_refused", "The batch is locked already");
+  batches[i] = { ...batches[i], state: "locked" };
+  log("Voucher batch locked", `${batches[i].name}: ${reason}`);
 }
 export async function mockLookupCard(cardNumber: string): Promise<VoucherCard> {
   await wait(300);
   const c = cards.find((x) => x.number === cardNumber.replace(/\D/g, ""));
-  if (!c) throw new ApiError(404, "voucher_not_found", "No voucher with that card number");
+  if (!c) throw new ApiError(404, "not_found", "No voucher with that card number");
   return toCard(c);
 }
-export async function mockLockCard(voucherId: string, reason: string): Promise<void> {
+export async function mockLockCard(voucherId: number, reason: string): Promise<void> {
   await wait(400);
   const c = cards.find((x) => x.voucherId === voucherId);
-  if (!c) throw new ApiError(404, "voucher_not_found", "No such voucher");
-  if (c.state === "used" || c.state === "expired" || c.state === "locked") throw new Error("This card cannot be locked: it is already used, expired or locked");
+  if (!c) throw new ApiError(404, "not_found", "No such card");
+  if (c.state === "used" || c.state === "expired" || c.state === "locked") throw new ApiError(409, "voucher_step_refused", `A ${c.state} card cannot be locked`);
   c.state = "locked";
   log("Voucher card locked", `•••• ${c.number.slice(-4)}: ${reason}`);
 }

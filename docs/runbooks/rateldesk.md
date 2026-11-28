@@ -9,7 +9,8 @@ If you get stuck on any step, do not improvise. Follow the "When something goes 
 
 **What this version has.** This runbook describes RatelDesk running against the real RatelBSS API. It is **not** the same as the practice (mock-data) build:
 
-- **Not in the menu:** Stock & Vouchers, Reports, and Staff & Audit. Their jobs are done by the operations team with command-line tools. If you cannot find a screen this runbook does not mention, that is why.
+- **Not in the menu:** Reports, and Staff & Audit. Their jobs are done by the operations team with command-line tools. If you cannot find a screen this runbook does not mention, that is why.
+- **Stock & Vouchers shows the Vouchers tab only:** admins request, approve, print, stock and sell voucher batches there (see [voucher-batches.md](voucher-batches.md)); anyone can look a card up. SIMs and numbers are not in it yet.
 - **Plans & Bundles is read-only:** you can see the plans on sale; you cannot create or change one.
 - **The line profile shows "Not available yet"** for the static address, provisioning and network check. They are being built. (The Calls tab is built: it lists the last 30 days of calls once the voice VM's call agent is running. Until then it says "No calls in the last 30 days".)
 - **Dashboard and wallet numbers have no "this week" trend lines.**
@@ -215,7 +216,7 @@ Only an admin sees the **Terminate** button. If you are an agent and a line must
 
 ## 5. Things this runbook does not cover
 
-- **Reports, Stock & Vouchers, and Staff & Audit.** They are not in this version of RatelDesk. The operations and finance teams do those jobs with their own tools.
+- **Reports, and Staff & Audit, and the SIM and number stock.** They are not in this version of RatelDesk. The operations and finance teams do those jobs with their own tools.
 - **Plans & Bundles.** The screen is read-only. Pricing, validity, speeds and on-exhaustion rules are managed by the product team. Customer care should not change a plan.
 - **Buying a bundle.** Not available yet, in RatelDesk or on RatelPay.
 - **Staff top-ups.** Not available in RatelDesk; top-ups happen on RatelPay.

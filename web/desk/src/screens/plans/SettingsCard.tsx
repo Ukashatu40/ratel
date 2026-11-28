@@ -5,12 +5,12 @@ import { getSettings, saveSettings } from "./api";
 import type { CatalogueSettings, SettingsView } from "./types";
 
 // Airtime limits, call rates and the SMS price (docs/catalogue.md, ADR 0013). Typed in naira, kept in whole kobo.
-interface Form { airtimeMin: string; cardMin: string; cardMax: string; presets: string; onnet: string; offnet: string; sms: string; reason: string }
+interface Form { airtimeMin: string; cardMin: string; cardMax: string; presets: string; onnet: string; offnet: string; sms: string; vouchers: string; reason: string }
 
 const naira = (kobo: number) => (kobo / 100).toFixed(2).replace(/\.00$/, "");
 const toForm = (s: CatalogueSettings): Form => ({
   airtimeMin: naira(s.airtimeMinKobo), cardMin: naira(s.cardMinKobo), cardMax: naira(s.cardMaxKobo),
-  presets: s.presetsKobo.map(naira).join(", "), onnet: naira(s.onnetKoboPerMin), offnet: naira(s.offnetKoboPerMin), sms: naira(s.smsOnnetKobo), reason: "",
+  presets: s.presetsKobo.map(naira).join(", "), onnet: naira(s.onnetKoboPerMin), offnet: naira(s.offnetKoboPerMin), sms: naira(s.smsOnnetKobo), vouchers: s.voucherValuesKobo.map(naira).join(", "), reason: "",
 });
 const kobo = (text: string): number | null => (/^\d+(\.\d{1,2})?$/.test(text.trim()) ? Math.round(Number(text) * 100) : null);
 
@@ -18,7 +18,8 @@ function build(f: Form, gateway: { minKobo: number; maxKobo: number }): { value:
   const airtimeMinKobo = kobo(f.airtimeMin), cardMinKobo = kobo(f.cardMin), cardMaxKobo = kobo(f.cardMax);
   const onnet = kobo(f.onnet), offnet = kobo(f.offnet), sms = kobo(f.sms);
   const presets = f.presets.split(",").map((p) => p.trim()).filter(Boolean).map(kobo);
-  if ([airtimeMinKobo, cardMinKobo, cardMaxKobo, onnet, offnet, sms].some((v) => v === null) || presets.some((p) => p === null)) {
+  const vouchers = f.vouchers.split(",").map((p) => p.trim()).filter(Boolean).map(kobo);
+  if ([airtimeMinKobo, cardMinKobo, cardMaxKobo, onnet, offnet, sms].some((v) => v === null) || presets.some((p) => p === null) || vouchers.some((v) => v === null)) {
     return { value: null, error: "Enter amounts in naira, for example 20 or 2.50." };
   }
   const list = presets as number[];
@@ -29,9 +30,13 @@ function build(f: Form, gateway: { minKobo: number; maxKobo: number }): { value:
   if (list.length < 1 || list.length > 6) return { value: null, error: "Give between 1 and 6 airtime amounts for the menus." };
   if (list.some((p, i) => i > 0 && p <= list[i - 1])) return { value: null, error: "Airtime amounts must be different and smallest first." };
   if (list[0] < (cardMinKobo as number) || list[list.length - 1] > (cardMaxKobo as number)) return { value: null, error: "Every airtime amount must be within the card limits." };
+  const values = vouchers as number[];
+  if (values.length < 1 || values.length > 8) return { value: null, error: "Give between 1 and 8 voucher values." };
+  if (values.some((v, i) => i > 0 && v <= values[i - 1])) return { value: null, error: "Voucher values must be different and smallest first." };
+  if (values[0] < (airtimeMinKobo as number) || values[values.length - 1] > (cardMaxKobo as number)) return { value: null, error: "Every voucher value must be between the smallest top-up and the card maximum." };
   if (!f.reason.trim()) return { value: null, error: "Say why, for example: launch rates." };
   return {
-    value: { airtimeMinKobo: airtimeMinKobo as number, cardMinKobo: cardMinKobo as number, cardMaxKobo: cardMaxKobo as number, presetsKobo: list, onnetKoboPerMin: onnet as number, offnetKoboPerMin: offnet as number, smsOnnetKobo: sms as number },
+    value: { airtimeMinKobo: airtimeMinKobo as number, cardMinKobo: cardMinKobo as number, cardMaxKobo: cardMaxKobo as number, presetsKobo: list, onnetKoboPerMin: onnet as number, offnetKoboPerMin: offnet as number, smsOnnetKobo: sms as number, voucherValuesKobo: values },
     error: "",
   };
 }
@@ -57,7 +62,7 @@ function SettingsForm({ view }: { view: SettingsView }) {
   const input = (k: keyof Form, label: string, hint?: string) => (
     <div className="field">
       <label htmlFor={`s-${k}`}>{label}</label>
-      <input id={`s-${k}`} className="input" value={form[k]} onChange={(e) => { setSaved(false); setForm({ ...form, [k]: e.target.value }); }} inputMode={k === "presets" || k === "reason" ? "text" : "decimal"} />
+      <input id={`s-${k}`} className="input" value={form[k]} onChange={(e) => { setSaved(false); setForm({ ...form, [k]: e.target.value }); }} inputMode={k === "presets" || k === "vouchers" || k === "reason" ? "text" : "decimal"} />
       {hint && <span className="muted" style={{ fontSize: 12 }}>{hint}</span>}
     </div>
   );
@@ -79,6 +84,7 @@ function SettingsForm({ view }: { view: SettingsView }) {
         {input("onnet", "Calls to Ratelplus numbers (₦ per minute)", "Charged per second")}
         {input("offnet", "Calls to other networks (₦ per minute)", "Charged per second")}
         {input("sms", "Texts to Ratelplus numbers (₦ each)", "Texts to 555 are free; texts to other networks are not sent")}
+        {input("vouchers", "Voucher face values (₦)", "Comma separated, smallest first, up to 8: the values a voucher batch can have")}
         {input("reason", "Why the settings change (kept in the audit trail)")}
       </div>
       {(error || save.isError) && <div className="alert alert--danger" style={{ margin: "8px 0" }}>{error || save.error?.message}</div>}

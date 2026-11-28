@@ -11,6 +11,7 @@ Decided by the project lead on 2026-11-24 (docs/catalogue.md):
   second, at one rate for calls to Ratelplus numbers (on-net) and one for every other number.
 - An SMS to another Ratelplus line costs one price, VAT inclusive (2026-11-26: N2). Texts to 555
   are free; texts to other networks are refused until there is SMS interconnect (ADR 0013).
+- Voucher batches made in RatelDesk have one of a fixed list of face values, kept here (2026-11-27).
 """
 
 from __future__ import annotations
@@ -23,7 +24,10 @@ CHANNELS = ("desk", "pay", "sms", "ussd")
 NAME_MAX_LENGTH = 80
 REASON_MAX_LENGTH = 200
 PRESETS_MAX = 6
+VOUCHER_VALUES_MAX = 8
 KOBO_PER_NAIRA = 100
+# N100, N200, N500, N1,000 and N2,000 until an admin changes them
+DEFAULT_VOUCHER_VALUES_KOBO = (10_000, 20_000, 50_000, 100_000, 200_000)
 
 
 def _is_int(value: object) -> bool:
@@ -55,6 +59,7 @@ class CatalogueSettings:
     voice_onnet_kobo_per_min: int  # to a Ratelplus number
     voice_offnet_kobo_per_min: int  # to any other number
     sms_onnet_kobo: int  # one SMS to a Ratelplus number, VAT inclusive
+    voucher_values_kobo: tuple[int, ...]  # the face values a voucher batch may have
 
     def __post_init__(self) -> None:
         for name in (
@@ -81,6 +86,16 @@ class CatalogueSettings:
             raise CatalogueInvalid("airtime amounts must be whole kobo, different, smallest first")
         if presets[0] < self.card_min_kobo or presets[-1] > self.card_max_kobo:
             raise CatalogueInvalid("every airtime amount must be within the card payment limits")
+        values = self.voucher_values_kobo
+        if not isinstance(values, tuple) or not 1 <= len(values) <= VOUCHER_VALUES_MAX:
+            raise CatalogueInvalid(f"give between 1 and {VOUCHER_VALUES_MAX} voucher values")
+        if any(not _is_int(v) for v in values) or list(values) != sorted(set(values)):
+            raise CatalogueInvalid("voucher values must be whole kobo, different, smallest first")
+        if values[0] < self.airtime_min_kobo or values[-1] > self.card_max_kobo:
+            raise CatalogueInvalid(
+                "every voucher value must be between the smallest top-up and the largest card "
+                "payment"
+            )
 
 
 # Until an admin saves settings. The call rates are the project lead's starting values of
@@ -93,6 +108,7 @@ DEFAULT_SETTINGS = CatalogueSettings(
     voice_onnet_kobo_per_min=10 * KOBO_PER_NAIRA,
     voice_offnet_kobo_per_min=20 * KOBO_PER_NAIRA,
     sms_onnet_kobo=2 * KOBO_PER_NAIRA,
+    voucher_values_kobo=DEFAULT_VOUCHER_VALUES_KOBO,
 )
 
 

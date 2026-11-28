@@ -191,6 +191,100 @@ class CustomerSmsRepository(Protocol):
 
 
 @dataclass(frozen=True)
+class BatchView:
+    """A voucher batch as RatelDesk shows it (domain/voucher_batches.py)."""
+
+    batch_id: int
+    name: str
+    face_value_kobo: int
+    card_count: int
+    state: str
+    requested_by: str
+    requested_at: datetime | None
+    approved_by: str | None
+    printed_by: str | None
+    printed_at: datetime | None
+    cards_used: int
+
+
+@dataclass(frozen=True)
+class CardView:
+    """One card as staff may see it: never its PIN or PIN hash."""
+
+    voucher_id: int
+    card_number: str
+    batch: str
+    face_value_kobo: int
+    state: VoucherState
+    used_by_msisdn: str | None
+    used_at: datetime | None
+
+
+class VoucherAdminRepository(Protocol):
+    """Voucher batches and cards as staff manage them. Inside the caller's transaction."""
+
+    def batches(self, limit: int) -> list[BatchView]:
+        """Newest first."""
+        ...
+
+    def batch(self, batch_id: int, *, lock: bool = False) -> BatchView | None: ...
+
+    def batch_for_key(self, idempotency_key: str) -> BatchView | None: ...
+
+    def add_batch(
+        self, *, face_value_kobo: int, card_count: int, requested_by: str, idempotency_key: str
+    ) -> BatchView:
+        """A new batch in `requested`, named from its id (V-00007)."""
+        ...
+
+    def set_batch(
+        self,
+        batch_id: int,
+        *,
+        state: str,
+        approved_by: str | None = None,
+        printed_by: str | None = None,
+        printed_at: datetime | None = None,
+    ) -> None:
+        """Move the batch; the who and when given are recorded, the others left as they are."""
+        ...
+
+    def add_cards(self, cards: Sequence[NewVoucher], state: VoucherState) -> list[int]: ...
+
+    def cards_of(self, batch: str) -> list[tuple[int, VoucherState]]:
+        """Every card of the batch with its state, lowest id first."""
+        ...
+
+    def set_card_states(self, voucher_ids: Sequence[int], state: VoucherState) -> None: ...
+
+    def card(self, card_number: str) -> CardView | None: ...
+
+    def card_by_id(self, voucher_id: int, *, lock: bool = False) -> CardView | None: ...
+
+    def add_event(
+        self,
+        *,
+        actor: str,
+        action: str,
+        reason: str,
+        detail: str,
+        batch_id: int | None = None,
+        voucher_id: int | None = None,
+    ) -> None: ...
+
+
+@dataclass(frozen=True)
+class VoucherAdminRepositories:
+    admin: VoucherAdminRepository
+    vouchers: VoucherRepository  # for the failed redemption attempts
+    catalogue: CatalogueRepository
+
+
+VoucherAdminScope = Callable[[], AbstractContextManager[VoucherAdminRepositories]]
+"""Opens one transaction and yields the repositories on it: commit on exit, rollback on error."""
+
+
+@dataclass(frozen=True)
 class RedemptionRepositories:
     """Everything one redemption touches, all on the same transaction."""
 

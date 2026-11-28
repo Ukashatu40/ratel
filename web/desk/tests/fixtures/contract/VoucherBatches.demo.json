@@ -1,0 +1,4 @@
+{"items": [
+  {"batch_id": 2, "name": "V-00002", "face_value_kobo": 50000, "card_count": 24, "state": "approved", "requested_by": "admin@ratelplus.net.ng", "requested_at": 1764240000, "approved_by": "admin@ratelplus.net.ng", "printed_by": null, "printed_at": null, "cards_used": 0},
+  {"batch_id": 1, "name": "V-00001", "face_value_kobo": 100000, "card_count": 48, "state": "on_sale", "requested_by": "admin@ratelplus.net.ng", "requested_at": 1764150000, "approved_by": "admin@ratelplus.net.ng", "printed_by": "admin@ratelplus.net.ng", "printed_at": 1764153600, "cards_used": 3}
+], "voucher_values_kobo": [10000, 20000, 50000, 100000, 200000], "max_cards": 240}

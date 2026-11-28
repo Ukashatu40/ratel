@@ -14,7 +14,7 @@ export interface WireOffer {
 }
 export interface WireSettings {
   airtime_min_kobo: number; card_min_kobo: number; card_max_kobo: number; airtime_presets_kobo: number[];
-  voice_onnet_kobo_per_min: number; voice_offnet_kobo_per_min: number; sms_onnet_kobo: number;
+  voice_onnet_kobo_per_min: number; voice_offnet_kobo_per_min: number; sms_onnet_kobo: number; voucher_values_kobo: number[];
 }
 export interface WireCatalogue { offers: WireOffer[]; settings: WireSettings; gateway: { min_kobo: number; max_kobo: number }; channels: string[] }
 export interface WireAuditPage { items: { audit_id: number; actor: string; action: string; offer_kind: string | null; offer_id: number | null; reason: string; detail: string; at: number | null }[] }
@@ -32,11 +32,11 @@ export const bundleFromOffer = (o: WireOffer): Bundle => ({
 });
 export const settingsFromWire = (s: WireSettings): CatalogueSettings => ({
   airtimeMinKobo: s.airtime_min_kobo, cardMinKobo: s.card_min_kobo, cardMaxKobo: s.card_max_kobo, presetsKobo: s.airtime_presets_kobo,
-  onnetKoboPerMin: s.voice_onnet_kobo_per_min, offnetKoboPerMin: s.voice_offnet_kobo_per_min, smsOnnetKobo: s.sms_onnet_kobo,
+  onnetKoboPerMin: s.voice_onnet_kobo_per_min, offnetKoboPerMin: s.voice_offnet_kobo_per_min, smsOnnetKobo: s.sms_onnet_kobo, voucherValuesKobo: s.voucher_values_kobo,
 });
 export const settingsToWire = (s: CatalogueSettings): WireSettings => ({
   airtime_min_kobo: s.airtimeMinKobo, card_min_kobo: s.cardMinKobo, card_max_kobo: s.cardMaxKobo, airtime_presets_kobo: s.presetsKobo,
-  voice_onnet_kobo_per_min: s.onnetKoboPerMin, voice_offnet_kobo_per_min: s.offnetKoboPerMin, sms_onnet_kobo: s.smsOnnetKobo,
+  voice_onnet_kobo_per_min: s.onnetKoboPerMin, voice_offnet_kobo_per_min: s.offnetKoboPerMin, sms_onnet_kobo: s.smsOnnetKobo, voucher_values_kobo: s.voucherValuesKobo,
 });
 export const settingsViewFromWire = (c: WireCatalogue): SettingsView => ({
   settings: settingsFromWire(c.settings), gateway: { minKobo: c.gateway.min_kobo, maxKobo: c.gateway.max_kobo },

@@ -98,6 +98,6 @@ export async function mockOfferHistory(kind: Kind, id: string): Promise<OfferHis
 }
 
 // Airtime limits and call rates (docs/catalogue.md): the API's defaults.
-let settings: CatalogueSettings = { airtimeMinKobo: 2_000, cardMinKobo: 10_000, cardMaxKobo: 100_000_000, presetsKobo: [10_000, 20_000, 50_000, 100_000], onnetKoboPerMin: 1_000, offnetKoboPerMin: 2_000, smsOnnetKobo: 200 };
+let settings: CatalogueSettings = { airtimeMinKobo: 2_000, cardMinKobo: 10_000, cardMaxKobo: 100_000_000, presetsKobo: [10_000, 20_000, 50_000, 100_000], onnetKoboPerMin: 1_000, offnetKoboPerMin: 2_000, smsOnnetKobo: 200, voucherValuesKobo: [10_000, 20_000, 50_000, 100_000, 200_000] };
 export async function mockGetSettings(): Promise<SettingsView> { await wait(150); return { settings: { ...settings }, gateway: { minKobo: 10_000, maxKobo: 100_000_000 } }; }
 export async function mockSaveSettings(next: CatalogueSettings): Promise<void> { await wait(150); settings = { ...next }; }
